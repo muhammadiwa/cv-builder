@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"D:\\\\Project\\\\cv-builder\\\\_bmad-output\\\\brainstorming\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name)",
+      "PowerShell(git status *)",
+      "PowerShell(git init *)",
+      "Bash(python3 *)",
+      "PowerShell(New-Item *)",
+      "WebSearch",
+      "PowerShell(git add *)"
+    ]
+  }
+}
