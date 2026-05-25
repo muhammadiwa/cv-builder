@@ -17,6 +17,7 @@ export function Providers({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(false);
   const [lang, setLang] = useState<Language>("id");
 
+  // Dark mode init
   useEffect(() => {
     const stored = localStorage.getItem("darkMode");
     if (stored === "true" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
@@ -31,6 +32,15 @@ export function Providers({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", next);
     localStorage.setItem("darkMode", String(next));
   };
+
+  // Register Service Worker for PWA
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        // SW registration failed — app works without it
+      });
+    }
+  }, []);
 
   return (
     <AppContext.Provider value={{ lang, setLang, isDark, toggleDark }}>
