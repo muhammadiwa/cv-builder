@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3, 4]
+stepsCompleted: [1, 2, 3, 4, 5]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -191,3 +191,100 @@ Before the first ATS score, Kak delivers an empowering explanation: "Jadi gini. 
 4. **Coach through the scary moments.** Low ATS score? "Ini awal yang bagus." Blank section? "Banyak orang bingung di sini. Kak bantu ya." Error state? "Nggak apa-apa, data kamu aman."
 
 5. **Make the user the hero.** Kak is the guide. The user's career story is the point. The product helps tell it — it doesn't replace it with AI-generated filler.
+
+---
+
+## UX Pattern Analysis & Inspiration
+
+### Inspiring Products Analysis
+
+**Layer 1: Trust & Familiarity — Indonesian Consumer Apps**
+
+These set the baseline UX expectation. Indonesian users spend hours daily on these — their patterns define what feels "normal."
+
+| App | Core Pattern | Why It Works for Indonesia | Apply to Lolos | Persona | V1/V2 |
+|-----|-------------|---------------------------|----------------|---------|-------|
+| **Gojek** | Bottom tab nav, FAB, bottom sheets, skeleton loading | Thumb-first, one-handed use, connection-aware. Single-screen-one-action philosophy. | Bottom tabs: Beranda, CV Saya, Kak, Akun. FAB: "Buat CV Baru" as primary action. Bottom sheets for panels. | Rina, all mobile users | V1 |
+| **Tokopedia** | Search-first, trust badges, progressive seller verification | Indonesian users research heavily before transacting. Trust is earned, not assumed. | Trust signals: university badges, user counter, testimonial, "dipakai oleh X pencari kerja." Data privacy assurance visible. | All | V1 |
+| **Shopee** | Gamification (coins, vouchers, streak), live shopping, wallet integration | Rewards drive retention. Wallet integration is expected by default. | Credit celebration: "+50 credits!" toast. Streak: "3 CV completed this week!" Progress bar gamified. | Rina | V1 |
+| **WhatsApp** | Chat bubbles, voice notes, native share sheet, groups | 96% penetration. Default communication tool. | Chat UI patterns: bubble shapes, typing indicators (3-dot staggered), suggested replies (chips), voice note option, native share sheet for CV sharing. | All | V1 |
+
+**Layer 2: Power & Precision — Premium SaaS (Linear as Backbone)**
+
+Linear is the 80% visual CEO. These patterns define the "professional tool" feel.
+
+| App | Core Pattern | Apply to Lolos | Persona | V1/V2 |
+|-----|-------------|----------------|---------|-------|
+| **Linear** | Cmd+K palette, keyboard shortcuts, zero-clutter, 150ms micro-interactions | Command palette: "Buat CV", "Cek ATS", "Ganti Template". Keyboard-first for power users. 150ms spring on state changes. | Adi, desktop power users | V1 |
+| **Vercel** | Dashboard cards, status dots, dark mode layering | Resume cards with thumbnail preview, ATS score badge, last-edited. Green/yellow/red status dots for ATS readiness. | All | V1 |
+| **Stripe** | Progressive disclosure, guided setup, status dashboard | Onboarding wizard with progress indicator. ATS dashboard as "status" cards: "Keyword: 92%." Form simplicity. | All | V1 |
+| **Notion** | Slash commands, AI inline assistant, drag-and-drop blocks | `/` in editor for quick actions: `/pengalaman`, `/skill`, `/sertifikasi`. AI wand per section. 6-dot drag handles. | Adi, Dimas | V1 |
+
+**Layer 3: Intelligence — AI-Native Patterns**
+
+These inform how Kak appears and behaves contextually.
+
+| App | Core Pattern | Apply to Lolos | Persona | V1/V2 |
+|-----|-------------|----------------|---------|-------|
+| **Perplexity** | Source citations, follow-up suggestions, conversation threading | Job match: keyword sources cited inline. AI follow-up chips: "Mau Kak perbaiki ini?" | Adi | V2 |
+| **Arc Browser** | Spaces (workspaces), AI sidebar (resizable, contextual), hover previews | Workspaces: "Job Search Aktif", "CV Cadangan", "Arsip." AI panel as resizable sidebar with conversation history (desktop only). | Adi | V2 |
+
+### Visual DNA: 80/20 Rule
+
+- **80% Linear/Vercel/Stripe** — Clean, minimalis, professional. Violet/Indigo palette. The dominant visual language.
+- **20% Gojek/Shopee/WhatsApp** — Warmth, gamification, trust signals. FAB button, celebration moments, chat familiarity. Accent, not backbone.
+
+**Visual CEO:** Linear-inspired professionalism with Violet as the defining accent. All Gojek/Shopee warmth is seasoning — essential, but never the main course.
+
+### Transferable UX Patterns
+
+**Navigation (V1):**
+- **Bottom tab bar (Gojek model):** 4 tabs — Beranda, CV Saya, Kak, Akun. FAB overlay "Buat CV Baru." Thumb-zone optimized.
+- **Command palette (Linear model):** `Cmd+K` on desktop. Quick actions with `⌘1-9` shortcuts.
+
+**Interaction (V1):**
+- **Chat as primary input (WhatsApp model):** Chat bubbles, typing indicators, suggested replies, streaming text. Core Kak interaction.
+- **Progressive disclosure (Stripe model):** Fresh grad sees 4 sections. Power user sees 8+. Complexity grows with confidence.
+- **One-click action (Linear model):** Every ATS suggestion actionable in one tap. Tap → applied → score updates. No navigation required.
+
+**Visual (V1):**
+- **Status dots (Vercel model):** Green (85+), Yellow (65-84), Red (<65). Pulse animation during analysis.
+- **Morphing transitions (Framer):** Template switching via `layoutId`. No jarring cuts.
+- **Score ring (Stripe model):** SVG ring gauge. Gradient fill. Spring physics animation. Anchor context always visible.
+
+**Intelligence (V2):**
+- **Source citations (Perplexity model):** ATS keyword matches cited. "Keyword 'SQL' ditemukan di bagian Pengalaman — baris 3."
+- **Spaces (Arc model):** Resume workspaces. Desktop-only. V2 feature.
+
+### Anti-Patterns to Avoid
+
+| Anti-Pattern | Why It Fails in Indonesia | What We Do Instead |
+|-------------|--------------------------|-------------------|
+| **Paywall at export** | User invests 30 min, can't download without paying. Anger, not conversion. | Free PDF with subtle "Made with Lolos" footer. Premium = watermark-free + DOCX. |
+| **Blank form first screen** | Decision fatigue. "Template apa? Mulai dari mana?" | Kak greets first. Conversation, not form. One question at a time. |
+| **Raw score without context** | "45/100" without knowing what's normal. User blames themselves. | Always show anchor: "Rata-rata fresh grad: 58." One immediate improvement visible. |
+| **Desktop-first responsive** | Sidebar nav, hover states, drag-and-drop break on mobile. 90%+ Indonesian mobile. | Design for 6-inch 720p first. Bottom sheets, 44px touch targets. PWA offline. |
+| **Credit card-only payment** | 2% credit card penetration. Conversion dead end. | GoPay, QRIS, Virtual Account first. Xendit gateway. |
+| **Auto-renewal traps (4-week billing)** | 13 charges/year. Users feel scammed. Trust destroyed. | Transparent monthly/annual. Cancel anytime. Data retained. |
+| **Creative-first templates (Canva)** | Beautiful CVs that silently fail ATS. Two columns, icons, graphics. | Every template ATS-safe by construction. Single-column, standard fonts, no graphics. |
+
+### Design Inspiration Strategy
+
+**Adopt (directly copy, V1):**
+- WhatsApp chat UI — the interaction model Indonesian users already know
+- Gojek bottom tab + FAB — thumb-first, zero learning curve
+- Stripe progressive disclosure — complexity on demand
+- Vercel status dots — instantly understandable ATS readiness
+
+**Adapt (modify for our context):**
+- Linear command palette → add AI commands: "Tanya Kak", "Optimasi ATS"
+- Notion slash commands → CV-specific: `/pengalaman`, `/pendidikan`, `/skill`
+- Perplexity citations → ATS keyword match sources (V2)
+- Shopee gamification → credit celebrations, progress streaks (subtle, violet-toned)
+
+**Avoid (explicitly reject):**
+- Paywall-at-export — destroys trust. Free tier exports PDF.
+- Blank form first screen — Kak always starts the conversation.
+- Credit card-only payment — GoPay/QRIS first.
+- Creative-first templates — ATS-safe is the only safe.
+- 4-week billing tricks — transparent monthly/annual only.
