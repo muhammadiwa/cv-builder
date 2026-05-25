@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3, 4, 5]
+stepsCompleted: [1, 2, 3, 4, 5, 6]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -288,3 +288,55 @@ These inform how Kak appears and behaves contextually.
 - Credit card-only payment — GoPay/QRIS first.
 - Creative-first templates — ATS-safe is the only safe.
 - 4-week billing tricks — transparent monthly/annual only.
+
+---
+
+## Design System Foundation
+
+### Design System Choice
+
+**Shadcn/ui (Radix UI primitives + Tailwind CSS)** — Themeable System approach. Proven accessible components with full visual customization through CSS custom properties. Components live in the project repo as source, not a dependency.
+
+### Rationale
+
+| Factor | Decision |
+|--------|----------|
+| **Platform** | Next.js 14+ App Router, TypeScript. Shadcn/ui is built for this stack — copy-paste components, not a dependency. |
+| **Visual Uniqueness** | Full CSS custom property control. Violet/Indigo palette, Jakarta Sans + Inter fonts — expressed as Tailwind config. Not locked into a third-party visual language. |
+| **Team Size** | 1-2 frontend devs pre-launch. Zero learning curve for Tailwind devs. Components in your codebase, fully modifiable. |
+| **Accessibility** | Radix primitives = WCAG 2.1 AA baseline. Keyboard nav, focus management, screen reader support built in. |
+| **Performance** | Tree-shakeable — only used components ship. No runtime CSS-in-JS. Tailwind atomic classes cacheable and minimal. |
+| **Mobile-First** | Tailwind responsive utilities. Radix supports touch, pointer, keyboard natively. |
+| **RSC Compatibility** | Radix components carry `"use client"` — needs clear Server/Client boundaries. Editor = Client, Layout/SEO = Server. |
+| **Bundle Budget** | Target <180kB gzip initial JS. Framer Motion (+32kB), TipTap (+45kB), dnd-kit (+20kB) via dynamic import. |
+| **Scale** | Not a bottleneck at 10K MAU. Real bottlenecks: TipTap JSON payload, Framer Motion layout without `will-change`, SSR overuse. |
+
+### Component Inventory
+
+**Core Components (from Shadcn/ui):** Button, Dialog, Sheet, Tabs, Card, Input/Textarea, Select/Combobox, Toast/Sonner, Progress, Skeleton, Badge, Tooltip, Command (cmdk).
+
+**Custom Components (built on Radix primitives):**
+
+| Component | Base | Usage |
+|-----------|------|-------|
+| `ScoreRing` | SVG + Framer Motion | ATS score ring gauge, gradient stroke, spring animation |
+| `ChatBubble` | Custom | Kak messages with streaming text, typing indicator, reply chips |
+| `ResumeCanvas` | TipTap wrapper | A4 canvas (210mm × 297mm), live preview, template rendering |
+| `SectionBlock` | TipTap Node + dnd-kit | Draggable section with handle, AI wand, visibility toggle |
+| `TemplateCard` | Card + Framer Motion | Preview card with hover animation, "Gunakan Template" CTA |
+| `KeywordChip` | Badge | ATS keyword tag with match status (found/missing), tap to add |
+
+### Implementation Gotchas (from Tech Review)
+
+1. **Bundle:** Dynamic import via `next/dynamic` for Framer Motion, TipTap, dnd-kit. `next-bundle-analyzer` per PR.
+2. **RSC Boundary:** Server Components for layout/SEO. Client Components for editor. File suffix `.client.tsx` for clear boundary.
+3. **TipTap + Radix Portal:** Z-index conflict between `Dialog.Portal` and `.tippy-content`. Fix: `data-radix-portal` + `data-tiptap-portal` attributes, CSS custom property for z-index. Never hardcode z-50.
+4. **dnd-kit + TipTap NodeView:** `onDragEnd` must call `editor.chain().focus().lift('sectionBlock').run()`. DragOverlay renders plain HTML from `node.toHTML()`. AC: drag-drop produces correct ProseMirror position.
+5. **Mobile Performance:** CSS `transition` for `SectionBlock` reorder (not Framer Motion `layout`). TipTap `onUpdate` debounce 150ms + `shouldRerenderOnTransaction: false`. PWA autosave: `requestIdleCallback` + IndexedDB (`idb` wrapper), not localStorage.
+6. **Test Strategy:** Playwright for visual + drag-drop E2E. `@tiptap/test-utils` for editor tests. jsdom cannot test Framer Motion or drag-and-drop.
+
+### Customization Strategy
+
+**Design Tokens:** Extend Tailwind config with Lolos-specific values. Colors: Indigo primary scale (50-950), Violet accent scale. Fonts: Jakarta Sans (display), Inter (body), JetBrains Mono (mono). Spacing: 4px base. Border radius: sm 4px → 2xl 16px. Animation: micro 150ms, fast 200ms, normal 300ms, slow 500ms, spring 1.5s.
+
+**CSS Custom Properties (Light/Dark):** `--background: #fafafa` / `#0f0f11`. `--card: #ffffff` / `#1a1a1e`. `--primary: #6366f1` / `#818cf8`. `--accent: #8b5cf6` / `#a78bfa`. ATS score colors: `--ats-red: #ef4444`, `--ats-amber: #f59e0b`, `--ats-blue: #3b82f6`, `--ats-emerald: #10b981`.
