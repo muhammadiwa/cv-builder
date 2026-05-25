@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -63,3 +63,113 @@ Per Architecture Party Mode (Winston + Amelia), 5 decisions ranked by irreversib
 | pgvector pure semantic | Recall dropping at 50K+ vectors | Hybrid pgvector + tsvector (BM25 full-text) |
 | App Router streaming | Waterfall blocking on mobile | Granular Suspense per data-fetching segment |
 | BullMQ without DLQ | Silent job discard, margin loss | Dead Letter Queue + cost-per-job metadata + user rate limiting |
+
+---
+
+## Starter Template & Monorepo Architecture
+
+### Primary Technology Domain
+
+Full-stack TypeScript — Next.js 14+ App Router (frontend), NestJS/TypeScript (backend), PostgreSQL 16 + pgvector (database), Redis + BullMQ (cache + queue), PWA with offline support.
+
+### Selected Stack
+
+| Layer | Choice | Rationale |
+|-------|--------|-----------|
+| **Monorepo** | Turborepo | Lighter than Nx, sufficient caching, minimal config. Migration path to Nx if team grows 5+. |
+| **Frontend** | Next.js 14+ App Router, Tailwind, Shadcn/ui, Framer Motion | Already scaffolded for landing page. RSC for SEO, Client Components for editor. |
+| **Backend** | NestJS/TypeScript, tRPC (internal) + REST (public) | I/O-heavy AI workload suits Node.js. End-to-end type safety. |
+| **Database** | PostgreSQL 16 + pgvector (HNSW, halfvec) | 75% cheaper than dedicated vector DB. |
+| **Cache/Queue** | Redis (2 instances) + BullMQ | Semantic cache + 6 queues with DLQ. |
+| **Auth** | JWT + httpOnly refresh, WhatsApp OTP, Google/LinkedIn OAuth | Multi-method for Indonesian market. |
+| **PDF** | Puppeteer via BullMQ workers | Browser pool min 2 warm, max 10. |
+| **DOCX** | docx (npm) | V2 feature. Verified via mammoth. |
+| **Package Manager** | pnpm (locked via `only-allow`) | Deterministic installs, strict dependency resolution. |
+
+### Final Monorepo Structure (3 Apps + 2 Packages)
+
+```
+lolos/
+├── packages/
+│   ├── validators/     # Zod schemas, shared TypeScript types
+│   └── database/       # Prisma schema, migrations, seed data
+├── apps/
+│   ├── web/            # Next.js 14+ (landing + dashboard + editor)
+│   ├── api/            # NestJS (tRPC + REST + AI orchestration + auth + payment)
+│   └── workers/        # BullMQ workers (pdf, ai, email)
+├── turbo.json
+└── pnpm-workspace.yaml
+```
+
+### Rationale for Each Boundary
+
+| Component | Decision | Why |
+|-----------|----------|-----|
+| `packages/validators` | **Keep** | Shared Zod schemas prevent frontend↔backend schema drift — production bug jika tidak sync. Single PR updates both apps. |
+| `packages/database` | **Keep** | Prisma client shared between `api` and `workers`. Prevents migration version mismatch. Easier integration testing. |
+| `packages/ui` | **Defer** | Single frontend consumer. Collocate in `apps/web/components/ui/`. Extract when second frontend app exists. |
+| `apps/workers` | **Keep** | Isolates crash radius (worker OOM doesn't affect HTTP). Prevents BullMQ↔Prisma connection pool fight. Scale independently. |
+| `apps/api` | **Keep** | NestJS modular monolith. Workers called via BullMQ, not direct imports. |
+
+### Implementation Gotchas
+
+1. **pnpm lock:** `"preinstall": "npx only-allow pnpm"` in root package.json.
+2. **tRPC type sync:** `turbo.json` explicit `dependsOn: ["^build"]`. CI: `turbo run build --force` on staging merges.
+3. **Prisma build chain:** `outputs: ["**/.prisma/**"]` in turbo.json. Prisma in `dependencies`, not `devDependencies`.
+4. **Prisma singleton:** `PrismaModule` as global NestJS module — share 1 instance across all services.
+5. **BullMQ idempotency:** All job handlers use unique job ID as idempotency key. `concurrency: 1` for sensitive queues.
+6. **NestJS circular deps:** `CommonModule` for shared DI. `forwardRef` as fallback.
+
+---
+
+## Core Architectural Decisions
+
+### Already Decided (from PRD, Research, Starter Evaluation)
+
+| Decision | Choice | Source |
+|----------|--------|--------|
+| Monorepo structure | Turborepo, 3 apps + 2 packages | Step 3 + Party Mode |
+| Frontend | Next.js 14+ App Router, Tailwind, Shadcn/ui, Framer Motion | PRD + Tech Research |
+| Backend | NestJS/TypeScript, tRPC (internal) + REST (public) | Tech Research |
+| Database | PostgreSQL 16 + pgvector (HNSW, halfvec) | Tech Research |
+| Cache/Queue | Redis (2 instances) + BullMQ (6 queues, DLQ) | Tech Research |
+| Auth | JWT (15min access, 7-day refresh rotation), WhatsApp OTP, Google/LinkedIn OAuth | PRD §4.7 |
+| PDF | Puppeteer (headless Chrome) via BullMQ worker pool | Tech Research |
+| DOCX | docx (npm) with JSON-config templates (V2) | Tech Research |
+| Document State | JSON-structured as source of truth, TipTap as rendering engine | Arch Context + Winston |
+| PWA Offline | Service Worker + IndexedDB, last-write-wins per-field | UX Spec + Amelia |
+
+### Decision 1: PII Stripping Gateway
+
+**Decision:** Single global NestJS interceptor strips all PII before any outbound LLM API call. PII fields: name, email, phone, address, photo URL, NIK/KTP. Stripped fields replaced with placeholders. Original values injected at PDF/DOCX rendering stage.
+
+**Architecture:** `User Request → Controller → PIIStrippingInterceptor → LLM Provider`. Auto-fail if PII regex detected in outbound LLM payload. Audit log for every strip/inject operation. Single enforcement point — no per-service filtering.
+
+### Decision 2: AI Model Routing & Cost Control
+
+**Decision:** Hybrid 4-tier inference with Token Budget Guardian.
+
+| Tier | Models | Tasks | Max Cost/Task |
+|------|--------|-------|---------------|
+| Extraction | Gemini Flash, GPT-4o-mini | Keyword extraction, entity parsing, fact verification | Rp 5-15 |
+| Generation | GPT-4o, Claude Sonnet | Resume content, cover letters, achievement rewrites | Rp 150-300 |
+| Conversation | GPT-4o-mini, Claude Haiku | Kak interview flow, follow-up questions | Rp 15-25 |
+| Analysis | GPT-4o-mini, Gemini Flash | ATS scoring, job match analysis | Rp 20-40 |
+
+Routing: Primary → Secondary → Tertiary fallback. Premium users get priority on primary models. Token Budget Guardian enforces per-user daily cap ($0.10). Semantic cache for ATS scores (24h TTL) and keyword extraction (12h TTL).
+
+### Decision 3: Database Schema Core
+
+**Decision:** 14-table PostgreSQL schema with JSONB for flexible resume sections. GIN indexes on JSONB. IVFFlat/HNSW on pgvector embedding column. Partial indexes for active resumes. Monthly partitioned ai_usage_logs. Immutable JSONB snapshots for resume versioning.
+
+### Decision 4: tRPC API Contract
+
+**Decision:** tRPC v11 for all internal API. REST at `/api/v1/` for webhooks (Xendit), public share links, future integrations. Core routers: auth, resume, ai (SSE subscriptions), ats, export (job queue), payment, share.
+
+### Decision 5: Template Rendering Pipeline
+
+**Decision:** Templates as React components + JSON config. Single render path: browser DOM (preview) and Puppeteer → PDF (export). Template version pinned per resume. Manual upgrade with diff preview. Switch via Framer Motion `layoutId`.
+
+### Decision 6: Offline & Sync Strategy
+
+**Decision:** Optimistic local-first. IndexedDB via Dexie.js. Debounce 150ms → IndexedDB, 2s → API sync. Field-level last-write-wins conflict resolution. Graceful degradation: cached Kak responses when offline, queued AI requests for reconnect.
