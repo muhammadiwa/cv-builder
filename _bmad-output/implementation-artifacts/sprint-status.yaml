@@ -37,7 +37,7 @@ development_status:
   1-3-database-schema-and-migrations: done
   1-4-user-registration-and-authentication: done
   1-5-pii-stripping-gateway: done
-  1-6-ci-cd-pipeline: ready-for-dev
+  1-6-ci-cd-pipeline: done
   1-7-pwa-service-worker-and-offline-shell: ready-for-dev
   1-8-user-settings-and-account-management: ready-for-dev
   epic-1-retrospective: optional
