@@ -1,18 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { prisma } from '@lolos/database';
 import Redis from 'ioredis';
-import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class UserService {
-  private redis: Redis;
-
-  constructor(config: ConfigService) {
-    this.redis = new Redis({
-      host: config.get('REDIS_HOST', 'localhost'),
-      port: config.get('REDIS_PORT', 6379),
-    });
-  }
+  constructor(@Inject('REDIS') private redis: Redis) {}
 
   async getProfile(userId: string) {
     const user = await prisma.user.findUnique({
@@ -25,24 +17,26 @@ export class UserService {
   }
 
   async updateProfile(userId: string, data: { fullName?: string; phone?: string; photoUrl?: string; languagePreference?: string }) {
-    if (data.fullName || data.photoUrl) {
-      await prisma.userProfile.update({
-        where: { userId },
-        data: {
-          ...(data.fullName !== undefined && { fullName: data.fullName }),
-          ...(data.photoUrl !== undefined && { photoUrl: data.photoUrl }),
-        },
-      });
-    }
-    if (data.phone !== undefined || data.languagePreference !== undefined) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          ...(data.phone !== undefined && { phone: data.phone }),
-          ...(data.languagePreference !== undefined && { languagePreference: data.languagePreference }),
-        },
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      if (data.fullName !== undefined || data.photoUrl !== undefined) {
+        await tx.userProfile.update({
+          where: { userId },
+          data: {
+            ...(data.fullName !== undefined && { fullName: data.fullName }),
+            ...(data.photoUrl !== undefined && { photoUrl: data.photoUrl }),
+          },
+        });
+      }
+      if (data.phone !== undefined || data.languagePreference !== undefined) {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            ...(data.phone !== undefined && { phone: data.phone }),
+            ...(data.languagePreference !== undefined && { languagePreference: data.languagePreference }),
+          },
+        });
+      }
+    });
     return this.getProfile(userId);
   }
 
@@ -65,12 +59,32 @@ export class UserService {
   }
 
   async deleteAccount(userId: string) {
-    // Soft delete: mark as deleted, anonymize PII
-    await prisma.user.update({
-      where: { id: userId },
-      data: { email: `deleted-${userId}@lolos.app`, phone: null },
+    // Invalidate all sessions
+    const sessionKey = `sessions:${userId}`;
+    const tokens = await this.redis.zrange(sessionKey, 0, -1);
+    if (tokens.length > 0) {
+      await Promise.all(tokens.map((t) => this.redis.del(`refresh:${t}`)));
+    }
+    await this.redis.del(sessionKey);
+
+    // Anonymize PII in user + profile (transactional)
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { email: `deleted-${userId}@lolos.app`, phone: null },
+      });
+      await tx.userProfile.update({
+        where: { userId },
+        data: {
+          fullName: '[deleted]',
+          photoUrl: null,
+          linkedinUrl: null,
+          website: null,
+          bio: null,
+        },
+      });
     });
-    // Hard delete after 30 days via cron job
-    return { message: 'Account deletion requested. Data will be purged in 30 days.' };
+
+    return { message: 'Account deleted. Data purged in 30 days.' };
   }
 }
