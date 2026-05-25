@@ -80,7 +80,9 @@
       "Bash(git commit -m 'fix: refactor PII gateway from broken interceptor to injectable service *)",
       "Bash(git commit -m 'feat: implement story 1.6 — CI/CD pipeline *)",
       "Bash(sed -i 's/1-6-ci-cd-pipeline: ready-for-dev/1-6-ci-cd-pipeline: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(rm apps/web/public/icons/README.md)",
+      "Bash(rmdir apps/web/public/icons)"
     ]
   }
 }
