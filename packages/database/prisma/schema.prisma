@@ -1,0 +1,350 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Extensions (must be enabled manually in PostgreSQL)
+// CREATE EXTENSION IF NOT EXISTS vector;
+// ============================================================
+
+enum ResumeStatus {
+  draft
+  published
+  archived
+}
+
+enum SectionType {
+  header
+  summary
+  experience
+  education
+  skills
+  certifications
+  projects
+  languages
+  achievements
+}
+
+enum AISessionType {
+  onboarding
+  interview
+  cover_letter
+  job_match
+}
+
+enum AISessionStatus {
+  active
+  completed
+  expired
+}
+
+enum PlanTier {
+  free
+  pro
+  premium
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  expired
+}
+
+enum ExportFormat {
+  PDF
+  DOCX
+}
+
+enum ExportStatus {
+  queued
+  processing
+  completed
+  failed
+}
+
+enum ShareAccessLevel {
+  public
+  password_protected
+  restricted
+}
+
+// ============================================================
+// Core Tables
+// ============================================================
+
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String?   @unique
+  phone              String?   @unique
+  passwordHash       String?
+  authProvider       String    @default("email") // email, google, linkedin, whatsapp
+  languagePreference String    @default("id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  profile       UserProfile?
+  resumes       Resume[]
+  aiSessions    AISession[]
+  coverLetters  CoverLetter[]
+  jobAnalyses   JobAnalysis[]
+  subscription  Subscription?
+  aiCredits     AiCredit?
+  aiUsageLogs   AiUsageLog[]
+  exportJobs    ExportJob[]
+  shareLinks    ShareLink[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @map("user_id") @db.Uuid
+  fullName    String?  @map("full_name")
+  headline    String?
+  location    String?
+  linkedinUrl String?  @map("linkedin_url")
+  website     String?
+  photoUrl    String?  @map("photo_url")
+  bio         String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_profiles")
+}
+
+model Resume {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  templateId String       @map("template_id") @db.Uuid
+  title      String
+  language   String       @default("id")
+  status     ResumeStatus @default(draft)
+  atsScore   Int?         @map("ats_score")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user      User             @relation(fields: [userId], references: [id])
+  template  Template         @relation(fields: [templateId], references: [id])
+  sections  ResumeSection[]
+  versions  ResumeVersion[]
+  aiSessions AISession[]
+  coverLetters CoverLetter[]
+  jobAnalyses  JobAnalysis[]
+  exportJobs   ExportJob[]
+  shareLinks   ShareLink[]
+
+  @@index([userId])
+  @@map("resumes")
+}
+
+model ResumeSection {
+  id          String      @id @default(uuid()) @db.Uuid
+  resumeId    String      @map("resume_id") @db.Uuid
+  sectionType SectionType @map("section_type")
+  displayOrder Int        @map("display_order")
+  content     Json        @db.JsonB
+  aiGenerated Boolean     @default(false) @map("ai_generated")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([resumeId])
+  @@index([content], type: Gin)
+  @@map("resume_sections")
+}
+
+model ResumeVersion {
+  id            String   @id @default(uuid()) @db.Uuid
+  resumeId      String   @map("resume_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  snapshot      Json     @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([resumeId, versionNumber])
+  @@map("resume_versions")
+}
+
+model Template {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  category     String
+  thumbnailUrl String?  @map("thumbnail_url")
+  config       Json     @db.JsonB
+  isPremium    Boolean  @default(false) @map("is_premium")
+  isActive     Boolean  @default(true) @map("is_active")
+  locale       String   @default("id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  resumes Resume[]
+
+  @@index([category])
+  @@index([isActive, locale])
+  @@map("templates")
+}
+
+// ============================================================
+// AI & Analysis Tables
+// ============================================================
+
+model AISession {
+  id                 String           @id @default(uuid()) @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  resumeId           String?          @map("resume_id") @db.Uuid
+  sessionType        AISessionType   @map("session_type")
+  status             AISessionStatus @default(active)
+  conversationHistory Json            @map("conversation_history") @db.JsonB
+  extractedData      Json?           @map("extracted_data") @db.JsonB
+  tokenUsage         Int             @default(0) @map("token_usage")
+  expiresAt          DateTime        @map("expires_at") @db.Timestamptz()
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user    User    @relation(fields: [userId], references: [id])
+  resume  Resume? @relation(fields: [resumeId], references: [id])
+
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("ai_sessions")
+}
+
+model CoverLetter {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  resumeId       String   @map("resume_id") @db.Uuid
+  jobTitle       String   @map("job_title")
+  companyName    String?  @map("company_name")
+  jobDescription String?  @map("job_description") @db.Text
+  tone           String   @default("professional")
+  content        Json     @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user   User   @relation(fields: [userId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([userId])
+  @@map("cover_letters")
+}
+
+model JobAnalysis {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  resumeId         String   @map("resume_id") @db.Uuid
+  jobDescription   String   @map("job_description") @db.Text
+  matchPercentage  Int?     @map("match_percentage")
+  keywordAnalysis  Json     @default("{}") @map("keyword_analysis") @db.JsonB
+  gapAnalysis      Json     @default("{}") @map("gap_analysis") @db.JsonB
+  suggestions      Json     @default("{}") @db.JsonB
+  embedding        Unsupported("vector(1536)")?
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user   User   @relation(fields: [userId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([userId])
+  // HNSW index on embedding must be created via raw SQL migration:
+  // CREATE INDEX idx_job_analyses_embedding_hnsw ON job_analyses USING hnsw (embedding vector_cosine_ops);
+  @@map("job_analyses")
+}
+
+// ============================================================
+// Monetization Tables
+// ============================================================
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  planTier           PlanTier          @default(free) @map("plan_tier")
+  status             SubscriptionStatus @default(active)
+  paymentMethod      String?           @map("payment_method")
+  xenditInvoiceId    String?           @map("xendit_invoice_id")
+  currentPeriodStart DateTime          @default(now()) @map("current_period_start") @db.Timestamptz()
+  currentPeriodEnd   DateTime          @map("current_period_end") @db.Timestamptz()
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model AiCredit {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  balance           Int      @default(0)
+  monthlyAllocation Int      @default(50) @map("monthly_allocation")
+  monthlyUsed       Int      @default(0) @map("monthly_used")
+  lastResetAt       DateTime @default(now()) @map("last_reset_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("ai_credits")
+}
+
+model AiUsageLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  operationType String   @map("operation_type")
+  modelUsed     String   @map("model_used")
+  tokensIn      Int      @default(0) @map("tokens_in")
+  tokensOut     Int      @default(0) @map("tokens_out")
+  cost          Float    @default(0)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("ai_usage_logs")
+}
+
+// ============================================================
+// Export & Sharing Tables
+// ============================================================
+
+model ExportJob {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  resumeId     String       @map("resume_id") @db.Uuid
+  format       ExportFormat
+  status       ExportStatus @default(queued)
+  fileUrl      String?      @map("file_url")
+  errorMessage String?      @map("error_message") @db.Text
+  cost         Float        @default(0)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+
+  user   User   @relation(fields: [userId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("export_jobs")
+}
+
+model ShareLink {
+  id           String            @id @default(uuid()) @db.Uuid
+  userId       String            @map("user_id") @db.Uuid
+  resumeId     String            @map("resume_id") @db.Uuid
+  uuid         String            @unique @default(uuid()) @db.Uuid
+  passwordHash String?           @map("password_hash")
+  accessLevel  ShareAccessLevel  @default(public) @map("access_level")
+  expiresAt    DateTime?         @map("expires_at") @db.Timestamptz()
+  viewCount    Int               @default(0) @map("view_count")
+  maxViews     Int?              @map("max_views")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+
+  user   User   @relation(fields: [userId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id])
+
+  @@index([uuid])
+  @@index([userId])
+  @@map("share_links")
+}

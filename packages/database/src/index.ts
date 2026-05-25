@@ -1,4 +1,16 @@
 // @lolos/database — Prisma client singleton
-// Client will be instantiated in Story 1.3 after schema models are defined.
+import { PrismaClient } from '@prisma/client';
 
-export {};
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
+
+export * from '@prisma/client';

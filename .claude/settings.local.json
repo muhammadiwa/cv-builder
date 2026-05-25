@@ -52,7 +52,15 @@
       "Bash(git commit -m 'feat: create story 1.2 — design system tokens and Shadcn/ui setup *)",
       "Bash(npx shadcn@latest add button card badge input textarea dialog sheet tabs select toast tooltip skeleton progress command)",
       "Bash(pnpm add *)",
-      "Bash(git commit -m 'feat: implement story 1.2 — design system tokens and Shadcn/ui setup *)"
+      "Bash(git commit -m 'feat: implement story 1.2 — design system tokens and Shadcn/ui setup *)",
+      "Bash(sed -i 's/1-2-design-system-tokens-and-shadcn-ui-setup: ready-for-dev/1-2-design-system-tokens-and-shadcn-ui-setup: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit -m 'chore: mark story 1.2 done — design system tokens complete *)",
+      "Bash(sed -i 's/1-3-database-schema-and-migrations: backlog/1-3-database-schema-and-migrations: ready-for-dev/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit -m 'feat: create story 1.3 — database schema and migrations *)",
+      "Bash(pnpm prisma *)",
+      "Bash(mkdir -p prisma)",
+      "Bash(cp src/schema.prisma prisma/schema.prisma)",
+      "Bash(rm src/schema.prisma)"
     ]
   }
 }
