@@ -1,12 +1,13 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@lolos/database';
 import Redis from 'ioredis';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleDestroy {
   private redis: Redis;
   private readonly SESSION_LIMIT = 5;
 
@@ -16,13 +17,22 @@ export class AuthService {
   ) {
     this.redis = new Redis({
       host: configService.get('REDIS_HOST', 'localhost'),
-      port: configService.get('REDIS_PORT', 6379),
+      port: Number(configService.get('REDIS_PORT', 6379)),
+      retryStrategy: (times) => Math.min(times * 200, 5000),
     });
+  }
+
+  async onModuleDestroy() {
+    await this.redis.quit();
   }
 
   // --- Email/Password ---
 
   async register(email: string, password: string) {
+    if (!email || !password || password.length < 8) {
+      throw new UnauthorizedException('Email and password (min 8 chars) required');
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) throw new UnauthorizedException('Email already registered');
 
@@ -31,13 +41,14 @@ export class AuthService {
       data: { email, passwordHash, authProvider: 'email' },
     });
 
-    // Create default profile
     await prisma.userProfile.create({ data: { userId: user.id } });
 
     return this.issueTokens(user.id);
   }
 
   async login(email: string, password: string) {
+    if (!email || !password) throw new UnauthorizedException('Email and password required');
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user?.passwordHash) throw new UnauthorizedException('Invalid credentials');
 
@@ -55,7 +66,7 @@ export class AuthService {
       : '123456';
 
     await this.redis.set(`otp:${phone}`, otp, 'EX', 300); // 5 min TTL
-    console.log(`[WhatsApp OTP] Sent to ${phone}: ${otp}`);
+    // Production: send via WhatsApp Business API (Twilio/WATI)
     return { message: 'OTP sent' };
   }
 
@@ -79,6 +90,10 @@ export class AuthService {
   // --- OAuth Callback ---
 
   async oAuthLogin(profile: { provider: string; email?: string; name?: string; photoUrl?: string }) {
+    if (!profile.email) {
+      throw new UnauthorizedException('Email not provided by OAuth provider');
+    }
+
     let user = await prisma.user.findUnique({ where: { email: profile.email } });
     if (!user) {
       user = await prisma.user.create({
@@ -94,23 +109,24 @@ export class AuthService {
   // --- Token Management ---
 
   private async issueTokens(userId: string) {
-    const accessToken = this.jwtService.sign({ sub: userId });
-    const refreshToken = this.jwtService.sign(
+    const accessToken = this.jwtService.sign(
       { sub: userId },
-      { secret: this.configService.get('JWT_REFRESH_SECRET'), expiresIn: '7d' },
+      { expiresIn: '15m' },
     );
 
-    // Enforce session limit
+    // Enforce session limit using ZSET (ordered by creation time)
     const sessionKey = `sessions:${userId}`;
-    const count = await this.redis.scard(sessionKey);
+    const count = await this.redis.zcard(sessionKey);
     if (count >= this.SESSION_LIMIT) {
-      const oldest = await this.redis.spop(sessionKey);
-      if (oldest) await this.redis.del(`refresh:${oldest}`);
+      // Remove oldest session (lowest score = earliest timestamp)
+      const oldest = await this.redis.zpopmin(sessionKey);
+      if (oldest?.[0]) await this.redis.del(`refresh:${oldest[0]}`);
     }
 
-    const tokenId = crypto.randomUUID();
+    const tokenId = randomUUID();
+    const now = Date.now();
     await this.redis.set(`refresh:${tokenId}`, userId, 'EX', 7 * 24 * 3600);
-    await this.redis.sadd(sessionKey, tokenId);
+    await this.redis.zadd(sessionKey, now, tokenId);
 
     return { accessToken, refreshToken: tokenId };
   }
@@ -119,22 +135,25 @@ export class AuthService {
     const userId = await this.redis.get(`refresh:${refreshTokenId}`);
     if (!userId) throw new UnauthorizedException('Invalid refresh token');
 
-    // Rotate: invalidate old, issue new
-    await this.redis.del(`refresh:${refreshTokenId}`);
-    await this.redis.srem(`sessions:${userId}`, refreshTokenId);
+    // Issue new tokens FIRST, then rotate
+    const newTokens = await this.issueTokens(userId);
 
-    return this.issueTokens(userId);
+    await this.redis.del(`refresh:${refreshTokenId}`);
+    await this.redis.zrem(`sessions:${userId}`, refreshTokenId);
+
+    return newTokens;
   }
 
   async logout(userId: string, refreshTokenId?: string) {
     if (refreshTokenId) {
       await this.redis.del(`refresh:${refreshTokenId}`);
-      await this.redis.srem(`sessions:${userId}`, refreshTokenId);
+      await this.redis.zrem(`sessions:${userId}`, refreshTokenId);
     } else {
-      // Logout all sessions
       const sessionKey = `sessions:${userId}`;
-      const tokens = await this.redis.smembers(sessionKey);
-      await Promise.all(tokens.map(t => this.redis.del(`refresh:${t}`)));
+      const tokens = await this.redis.zrange(sessionKey, 0, -1);
+      if (tokens.length > 0) {
+        await Promise.all(tokens.map((t) => this.redis.del(`refresh:${t}`)));
+      }
       await this.redis.del(sessionKey);
     }
   }

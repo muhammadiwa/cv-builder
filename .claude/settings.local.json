@@ -65,7 +65,10 @@
       "Bash(git commit -m 'chore: mark story 1.3 done — database schema complete *)",
       "Bash(sed -i 's/1-4-user-registration-and-authentication: backlog/1-4-user-registration-and-authentication: ready-for-dev/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
       "Bash(git commit -m 'feat: create story 1.4 — user registration and authentication *)",
-      "Bash(git commit -m 'feat: implement story 1.4 — user registration and authentication *)"
+      "Bash(git commit -m 'feat: implement story 1.4 — user registration and authentication *)",
+      "Bash(sed -i 's/1-4-user-registration-and-authentication: ready-for-dev/1-4-user-registration-and-authentication: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit -m 'chore: mark story 1.4 done — auth system complete *)",
+      "Bash(git commit -m 'fix: address code review findings for story 1.4 auth system *)"
     ]
   }
 }

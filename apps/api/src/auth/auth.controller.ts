@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Req, UseGuards, Res, HttpCode } from '@nestjs/common';
+import { Controller, Post, Get, Body, Req, UseGuards, Res } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
@@ -15,18 +15,24 @@ export class AuthController {
 
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 300000 } }) // 5 attempts per 5 min
-  async login(@Body() body: { email: string; password: string }) {
-    return this.authService.login(body.email, body.password);
+  async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: Response) {
+    const tokens = await this.authService.login(body.email, body.password);
+    setRefreshCookie(res, tokens.refreshToken);
+    return { accessToken: tokens.accessToken };
   }
 
   @Post('whatsapp/send')
+  @Throttle({ default: { limit: 3, ttl: 3600000 } }) // 3 per hour per IP
   async sendWhatsAppOtp(@Body() body: { phone: string }) {
     return this.authService.sendWhatsAppOtp(body.phone);
   }
 
   @Post('whatsapp/verify')
-  async verifyWhatsAppOtp(@Body() body: { phone: string; otp: string }) {
-    return this.authService.verifyWhatsAppOtp(body.phone, body.otp);
+  @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 per 15 min
+  async verifyWhatsAppOtp(@Body() body: { phone: string; otp: string }, @Res({ passthrough: true }) res: Response) {
+    const tokens = await this.authService.verifyWhatsAppOtp(body.phone, body.otp);
+    setRefreshCookie(res, tokens.refreshToken);
+    return { accessToken: tokens.accessToken };
   }
 
   @Get('google')
@@ -44,7 +50,8 @@ export class AuthController {
       name: req.user.displayName,
       photoUrl: req.user.photos?.[0]?.value,
     });
-    res.redirect(`/?token=${tokens.accessToken}&refresh=${tokens.refreshToken}`);
+    setRefreshCookie(res, tokens.refreshToken);
+    res.redirect(`/dashboard?accessToken=${tokens.accessToken}`);
   }
 
   @Get('linkedin')
@@ -61,18 +68,27 @@ export class AuthController {
       email: req.user.emails?.[0]?.value,
       name: req.user.displayName,
     });
-    res.redirect(`/?token=${tokens.accessToken}&refresh=${tokens.refreshToken}`);
+    setRefreshCookie(res, tokens.refreshToken);
+    res.redirect(`/dashboard?accessToken=${tokens.accessToken}`);
   }
 
   @Post('refresh')
-  async refresh(@Body() body: { refreshToken: string }) {
-    return this.authService.refreshAccessToken(body.refreshToken);
+  async refresh(@Body() body: { refreshToken?: string }, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const tokenId = body.refreshToken || req.cookies?.refreshToken;
+    if (!tokenId) {
+      res.status(401).json({ message: 'Refresh token required' });
+      return;
+    }
+    const tokens = await this.authService.refreshAccessToken(tokenId);
+    setRefreshCookie(res, tokens.refreshToken);
+    return { accessToken: tokens.accessToken };
   }
 
   @Post('logout')
   @UseGuards(AuthGuard('jwt'))
-  async logout(@Req() req: any, @Body() body: { refreshToken?: string }) {
+  async logout(@Req() req: any, @Body() body: { refreshToken?: string }, @Res({ passthrough: true }) res: Response) {
     await this.authService.logout(req.user.userId, body.refreshToken);
+    res.clearCookie('refreshToken', { path: '/', httpOnly: true, secure: true, sameSite: 'lax' });
     return { message: 'Logged out' };
   }
 
@@ -81,4 +97,14 @@ export class AuthController {
   async me(@Req() req: any) {
     return this.authService.getCurrentUser(req.user.userId);
   }
+}
+
+function setRefreshCookie(res: Response, token: string) {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/v1/auth',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
 }
