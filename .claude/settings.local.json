@@ -77,7 +77,10 @@
       "Bash(sed -i 's/1-5-pii-stripping-gateway: ready-for-dev/1-5-pii-stripping-gateway: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
       "Bash(git commit -m 'chore: mark story 1.5 done — PII gateway complete *)",
       "Bash(rm apps/api/src/common/pii-stripping.interceptor.ts)",
-      "Bash(git commit -m 'fix: refactor PII gateway from broken interceptor to injectable service *)"
+      "Bash(git commit -m 'fix: refactor PII gateway from broken interceptor to injectable service *)",
+      "Bash(git commit -m 'feat: implement story 1.6 — CI/CD pipeline *)",
+      "Bash(sed -i 's/1-6-ci-cd-pipeline: ready-for-dev/1-6-ci-cd-pipeline: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit *)"
     ]
   }
 }
