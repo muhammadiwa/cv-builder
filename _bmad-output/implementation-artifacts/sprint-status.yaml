@@ -34,7 +34,7 @@ development_status:
   epic-1: in-progress
   1-1-monorepo-scaffold-with-turborepo: done
   1-2-design-system-tokens-and-shadcn-ui-setup: done
-  1-3-database-schema-and-migrations: backlog
+  1-3-database-schema-and-migrations: ready-for-dev
   1-4-user-registration-and-authentication: backlog
   1-5-pii-stripping-gateway: backlog
   1-6-ci-cd-pipeline: backlog
