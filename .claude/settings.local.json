@@ -8,7 +8,18 @@
       "Bash(python3 *)",
       "PowerShell(New-Item *)",
       "WebSearch",
-      "PowerShell(git add *)"
+      "PowerShell(git add *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'docs: initialize ux design specification for Lolos *)",
+      "Bash(git commit -m 'feat: add three specialized agents — Rupa, Teliti, Cermat *)",
+      "Bash(git commit -m 'docs: add executive summary and core experience to ux design spec *)",
+      "Bash(git commit -m 'chore: update ux design spec step tracking *)",
+      "Bash(git commit -m 'docs: update ux spec with agent feedback — iterative core loop, constraint-based principles, emotional response, failure states *)",
+      "Bash(git commit -m 'docs: add ux pattern analysis with layered inspiration strategy *)",
+      "Bash(git commit -m 'docs: add design system foundation and defining experience to ux spec *)",
+      "Bash(git commit -m 'docs: finalize ux design specification for Lolos *)",
+      "Bash(git commit -m 'docs: add visual component specs and landing page specs *)",
+      "Bash(git commit -m 'feat: generate complete landing page with Next.js, Framer Motion, Tailwind *)"
     ]
   }
 }
