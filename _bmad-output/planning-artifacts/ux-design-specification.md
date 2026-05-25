@@ -1,5 +1,7 @@
 ---
-stepsCompleted: [1, 2, 3, 4, 5, 6]
+stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8, 14]
+lastStep: 14
+status: complete
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -340,3 +342,104 @@ These inform how Kak appears and behaves contextually.
 **Design Tokens:** Extend Tailwind config with Lolos-specific values. Colors: Indigo primary scale (50-950), Violet accent scale. Fonts: Jakarta Sans (display), Inter (body), JetBrains Mono (mono). Spacing: 4px base. Border radius: sm 4px → 2xl 16px. Animation: micro 150ms, fast 200ms, normal 300ms, slow 500ms, spring 1.5s.
 
 **CSS Custom Properties (Light/Dark):** `--background: #fafafa` / `#0f0f11`. `--card: #ffffff` / `#1a1a1e`. `--primary: #6366f1` / `#818cf8`. `--accent: #8b5cf6` / `#a78bfa`. ATS score colors: `--ats-red: #ef4444`, `--ats-amber: #f59e0b`, `--ats-blue: #3b82f6`, `--ats-emerald: #10b981`.
+
+---
+
+## Defining Experience
+
+### The One-Liner
+
+**"Ngobrol 5 menit sama Kak, CV lo jadi — dan robot HRD langsung baca."**
+
+This is what users will tell their friends. The defining interaction is not "building a CV" — it's the moment when conversation becomes document. When Rina realizes Kak actually listened, actually understood her career, and produced something that looks professional.
+
+### User Mental Model
+
+**Current solution:** Indonesian job seekers build CVs in Canva (visual design focus), Microsoft Word (manual formatting), or Google Docs (free but unstructured). They don't know ATS exists. They think a beautiful CV = an effective CV.
+
+**Mental model they bring:** "CV itu kayak poster — makin bagus desainnya, makin dilirik." This is wrong and dangerous. ATS cannot parse beautiful design.
+
+**Mental model we need to teach:** "CV itu kayak formulir pajak — yang penting mesin bisa bacanya. Kak bikin formulir itu tanpa kamu perlu isi manual."
+
+**Where they get confused:** Template selection (decision fatigue), section ordering (what goes first?), keyword optimization (what words matter?), format rules (photo or no photo?).
+
+**Where they get frustrated:** Manual text editing on phone, re-typing the same information for different applications, not knowing why their CV was rejected.
+
+### Success Criteria for Core Experience
+
+1. **"Ini gue banget."** User sees their CV preview and recognizes themselves in it — not generic AI filler.
+2. **"Gampang banget."** Zero friction from first Kak message to first CV preview. Under 10 minutes for a fresh grad with no CV experience.
+3. **"Skor gue naik."** User sees tangible improvement from their first score. The aha moment: "Oh, CV gue ternyata perlu dioptimasi — dan gue bisa."
+4. **"Langsung kepake."** Export is instant. Format is correct for the target platform. File name is clean. No manual reformatting needed.
+
+### Novel vs. Established Patterns
+
+**Novel:** Conversational AI as the primary CV creation interface. No competitor does this. Kak is the differentiator. This requires user education — the first Kak message must establish "why conversation, not form."
+
+**Established (adopted):** Chat UI (WhatsApp pattern — familiar to 96% of Indonesians), structured editor (Notion/Google Docs — familiar to most), score/gauge visualization (fitness apps — familiar concept).
+
+**Combined innovatively:** Chat flows naturally into a structured document. The conversation IS the form — users don't perceive they're "filling fields." This is the novel synthesis: familiar chat pattern producing structured, ATS-validated output.
+
+### Experience Mechanics
+
+**Initiation:** Kak greets. No blank screen. No decision required. First message within 1 second.
+
+**Interaction:** User responds to Kak's questions in natural language. Kak extracts, validates, and structures. After 12 questions (adaptive by career stage), Kak announces completion.
+
+**Feedback:** Micro-coaching per section. ATS score with anchor context. One-click improvements. Progress indicators at every step.
+
+**Completion:** CV preview reveal with celebration animation. ATS score ring. "Siap Apply" when score ≥80 or user marks as done. Export → Share → Kak remembers for next time.
+
+---
+
+## Visual Design Foundation
+
+### Color System
+
+**Primary:** Indigo `#6366f1` (light) / `#818cf8` (dark) — buttons, links, active states.
+
+**Accent:** Violet `#8b5cf6` (light) / `#a78bfa` (dark) — AI features, Kak branding, gradient accents.
+
+**Semantic:** Success (Emerald `#10b981`), Warning (Amber `#f59e0b`), Error (Red `#ef4444`), Info (Blue `#3b82f6`).
+
+**Background:** `#fafafa` (light page) / `#0f0f11` (dark page), `#ffffff` (light card) / `#1a1a1e` (dark card), `#242428` (dark elevated).
+
+**ATS Score Gradient:** Red (0-40) → Amber (41-65) → Blue (66-85) → Emerald (86-100).
+
+**Accessibility:** All text/background pairs meet WCAG 2.1 AA minimum (4.5:1 normal text, 3:1 large text). Indigo on white: 5.2:1. Violet on white: 4.7:1.
+
+### Typography System
+
+**Display:** Jakarta Sans — headings, hero text, Kak messages. Warm geometry, Indonesian-optimized glyphs (proper diacritics).
+
+**Body:** Inter — UI text, editor content, labels. Excellent multilingual support, highly readable at 14-16px.
+
+**Mono:** JetBrains Mono — ATS analysis display, code views (13px).
+
+**Scale:** h1 32px/700, h2 24px/600, h3 20px/600, body 15px/400, small 13px/400, micro 12px/500.
+
+**Line heights:** headings 1.3, body 1.6.
+
+### Spacing & Layout Foundation
+
+**Base unit:** 4px (Tailwind convention).
+
+**Content max-width:** 1280px desktop. Full-width mobile.
+
+**Sidebar:** 64px collapsed (icon-only), 280px expanded. AI panel: 360px default, draggable to 480px.
+
+**Card padding:** 24px. Section gap: 32px. Item gap: 12px.
+
+**Grid:** 12-column, 16px column gap, 24px row gap.
+
+**Layout principles:** Content-first — editor canvas central, panels contextual. Mobile: single-column with bottom sheets (70vh). Desktop: 3-panel (nav | canvas | AI). Whitespace generous — CV editing is focus work, not dashboard scanning.
+
+### Accessibility Foundation
+
+- **WCAG 2.1 AA** minimum for all UI. AAA where reasonable (large text contrast).
+- **Keyboard navigation:** Complete Tab order through editor sections, toolbar, panels, modals.
+- **Screen reader:** All UI elements have descriptive aria-labels. PDF output includes tagged PDF structure for screen reader compatibility.
+- **axe-core CI gate:** 0 critical violations before every release. Scanned per PR.
+- **Touch targets:** Minimum 44×44px. Mobile-optimized for thumb reach.
+- **Reduced motion:** `prefers-reduced-motion` respected — animations degrade to instant opacity transitions.
+- **Color is never the sole indicator of state:** Icons + text labels always accompany status dots and score colors.
