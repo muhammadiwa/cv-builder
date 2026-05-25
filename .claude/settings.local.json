@@ -82,7 +82,9 @@
       "Bash(sed -i 's/1-6-ci-cd-pipeline: ready-for-dev/1-6-ci-cd-pipeline: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
       "Bash(git commit *)",
       "Bash(rm apps/web/public/icons/README.md)",
-      "Bash(rmdir apps/web/public/icons)"
+      "Bash(rmdir apps/web/public/icons)",
+      "Bash(sed -i 's/epic-1-retrospective: optional/epic-1-retrospective: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(sed -i 's/epic-1: in-progress/epic-1: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)"
     ]
   }
 }
