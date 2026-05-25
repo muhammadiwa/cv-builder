@@ -16,10 +16,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function Providers({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(false);
   const [lang, setLang] = useState<Language>("id");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
     const stored = localStorage.getItem("darkMode");
     if (stored === "true" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
       setIsDark(true);
@@ -33,10 +31,6 @@ export function Providers({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle("dark", next);
     localStorage.setItem("darkMode", String(next));
   };
-
-  if (!mounted) {
-    return <>{children}</>;
-  }
 
   return (
     <AppContext.Provider value={{ lang, setLang, isDark, toggleDark }}>
