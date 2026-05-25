@@ -32,7 +32,7 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   epic-1: in-progress
-  1-1-monorepo-scaffold-with-turborepo: in-progress
+  1-1-monorepo-scaffold-with-turborepo: done
   1-2-design-system-tokens-and-shadcn-ui-setup: backlog
   1-3-database-schema-and-migrations: backlog
   1-4-user-registration-and-authentication: backlog
