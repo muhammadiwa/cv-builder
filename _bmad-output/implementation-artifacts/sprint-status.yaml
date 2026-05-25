@@ -39,7 +39,7 @@ development_status:
   1-5-pii-stripping-gateway: done
   1-6-ci-cd-pipeline: done
   1-7-pwa-service-worker-and-offline-shell: done
-  1-8-user-settings-and-account-management: ready-for-dev
+  1-8-user-settings-and-account-management: done
   epic-1-retrospective: optional
 
   epic-2: backlog
