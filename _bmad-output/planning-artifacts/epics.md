@@ -1,5 +1,7 @@
 ---
-stepsCompleted: [1, 2, 3]
+stepsCompleted: [1, 2, 3, 4]
+lastStep: 4
+status: complete
 inputDocuments:
   - prd-cv-builder-2026-05-25/prd.md
   - architecture.md
