@@ -1,0 +1,4 @@
+
+> @lolos/api@0.0.1 typecheck D:\Project\cv-builder\apps\api
+> tsc --noEmit
+

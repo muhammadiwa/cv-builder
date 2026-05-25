@@ -1,0 +1,4 @@
+
+> @lolos/validators@0.0.1 typecheck D:\Project\cv-builder\packages\validators
+> tsc --noEmit
+
