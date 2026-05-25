@@ -53,3 +53,6 @@ temp/
 
 # Local development
 *.local
+
+# Claude/Bmad internal
+.claude/scheduled_tasks.lock
