@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2]
+stepsCompleted: [1, 2, 3]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
