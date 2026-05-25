@@ -1,13 +1,4 @@
-import {
-  Injectable,
-  NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { prisma } from '@lolos/database';
 
 // PII fields and their placeholder replacements
@@ -40,39 +31,61 @@ const PII_PLACEHOLDERS: Record<string, string> = {
   linkedin_url: '[USER_URL]',
 };
 
-// Reverse map: placeholder → field name
 const PLACEHOLDER_TO_FIELD: Record<string, string> = {};
 for (const [field, placeholder] of Object.entries(PII_PLACEHOLDERS)) {
   PLACEHOLDER_TO_FIELD[placeholder] = field;
 }
 
-// Export for use by PII injection service
 export { PII_PLACEHOLDERS, PLACEHOLDER_TO_FIELD, PII_KEYS };
 
 @Injectable()
-export class PiiStrippingInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const userId = request.user?.userId;
-
-    return next.handle().pipe(
-      map((data) => {
-        // Strip PII from the request body before it goes out
-        if (request.body) {
-          this.stripPiiFromObject(request.body, userId);
-        }
-        return data;
-      }),
-    );
+export class PiiGatewayService {
+  /**
+   * Strip PII from any payload object. Called by AI gateway services BEFORE
+   * sending data to external LLM APIs. Returns a deep clone with PII replaced.
+   * Original object is NOT mutated.
+   */
+  stripPii(payload: any, userId?: string): any {
+    const clone = JSON.parse(JSON.stringify(payload));
+    this.stripFromObject(clone, userId);
+    return clone;
   }
 
-  private stripPiiFromObject(obj: any, userId?: string, path: string = 'root'): void {
+  /**
+   * Verify that a payload is PII-clean before sending to external LLM API.
+   * Throws InternalServerErrorException if PII is detected.
+   */
+  verifyPiiClean(payload: any): void {
+    const result = PiiGatewayService.detectPiiLeak(payload);
+    if (result.leaked) {
+      console.error(
+        `[PII GATEWAY] BLOCKED outbound payload: PII leaked in fields: ${result.fields.join(', ')}`,
+      );
+      throw new InternalServerErrorException(
+        'PII detected in outbound payload — request blocked',
+      );
+    }
+  }
+
+  /**
+   * Combined: strip + verify. The main entry point for AI gateway services.
+   * Returns PII-safe payload ready for LLM API call.
+   */
+  sanitize(payload: any, userId?: string): any {
+    const clean = this.stripPii(payload, userId);
+    this.verifyPiiClean(clean);
+    return clean;
+  }
+
+  // ---- Private helpers ----
+
+  private stripFromObject(obj: any, userId?: string, path: string = 'root'): void {
     if (!obj || typeof obj !== 'object') return;
 
     if (Array.isArray(obj)) {
       for (let i = 0; i < obj.length; i++) {
         if (typeof obj[i] === 'object') {
-          this.stripPiiFromObject(obj[i], userId, `${path}[${i}]`);
+          this.stripFromObject(obj[i], userId, `${path}[${i}]`);
         } else if (typeof obj[i] === 'string') {
           obj[i] = this.maskPiiText(obj[i]);
         }
@@ -85,9 +98,9 @@ export class PiiStrippingInterceptor implements NestInterceptor {
 
       if (PII_KEYS.has(key) && typeof value === 'string' && value.length > 0) {
         obj[key] = PII_PLACEHOLDERS[key] || `[USER_${key.toUpperCase()}]`;
-        this.auditLog(userId, 'pii_strip', key, value, `${path}.${key}`);
+        this.auditLog(userId, key, `${path}.${key}`);
       } else if (typeof value === 'object' && value !== null) {
-        this.stripPiiFromObject(value, userId, `${path}.${key}`);
+        this.stripFromObject(value, userId, `${path}.${key}`);
       } else if (typeof value === 'string') {
         obj[key] = this.maskPiiText(value);
       }
@@ -102,11 +115,7 @@ export class PiiStrippingInterceptor implements NestInterceptor {
     return masked;
   }
 
-  /**
-   * Auto-fail check: scan the final outbound payload for any PII that survived stripping.
-   * Called by AI gateway before sending to external LLM API.
-   */
-  static detectPiiLeak(payload: any): { leaked: boolean; fields: string[] } {
+  private static detectPiiLeak(payload: any): { leaked: boolean; fields: string[] } {
     const leaked: string[] = [];
     const json = JSON.stringify(payload);
 
@@ -116,7 +125,6 @@ export class PiiStrippingInterceptor implements NestInterceptor {
       }
     }
 
-    // Also check for known placeholder escapes (someone trying to bypass stripping)
     if (json.includes('ignore previous instructions') || json.includes('forget all')) {
       leaked.push('prompt_injection_attempt');
     }
@@ -124,18 +132,16 @@ export class PiiStrippingInterceptor implements NestInterceptor {
     return { leaked: leaked.length > 0, fields: leaked };
   }
 
-  private auditLog(userId: string | undefined, operation: string, field: string, originalValue: string, location: string) {
-    // Log to console in development, to DB in production
+  private auditLog(userId: string | undefined, field: string, location: string) {
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[PII Strip] userId=${userId || 'anon'} field=${field} location=${location}`);
       return;
     }
 
-    // Async fire-and-forget audit logging (don't block the request)
     prisma.aiUsageLog.create({
       data: {
         userId: userId || 'system',
-        operationType: operation,
+        operationType: 'pii_strip',
         modelUsed: 'pii-gateway',
         tokensIn: 0,
         tokensOut: 0,

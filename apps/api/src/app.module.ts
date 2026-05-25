@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
-import { PiiStrippingInterceptor } from './common/pii-stripping.interceptor';
+import { PiiGatewayService } from './common/pii-gateway.service';
 import { PiiInjectionService } from './common/pii-injection.service';
 
 @Module({
@@ -17,12 +17,9 @@ import { PiiInjectionService } from './common/pii-injection.service';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: PiiStrippingInterceptor,
-    },
+    PiiGatewayService,
     PiiInjectionService,
   ],
-  exports: [PiiInjectionService],
+  exports: [PiiGatewayService, PiiInjectionService],
 })
 export class AppModule {}

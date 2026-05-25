@@ -73,7 +73,11 @@
       "Bash(git commit -m 'feat: create story 1.5 — PII stripping gateway *)",
       "Bash(sed -i -e 's/1-6-ci-cd-pipeline: backlog/1-6-ci-cd-pipeline: ready-for-dev/' -e 's/1-7-pwa-service-worker-and-offline-shell: backlog/1-7-pwa-service-worker-and-offline-shell: ready-for-dev/' -e 's/1-8-user-settings-and-account-management: backlog/1-8-user-settings-and-account-management: ready-for-dev/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
       "Bash(git commit -m 'feat: create stories 1.6, 1.7, 1.8 — CI/CD, PWA, user settings *)",
-      "Bash(git commit -m 'feat: implement story 1.5 — PII stripping gateway *)"
+      "Bash(git commit -m 'feat: implement story 1.5 — PII stripping gateway *)",
+      "Bash(sed -i 's/1-5-pii-stripping-gateway: ready-for-dev/1-5-pii-stripping-gateway: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit -m 'chore: mark story 1.5 done — PII gateway complete *)",
+      "Bash(rm apps/api/src/common/pii-stripping.interceptor.ts)",
+      "Bash(git commit -m 'fix: refactor PII gateway from broken interceptor to injectable service *)"
     ]
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@lolos/database';
-import { PII_PLACEHOLDERS } from './pii-stripping.interceptor';
+import { PII_PLACEHOLDERS } from './pii-gateway.service';
 
 @Injectable()
 export class PiiInjectionService {
