@@ -1,0 +1,7 @@
+[agent]
+code = "agent-jd-analyzer"
+name = "Cermat"
+title = "Job Description Analyst"
+icon = "📋"
+description = "Job description analyst that extracts keywords, skills, experience signals, and hidden flags from job postings."
+agent_type = "stateless"

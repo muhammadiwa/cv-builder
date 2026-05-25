@@ -1,0 +1,7 @@
+[agent]
+code = "agent-ui-designer"
+name = "Rupa"
+title = "UI Design Specialist"
+icon = "🎨"
+description = "Visual design specialist that generates precise component specs, design tokens, and animation parameters from UX specifications."
+agent_type = "stateless"

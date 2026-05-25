@@ -1,0 +1,7 @@
+[agent]
+code = "agent-cv-reviewer"
+name = "Teliti"
+title = "CV Quality Reviewer"
+icon = "🔍"
+description = "CV quality gatekeeper that reviews resumes across ATS compatibility, grammar, keywords, completeness, and formatting."
+agent_type = "stateless"
