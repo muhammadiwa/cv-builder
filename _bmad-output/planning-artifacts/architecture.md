@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3, 4]
+stepsCompleted: [1, 2, 3, 4, 5, 6]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -173,3 +173,208 @@ Routing: Primary → Secondary → Tertiary fallback. Premium users get priority
 ### Decision 6: Offline & Sync Strategy
 
 **Decision:** Optimistic local-first. IndexedDB via Dexie.js. Debounce 150ms → IndexedDB, 2s → API sync. Field-level last-write-wins conflict resolution. Graceful degradation: cached Kak responses when offline, queued AI requests for reconnect.
+
+---
+
+## Implementation Patterns & Consistency Rules
+
+### Naming Patterns
+
+**Database:** `snake_case` tables and columns. `users`, `resume_sections`, `ai_usage_logs`. Foreign keys: `{table}_id`. Indexes: `idx_{table}_{column}`. GIN indexes: `idx_{table}_{column}_gin`.
+
+**API:** tRPC routers `camelCase`: `resume.create`, `ai.interview.stream`. REST: `/api/v1/resumes/:id`. Headers: `X-Lolos-*`.
+
+**Code:** PascalCase components (`ResumeCanvas`), camelCase functions (`getResumeById`), UPPER_SNAKE constants (`MAX_AI_CREDITS`). Files: PascalCase components, kebab-case utilities.
+
+### Structure Patterns
+
+**Tests:** Co-located `__tests__/` per module. `*.test.ts` unit, `*.integration.test.ts` integration, `tests/e2e/` E2E.
+
+**Components:** Feature-based. `features/resume/ResumeEditor.tsx`. Shared UI: `components/ui/` (Shadcn). Layout: `components/layout/`.
+
+**API Modules:** NestJS per domain: `auth/`, `resume/`, `ai/`, `ats/`, `export/`, `payment/`, `share/`. Each: `*.module.ts`, `*.controller.ts`, `*.service.ts`, `*.dto.ts`.
+
+### Format Patterns
+
+**API:** `{ data: T }` success. `{ error: { code, message } }` errors. ISO 8601 dates. `TIMESTAMPTZ` PostgreSQL. `camelCase` JSON keys in API, `snake_case` in DB JSONB.
+
+### Process Patterns
+
+**Errors:** Global `HttpExceptionFilter` (NestJS), `ErrorBoundary` (Next.js). Friendly Indonesian user messages. Structured logs with trace IDs.
+
+**Loading:** `loading.tsx` per route. IDLE→LOADING→SUCCESS/ERROR. Skeleton screens match layout.
+
+**AI Streaming:** SSE via Vercel AI SDK. Token-by-token with contextual typing indicators.
+
+### Enforcement
+
+**ESLint:** `naming-convention`, `no-console`, `no-unused-vars`. **Prettier:** single config 100 chars. **CI Gates:** lint + typecheck + test must pass.
+
+---
+
+## Project Structure & Boundaries
+
+### Complete Project Tree
+
+```
+lolos/
+├── turbo.json
+├── pnpm-workspace.yaml
+├── package.json                    # Root: scripts, devDependencies, only-allow pnpm
+│
+├── packages/
+│   ├── validators/
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts            # Barrel export
+│   │       ├── resume.schema.ts    # Resume, Section, Template types + Zod schemas
+│   │       ├── user.schema.ts      # User, Profile, Subscription types
+│   │       ├── ai.schema.ts        # AISession, AIExtraction, ATS analysis types
+│   │       ├── payment.schema.ts   # Payment, Credit, Subscription types
+│   │       └── api.contract.ts     # tRPC router input/output types
+│   │
+│   └── database/
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── index.ts            # Prisma client singleton export
+│           ├── schema.prisma       # Full Prisma schema (14+ models)
+│           ├── migrations/         # Prisma migration history
+│           ├── seed.ts             # Dev seed data (templates, sample resumes)
+│           └── test-utils.ts       # Test database helpers
+│
+├── apps/
+│   ├── web/                        # Next.js 14+ App Router
+│   │   ├── package.json
+│   │   ├── next.config.js
+│   │   ├── tailwind.config.ts
+│   │   ├── tsconfig.json
+│   │   ├── public/                 # Static assets, PWA manifest, icons
+│   │   ├── app/
+│   │   │   ├── layout.tsx          # Root layout (providers, fonts, metadata)
+│   │   │   ├── page.tsx            # Landing page
+│   │   │   ├── globals.css         # Tailwind + CSS custom properties
+│   │   │   ├── providers.tsx       # ThemeProvider, AuthProvider, QueryClient
+│   │   │   ├── (marketing)/        # Landing page route group (SSG)
+│   │   │   │   ├── page.tsx
+│   │   │   │   └── loading.tsx
+│   │   │   ├── (dashboard)/        # Authenticated routes
+│   │   │   │   ├── layout.tsx      # Sidebar + header shell
+│   │   │   │   ├── page.tsx        # Dashboard home
+│   │   │   │   ├── resume/
+│   │   │   │   │   └── [id]/
+│   │   │   │   │       ├── page.tsx         # Editor page (Client Component)
+│   │   │   │   │       └── loading.tsx      # Editor skeleton
+│   │   │   │   ├── templates/
+│   │   │   │   │   └── page.tsx     # Template gallery
+│   │   │   │   └── settings/
+│   │   │   │       └── page.tsx     # User settings
+│   │   │   ├── api/                # Next.js API routes (tRPC + REST)
+│   │   │   │   ├── trpc/
+│   │   │   │   │   └── [trpc]/
+│   │   │   │   │       └── route.ts        # tRPC HTTP handler
+│   │   │   │   └── v1/             # REST endpoints (webhooks, public)
+│   │   │   │       └── webhooks/
+│   │   │   │           └── xendit/
+│   │   │   │               └── route.ts    # Xendit payment callbacks
+│   │   │   └── cv/
+│   │   │       └── [uuid]/
+│   │   │           └── page.tsx     # Public shareable CV page
+│   │   ├── components/
+│   │   │   ├── ui/                  # Shadcn/ui primitives
+│   │   │   ├── layout/              # Navbar, Sidebar, Footer, StatusBar
+│   │   │   ├── editor/              # ResumeCanvas, SectionBlock, Toolbar
+│   │   │   ├── ai/                  # ChatBubble, StreamingText, AIPanel
+│   │   │   ├── ats/                 # ScoreRing, CategoryCard, SuggestionCard
+│   │   │   ├── templates/           # TemplateCard, TemplateGallery
+│   │   │   ├── export/              # ExportDialog, ProgressIndicator
+│   │   │   └── landing/             # Hero, HowItWorks, Pricing, FAQ, etc.
+│   │   ├── features/
+│   │   │   ├── auth/                # useAuth, AuthGuard, LoginForm
+│   │   │   ├── resume/              # useResume, useResumeHistory, auto-save
+│   │   │   ├── ai/                  # useInterview, useStreamingText
+│   │   │   ├── ats/                 # useATSScore, ATS worker (Web Worker)
+│   │   │   ├── templates/           # useTemplate, template registry
+│   │   │   ├── export/              # useExport, usePDFGeneration
+│   │   │   └── payment/             # useCheckout, useCredits
+│   │   ├── hooks/                   # useDebounce, useMediaQuery, useAutoSave
+│   │   ├── lib/                     # api-client, ats-engine, pdf-utils
+│   │   └── stores/                  # Zustand: editorStore, aiStore, appStore
+│   │
+│   ├── api/                         # NestJS/TypeScript
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── nest-cli.json
+│   │   └── src/
+│   │       ├── main.ts              # Bootstrap, global pipes/guards/filters
+│   │       ├── app.module.ts        # Root module imports
+│   │       ├── common/              # Shared: guards, interceptors, filters, decorators
+│   │       │   ├── pii-stripping.interceptor.ts   # PII gateway (architectural invariant)
+│   │       │   ├── token-budget.guard.ts          # AI cost per-call enforcement
+│   │       │   ├── rate-limit.guard.ts
+│   │       │   └── exception.filter.ts            # Global HTTP exception handler
+│   │       ├── auth/
+│   │       │   ├── auth.module.ts
+│   │       │   ├── auth.controller.ts    # Login, logout, refresh, WhatsApp OTP
+│   │       │   ├── auth.service.ts       # JWT issuance, token rotation
+│   │       │   └── auth.guard.ts         # JWT verification guard
+│   │       ├── resume/
+│   │       │   ├── resume.module.ts
+│   │       │   ├── resume.service.ts     # CRUD, versioning, template assignment
+│   │       │   └── resume.trpc.ts        # tRPC router (internal API)
+│   │       ├── ai/
+│   │       │   ├── ai.module.ts
+│   │       │   ├── ai.service.ts         # Model routing, prompt assembly, extraction
+│   │       │   ├── ai.gateway.ts         # LLM provider abstraction (OpenAI/Anthropic/Google)
+│   │       │   ├── ai-stream.service.ts  # SSE streaming handler
+│   │       │   └── ai.trpc.ts
+│   │       ├── ats/
+│   │       │   ├── ats.module.ts
+│   │       │   ├── ats.service.ts        # 6-dimension scoring engine
+│   │       │   ├── ats.rules/            # Platform-specific validation rules (JSON)
+│   │       │   └── ats.trpc.ts
+│   │       ├── export/
+│   │       │   ├── export.module.ts
+│   │       │   ├── export.service.ts     # Queue PDF/DOCX generation jobs
+│   │       │   └── export.trpc.ts
+│   │       ├── payment/
+│   │       │   ├── payment.module.ts
+│   │       │   ├── payment.service.ts    # Xendit integration
+│   │       │   ├── payment.controller.ts # REST webhooks
+│   │       │   └── payment.trpc.ts
+│   │       ├── share/
+│   │       │   ├── share.module.ts
+│   │       │   ├── share.service.ts      # UUID link generation, access control
+│   │       │   └── share.trpc.ts
+│   │       └── analytics/
+│   │           ├── analytics.module.ts
+│   │           └── analytics.service.ts   # AI usage tracking, cost attribution
+│   │
+│   └── workers/                     # BullMQ workers
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── main.ts              # Worker bootstrap, queue registration
+│           ├── pdf.worker.ts        # Puppeteer PDF generation (browser pool)
+│           ├── ai.worker.ts         # AI batch processing, async extraction
+│           └── email.worker.ts      # Transactional email via SES
+│
+└── config/
+    ├── eslint.config.js             # Shared ESLint config
+    └── prettier.config.js           # Shared Prettier config
+```
+
+### Component → FR Mapping
+
+| Directory | FRs Covered |
+|-----------|------------|
+| `apps/web/features/ai/` | FR-1 (Adaptive Question Flow), FR-2 (Streaming Chat), FR-3 (Extraction), FR-4 (Persistence), FR-5 (CV Handoff) |
+| `apps/web/features/resume/` | FR-6 (Section Editing), FR-7 (AI Inline Rewrite), FR-8 (Multi-Panel), FR-9 (Auto-Save) |
+| `apps/web/features/ats/` | FR-10 (Scoring), FR-11 (Visualization), FR-12 (Quick Fix), FR-13 (Indonesian ATS) |
+| `apps/web/components/templates/` | FR-14 (Selection), FR-15 (Definition) |
+| `apps/web/features/export/` | FR-16 (PDF), FR-17 (DOCX V2), FR-18 (Queue) |
+| `apps/web/features/auth/`, `apps/web/app/cv/[uuid]/` | FR-19 (Share Link), FR-20 (Referral), FR-21 (Auth) |
+| `apps/api/ai/` | AI Gateway, PII Stripping, Model Routing, Streaming |
+| `apps/api/ats/` | Scoring Engine, Platform Rules, Keyword Analysis |
+| `apps/workers/` | PDF Rendering, AI Batch, Email |
