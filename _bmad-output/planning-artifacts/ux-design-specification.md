@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [1, 2, 3]
+stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - brief-cv-builder-2026-05-24/brief.md
   - prd-cv-builder-2026-05-25/prd.md
@@ -51,7 +51,11 @@ The core experience is a **conversation that produces a document.** The interact
 3. **Understand Your Score** — ATS score animates in with context. "78/100 — lumayan untuk draft pertama. Rata-rata fresh grad di posisi ini: 62. Yuk kita tingkatkan."
 4. **Polish & Export** — Edit in the structured editor, get AI suggestions, switch templates, export to PDF.
 
-**Core loop:** Chat → Preview → Score → Edit → Export → Share
+**Core loop (iterative, not linear):** Chat ⇄ Preview ⇄ Score ⇄ Reflect ⇄ Edit ⇄ Export → Share
+
+The core loop is a conversation, not an assembly line. Users iterate: they chat, see a preview, get a score, reflect on what to improve, edit, score again, and loop until satisfied. The product must support this back-and-forth — never forcing the user forward before they're ready.
+
+**"Done" criteria:** ATS score ≥80, or user explicitly marks CV as "Siap Apply." Without a clear exit, users loop forever or give up.
 
 ### Platform Strategy
 
@@ -59,34 +63,131 @@ The core experience is a **conversation that produces a document.** The interact
 - **Secondary:** Desktop web (responsive, not a separate app).
 - **Not in V1:** Native iOS/Android apps. PWA provides offline, install, and push notification capabilities sufficient for V1-V2.
 - **Key constraints:** Mid-range Android devices (Samsung A-series, Xiaomi Redmi, Oppo A-series). 4G connections with variable reliability (urban 10Mbps+, rural 2-5Mbps). Users are data-conscious — keep bundle sizes small.
-- **Offline:** Resume editing works offline. AI features require connectivity — graceful degradation with clear offline indicator.
+- **Offline behavior:** Resume editing works offline (IndexedDB). AI features require connectivity — degrade gracefully: cached responses where possible, clear "Kak sedang offline" banner, never lose typed content, queue AI requests for when connectivity returns.
+- **Input tension acknowledged:** Typing a full work history on a phone is painful. Kak uses chat as primary input but interleaves structured quick-picks (tap to select skills, choose from suggestions) and offers voice input for longer responses. Goal: minimize free-text typing on mobile, maximize structured input.
 
 ### Effortless Interactions
 
 What should feel magical:
-- **Zero-setup start.** User clicks "Buat CV Gratis," Kak greets them. No template selection, no form fields, no decisions before value delivery.
-- **Auto-save always.** Never a save button. Progress persists through browser close, connection loss, app switch. User returns exactly where they left off.
-- **One-click fixes.** ATS suggestions are actionable in one tap. "Tambah keyword 'SQL'" → tap → keyword added to skills section. No manual editing required.
-- **Template switching without data loss.** Change templates anytime. CV data persists. Switching is an animation, not a migration.
-- **Share in two taps.** Tap share → WhatsApp opens with pre-filled message + CV link. No copy-paste, no file management.
+- **Warm entry, not blank screen.** User never sees an empty chat. Kak always greets first: "Halo! Aku Kak, asisten karirmu. Ceritain sedikit tentang dirimu — jurusan apa? Ada pengalaman yang paling kamu banggakan?" First message arrives within 1 second of page load on mid-range Android.
+- **Auto-save always.** Never a save button. Progress persists through browser close, connection loss, app switch. Auto-save indicator visible: green dot = synced, yellow = pending, red = offline.
+- **One-click improvements** (not "one-click fix everything"). ATS keyword suggestions: tap to add. Formatting cleanup: one button. Grammar fixes: accept/reject inline. Each suggestion scoped to one specific change — never "AI fix everything" which erodes trust.
+- **Template switching without data loss.** Change templates anytime. CV data persists. Switching is an animation (Framer Motion `layoutId` morph), not a migration.
+- **Share in two taps.** Tap share → native share sheet (Web Share API) → WhatsApp opens with pre-filled message + CV link. No copy-paste, no file management.
 
 ### Critical Success Moments
 
-1. **First Kak message.** User's first interaction with the AI persona. Must feel warm, natural, and immediately useful — not robotic or overwhelming. "Halo! Aku Kak, asisten karirmu. Yuk kita bikin CV bareng. Kamu lulusan jurusan apa?"
+1. **First Kak message.** The make-or-break moment. Kak must deliver a warm, specific greeting within 1 second of page load on mid-range Android. The first message sets the tone for the entire relationship: natural, curious, helpful — not robotic. "Halo! Aku Kak, asisten karirmu. Yuk kita bikin CV bareng. Ceritain dikit ya — kamu lulusan apa? Atau lagi kuliah?"
 
-2. **CV Preview reveal.** The moment the conversation becomes a document. Must feel like magic: "Kak benar-benar bikin CV dari obrolan kita." Animation, progressive reveal, celebration cues.
+2. **CV Preview reveal.** The Hero's Journey climax: the conversation becomes a document. 300ms crossfade from chat to CV rendered in the default template. ATS score ring animates from 0 to score over 1.5 seconds (spring physics). The preview proves Kak truly listened — this is the user's story, structured.
 
-3. **First ATS score.** Defines the user's relationship with the product. If score is low, user feels helped, not judged. If high, user feels proud and wants to share. Score must always come with actionable next step.
+3. **First ATS score.** Defines the emotional relationship with the product. Critical framing rules:
+   - Never show a raw score number first. Always with anchor context.
+   - Low score (<50): "Ini awal yang bagus — semua orang mulai dari sini. Yuk kita tingkatkan bareng."
+   - One immediate, high-impact suggestion visible.
+   - Score is always a *growth meter*, not a judgment.
+   - The word "nilai" (grade) must never appear — use "skor" with growth framing.
 
-4. **First export.** User downloads PDF or shares link. Must work flawlessly on mobile. Download starts immediately, naming is clean, file opens correctly.
+4. **First export.** Must work flawlessly on mobile. Download starts immediately with progress indicator. File naming is clean: `CV_Rina_Sari_ContentWriter.pdf`. Platform-specific format guidance: "Kirim ke Jobstreet? Pakai PDF. Kirim langsung ke HRD? DOCX lebih disukai di Indonesia."
 
-5. **First return visit.** User comes back days later. Kak remembers them, their CV is exactly as they left it, and there's a helpful suggestion waiting.
+5. **First return visit.** Kak remembers the user's name, CV is exactly as they left it. Kak has a relevant suggestion waiting: "Hai Rina! CV kamu udah 78 minggu lalu. Ada lowongan Content Writer baru di Gojek — mau Kak bantu sesuaikan?"
 
-### Experience Principles
+### Kak Relationship Arc
 
-1. **Conversation over configuration.** Every interaction starts with talking, not clicking. Forms and menus are fallbacks, not defaults.
-2. **Reveal, don't dump.** Show results progressively. CV preview before full editor. Score context before raw number. One suggestion at a time.
-3. **Coach, not judge.** Every ATS score comes with "here's how to improve." Every issue has a one-click fix. The user should feel more capable after using Lolos, not less.
-4. **Mobile-first, not mobile-responsive.** Design for thumb reach, soft keyboard, 4G latency, mid-range hardware. Desktop is a stretched version of mobile, not the other way around.
-5. **Indonesian-first.** Kak speaks natural Bahasa Indonesia with code-switch tolerance. CV conventions follow Indonesian norms (photo, personal details, IPK). Trust signals match Indonesian expectations (testimonial, university badges, user count).
+Kak is not a static chatbot. The relationship deepens over time:
+- **Session 1 (Stranger → Guide):** Kak is warm but professional. Asks questions, builds the CV, celebrates the first preview. User learns to trust Kak.
+- **Session 3 (Guide → Coach):** Kak remembers the user's industry, career stage, previous ATS scores. Suggestions become personalized. "Sejak terakhir, skor kamu naik 15 poin. Bagian pengalaman udah makin kuat."
+- **Session 10+ (Coach → Companion):** Kak knows the user's career trajectory. Proactive suggestions: "Udah 3 bulan sejak CV terakhir. Mau update? Ada sertifikasi baru?"
 
+### Micro-Coaching Loops
+
+Feedback happens *during* the work, not at the end. After completing each section: one-line validation plus one suggestion. "Pengalaman organisasi kamu kuat — itu nilai tambah di mata HRD Indonesia. Mau Kak bantu tambahin satu bullet point lagi?" This replaces the "write everything, then get judged at the end" model that crushes Rina's confidence.
+
+### ATS Education Moment
+
+Before the first ATS score, Kak delivers an empowering explanation: "Jadi gini. Sebagian besar perusahaan sekarang pakai sistem robot buat baca CV sebelum dilihat manusia. Robot ini... agak kaku. Dia kadang nolak CV yang sebenernya bagus, cuma gara-gara formatnya aneh. Nah, tugas aku di sini ngebantu kamu ngomong dalam bahasa robot ini — tanpa ngilangin suara kamu sebagai manusia. Oke? Yuk kita lihat skor kamu."
+
+### Experience Principles (Constraint-Based)
+
+1. **Conversation over configuration.** *Constraint: No screen may present more than one decision before value is delivered.*
+2. **Reveal, don't dump.** *Constraint: Never show more than 3 improvement suggestions at once. Never show a raw ATS score without anchor context and an actionable next step.*
+3. **Coach, not judge.** *Constraint: Every ATS score must include exactly one high-impact, one-click improvement. The word "nilai" (grade) must never appear — use "skor" (score) with growth framing.*
+4. **Validate before you educate.** *Constraint: Before any suggestion to improve, acknowledge one thing the user did well — specific to their content, not generic.*
+5. **Mobile-first, not mobile-responsive.** *Constraint: Every interaction usable on a 6-inch 720p screen with soft keyboard open. Minimum touch target: 44px. No horizontal scrolling required.*
+6. **Indonesian-first.** *Constraint: All UI copy written in Bahasa Indonesia first, translated to English second. CV conventions default to Indonesian norms (photo, personal details, IPK format). English conventions are an explicit toggle, not the default.*
+7. **The system is broken, not the user.** *Constraint: Any sentence that could be interpreted as blaming the user for a low score must be rewritten. "Your CV lacks keywords" → "ATS is looking for keywords that aren't in your CV yet. Let's add them."*
+
+### Failure State Treatment
+
+| Failure | Emotional Risk | Design Response |
+|---------|---------------|-----------------|
+| AI service down | Abandonment, frustration | "Kak sedang istirahat sebentar. Kamu tetap bisa edit CV-mu manual. Data kamu aman." Full editor access, AI features disabled with clear indicator. |
+| Connection lost mid-interview | Panic, data loss fear | Auto-save confirmation immediately visible. "Koneksi terputus, tapi jawaban kamu udah tersimpan. Lanjutin pas online ya." Resume exactly where they left off. |
+| ATS score below 40 | Shame, discouragement | Never show raw score. Frame as starting point with massive growth potential. "Semua orang mulai dari sini. Rata-rata fresh grad naik 30 poin dalam 3 sesi." One-click "Quick Win" button to immediately boost 10+ points. |
+| PDF generation fails | Frustration, distrust | Retry with clear feedback. "Gagal generate PDF. Tenang, data CV kamu aman. Coba lagi?" Retry button, fallback to simpler renderer. |
+| User abandons mid-flow | Guilt, feeling of failure | No guilt on return. "Hai! Lanjutin ya?" No "you didn't finish" language. Just "pick up where you left off." |
+
+---
+
+## Desired Emotional Response
+
+### Primary Emotional Goals
+
+**The user must feel:** Seen, capable, and guided — not judged, processed, or abandoned.
+
+1. **"Saya bukan masalahnya."** Rina has been rejected 50+ times with zero feedback. She blames herself. Lolos must reframe her experience: the system is broken, not her. The AI doesn't judge her qualifications — it translates them for broken machines.
+
+2. **"Saya bisa."** Every interaction should leave the user more confident than before. Not "your CV scored 45" — "here are 3 things you can fix in 2 minutes to get to 70."
+
+3. **"Ada yang bantu saya."** Kak is not a tool — Kak is a companion. The user should feel accompanied through the entire journey, never alone with a blank screen.
+
+### Emotional Journey Mapping
+
+| Stage | Current Emotional State | Desired Emotional State | How We Get There |
+|-------|------------------------|------------------------|------------------|
+| **First touch** | Anxious, confused ("Mulai dari mana?") | Welcomed, curious | Warm entry — Kak greets first, asks one simple question, no blank screen |
+| **During AI interview** | Vulnerable ("Pengalaman gue biasa aja") | Validated, understood | Kak reframes every answer positively, finds the hidden value |
+| **CV Preview reveal** | Nervous ("Kayak apa ya?") | Delighted, surprised | Celebration animation, "CV kamu udah jadi!" reveal |
+| **First ATS score** | Scared ("Pasti jelek") | Motivated, informed | Score as growth meter with anchor context, immediate actionable next step |
+| **Editing & improving** | Overwhelmed ("Terlalu banyak") | In control, guided | One suggestion at a time, micro-coaching per section |
+| **Exporting** | Anxious ("Beneran udah siap?") | Confident, accomplished | Clear "done" criteria, platform-specific format guidance |
+| **Sharing** | Excited, proud | Proud, generous | "CV gue dari 52% ke 91%!" — celebration + referral in one action |
+| **Returning** | "Ngapain balik?" | Curious, engaged | Kak remembers progress, has a new suggestion or insight waiting |
+| **Offline/error** | Frustrated, anxious ("Data gue ilang?") | Calm, reassured | Auto-save confirmation, clear offline indicator, progress never lost |
+
+### Micro-Emotions
+
+**Must maximize:**
+- **Trust over Skepticism** — Kak proves competence by asking insightful follow-up questions, not generic ones. The CV preview matches what the user described.
+- **Accomplishment over Frustration** — Micro-celebrations at every milestone: first section complete, score improves, CV downloaded.
+- **Confidence over Confusion** — Every ATS suggestion includes "why this matters" and "what happens if you skip it."
+- **Belonging over Isolation** — "70% fresh graduate mulai di skor 50-an. Kamu 62 — udah di atas rata-rata!" User sees themselves in a community of job seekers.
+
+**Must avoid:**
+- **Judgment** — Numbers without context, negative language, comparison to "ideal" CVs
+- **Abandonment** — Blank screens, silent loading, no clear next step
+- **Overwhelm** — Too many suggestions at once, complex UI, jargon
+
+### Design Implications (Emotion → Screen)
+
+| Emotion | UX Decision | Concrete Implementation |
+|---------|------------|----------------------|
+| **Trust** | Kak uses the user's name, remembers previous interactions, never fabricates information | Chat bubble: "Hai Rina!" (uses name). CV preview shows actual user data, not templates. |
+| **Confidence** | Micro-coaching per section — feedback happens as the user works, not at the end | After completing "Pengalaman" section: one-line validation + one suggestion. Not a score dump at the end. |
+| **Accomplishment** | Celebration animation at milestones | CV preview reveal: confetti + ring animation. Score improvement: toast. First export: success screen. |
+| **Guidance** | One suggestion at a time. "Quick Fix" buttons. | ATS suggestions: single card with "Terapkan" button. Never a wall of 10+ problems. |
+| **Safety** | Auto-save always visible. Offline indicator clear but not alarming. | Status bar: green/yellow/red dot. "Data kamu aman" messaging. |
+| **Pride** | Shareable transformation story built into score improvement moment | Share card: "CV gue dari 52% → 91% pake Lolos!" with referral link. |
+| **Belonging** | Contextual benchmarks show user where they stand | "Rata-rata fresh grad di posisi ini: 62. Kamu: 78." |
+
+### Emotional Design Principles
+
+1. **Validate before you educate.** Before telling the user what to fix, acknowledge what's already working. "Pengalaman organisasi kamu kuat — itu nilai tambah di mata HRD Indonesia."
+
+2. **Reveal, don't dump.** Never show a full ATS breakdown as the first thing. Show the score. Show one improvement. Let the user explore deeper if they want.
+
+3. **Celebrate the small wins.** First section done? Animation. Score naik 5 poin? Toast. CV terdownload? Confetti moment. Rina needs evidence she's making progress.
+
+4. **Coach through the scary moments.** Low ATS score? "Ini awal yang bagus." Blank section? "Banyak orang bingung di sini. Kak bantu ya." Error state? "Nggak apa-apa, data kamu aman."
+
+5. **Make the user the hero.** Kak is the guide. The user's career story is the point. The product helps tell it — it doesn't replace it with AI-generated filler.
