@@ -12,36 +12,29 @@ const config: Config = {
       fontFamily: {
         display: ["var(--font-jakarta)", "system-ui", "sans-serif"],
         body: ["var(--font-inter)", "system-ui", "sans-serif"],
+        mono: ["var(--font-jetbrains)", "JetBrains Mono", "monospace"],
       },
       colors: {
         primary: {
-          DEFAULT: "#6366f1",
-          hover: "#4f46e5",
-          active: "#4338ca",
-          light: "#eef2ff",
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         accent: {
-          DEFAULT: "#8b5cf6",
-          hover: "#7c3aed",
-          light: "#f5f3ff",
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
         },
-        surface: {
-          DEFAULT: "#ffffff",
-          hover: "#fafafa",
-          elevated: "#ffffff",
-          secondary: "#f5f5f5",
-          tertiary: "#eeeeee",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
         },
-        text: {
-          primary: "#0f0f11",
-          secondary: "#52525b",
-          tertiary: "#a1a1aa",
-          inverse: "#ffffff",
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
         },
-        border: {
-          DEFAULT: "#e5e7eb",
-          light: "#f3f4f6",
-        },
+        border: "hsl(var(--border))",
+        ring: "hsl(var(--ring))",
         success: {
           DEFAULT: "#10b981",
           bg: "rgba(16, 185, 129, 0.1)",
@@ -67,6 +60,10 @@ const config: Config = {
           "radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent)",
       },
       animation: {
+        "micro": "150ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "fast": "200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "normal": "300ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "slow": "500ms cubic-bezier(0.16, 1, 0.3, 1)",
         "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "float": "float 6s ease-in-out infinite",
         "typing-cursor": "blink 0.8s step-end infinite",
@@ -88,10 +85,18 @@ const config: Config = {
         section: "clamp(64px, 10vw, 128px)",
       },
       borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
         "2xl": "16px",
         "3xl": "24px",
       },
       boxShadow: {
+        "level-1": "0 1px 2px rgba(0,0,0,0.04)",
+        "level-2": "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+        "level-3": "0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03)",
+        "level-4": "0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.04)",
+        "level-5": "0 20px 40px rgba(0,0,0,0.12), 0 8px 12px rgba(0,0,0,0.06)",
         glow: "0 0 40px rgba(99, 102, 241, 0.2)",
         "glow-lg": "0 0 60px rgba(99, 102, 241, 0.25)",
       },

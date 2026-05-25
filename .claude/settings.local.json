@@ -47,7 +47,12 @@
       "Bash(rm -f apps/web/package.json.next)",
       "Bash(pnpm install *)",
       "Bash(npx turbo *)",
-      "Bash(git commit -m 'feat: implement story 1.1 — monorepo scaffold with Turborepo *)"
+      "Bash(git commit -m 'feat: implement story 1.1 — monorepo scaffold with Turborepo *)",
+      "Bash(git commit -m 'chore: mark story 1.1 done — monorepo scaffold complete *)",
+      "Bash(git commit -m 'feat: create story 1.2 — design system tokens and Shadcn/ui setup *)",
+      "Bash(npx shadcn@latest add button card badge input textarea dialog sheet tabs select toast tooltip skeleton progress command)",
+      "Bash(pnpm add *)",
+      "Bash(git commit -m 'feat: implement story 1.2 — design system tokens and Shadcn/ui setup *)"
     ]
   }
 }
