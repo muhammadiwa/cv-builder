@@ -60,7 +60,9 @@
       "Bash(pnpm prisma *)",
       "Bash(mkdir -p prisma)",
       "Bash(cp src/schema.prisma prisma/schema.prisma)",
-      "Bash(rm src/schema.prisma)"
+      "Bash(rm src/schema.prisma)",
+      "Bash(sed -i 's/1-3-database-schema-and-migrations: ready-for-dev/1-3-database-schema-and-migrations: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(git commit -m 'chore: mark story 1.3 done — database schema complete *)"
     ]
   }
 }

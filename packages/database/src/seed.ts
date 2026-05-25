@@ -92,9 +92,18 @@ async function main() {
     },
   ];
 
-  for (const template of templates) {
-    await prisma.template.create({ data: template });
-  }
+  // Upsert each template to make seed idempotent
+  await prisma.$transaction(
+    templates.map((template) =>
+      prisma.template.upsert({
+        where: {
+          name_locale: { name: template.name, locale: template.locale },
+        },
+        create: template,
+        update: { config: template.config, category: template.category },
+      }),
+    ),
+  );
 
   console.log(`Seeded ${templates.length} default templates.`);
 }

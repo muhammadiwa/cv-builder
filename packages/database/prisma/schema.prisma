@@ -115,7 +115,7 @@ model UserProfile {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_profiles")
 }
@@ -131,8 +131,8 @@ model Resume {
   createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
 
-  user      User             @relation(fields: [userId], references: [id])
-  template  Template         @relation(fields: [templateId], references: [id])
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template  Template         @relation(fields: [templateId], references: [id], onDelete: Restrict)
   sections  ResumeSection[]
   versions  ResumeVersion[]
   aiSessions AISession[]
@@ -150,12 +150,12 @@ model ResumeSection {
   resumeId    String      @map("resume_id") @db.Uuid
   sectionType SectionType @map("section_type")
   displayOrder Int        @map("display_order")
-  content     Json        @db.JsonB
+  content     Json        @default("{}") @db.JsonB
   aiGenerated Boolean     @default(false) @map("ai_generated")
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
 
-  resume Resume @relation(fields: [resumeId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@index([resumeId])
   @@index([content], type: Gin)
@@ -166,12 +166,12 @@ model ResumeVersion {
   id            String   @id @default(uuid()) @db.Uuid
   resumeId      String   @map("resume_id") @db.Uuid
   versionNumber Int      @map("version_number")
-  snapshot      Json     @db.JsonB
+  snapshot      Json     @default("{}") @db.JsonB
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  resume Resume @relation(fields: [resumeId], references: [id])
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
-  @@index([resumeId, versionNumber])
+  @@unique([resumeId, versionNumber])
   @@map("resume_versions")
 }
 
@@ -180,7 +180,7 @@ model Template {
   name         String
   category     String
   thumbnailUrl String?  @map("thumbnail_url")
-  config       Json     @db.JsonB
+  config       Json     @default("{}") @db.JsonB
   isPremium    Boolean  @default(false) @map("is_premium")
   isActive     Boolean  @default(true) @map("is_active")
   locale       String   @default("id")
@@ -188,6 +188,7 @@ model Template {
 
   resumes Resume[]
 
+  @@unique([name, locale])
   @@index([category])
   @@index([isActive, locale])
   @@map("templates")
@@ -203,15 +204,15 @@ model AISession {
   resumeId           String?          @map("resume_id") @db.Uuid
   sessionType        AISessionType   @map("session_type")
   status             AISessionStatus @default(active)
-  conversationHistory Json            @map("conversation_history") @db.JsonB
+  conversationHistory Json            @default("{}") @map("conversation_history") @db.JsonB
   extractedData      Json?           @map("extracted_data") @db.JsonB
   tokenUsage         Int             @default(0) @map("token_usage")
   expiresAt          DateTime        @map("expires_at") @db.Timestamptz()
   createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz()
 
-  user    User    @relation(fields: [userId], references: [id])
-  resume  Resume? @relation(fields: [resumeId], references: [id])
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume  Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([status, expiresAt])
@@ -226,11 +227,11 @@ model CoverLetter {
   companyName    String?  @map("company_name")
   jobDescription String?  @map("job_description") @db.Text
   tone           String   @default("professional")
-  content        Json     @db.JsonB
+  content        Json     @default("{}") @db.JsonB
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  user   User   @relation(fields: [userId], references: [id])
-  resume Resume @relation(fields: [resumeId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("cover_letters")
@@ -248,8 +249,8 @@ model JobAnalysis {
   embedding        Unsupported("vector(1536)")?
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  user   User   @relation(fields: [userId], references: [id])
-  resume Resume @relation(fields: [resumeId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   // HNSW index on embedding must be created via raw SQL migration:
@@ -269,10 +270,10 @@ model Subscription {
   paymentMethod      String?           @map("payment_method")
   xenditInvoiceId    String?           @map("xendit_invoice_id")
   currentPeriodStart DateTime          @default(now()) @map("current_period_start") @db.Timestamptz()
-  currentPeriodEnd   DateTime          @map("current_period_end") @db.Timestamptz()
+  currentPeriodEnd   DateTime?         @map("current_period_end") @db.Timestamptz()
   createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz()
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("subscriptions")
 }
@@ -285,7 +286,7 @@ model AiCredit {
   monthlyUsed       Int      @default(0) @map("monthly_used")
   lastResetAt       DateTime @default(now()) @map("last_reset_at") @db.Timestamptz()
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("ai_credits")
 }
@@ -300,7 +301,7 @@ model AiUsageLog {
   cost          Float    @default(0)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@map("ai_usage_logs")
@@ -321,8 +322,8 @@ model ExportJob {
   cost         Float        @default(0)
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz()
 
-  user   User   @relation(fields: [userId], references: [id])
-  resume Resume @relation(fields: [resumeId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
@@ -341,9 +342,10 @@ model ShareLink {
   maxViews     Int?              @map("max_views")
   createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz()
 
-  user   User   @relation(fields: [userId], references: [id])
-  resume Resume @relation(fields: [resumeId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
 
+  // Application MUST enforce: if accessLevel = password_protected, passwordHash IS NOT NULL
   @@index([uuid])
   @@index([userId])
   @@map("share_links")
