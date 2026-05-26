@@ -91,7 +91,24 @@
       "Bash(sed -i 's/UserModule,/UserModule,\\\\n    ResumeModule,/' apps/api/src/app.module.ts)",
       "Bash(sed -i 's/\\) {/\\) { return/' apps/api/src/resume/resume.controller.ts)",
       "Bash(sed -i 's/return return/return/' apps/api/src/resume/resume.controller.ts)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\app\" -Recurse -Depth 3 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\features\" -Recurse -Depth 5 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\components\" -Recurse -Depth 5 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\lib\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\hooks\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\features\" -Recurse | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\_bmad\" -Recurse -Depth 3 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\app\\\\\\(dashboard\\)\" -Recurse -Depth 3 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\packages\\\\database\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\packages\\\\database\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\_bmad\\\\bmm\" -Recurse | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\_bmad\\\\bmm\\\\1-analysis\\\\research\" -Recurse | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\api\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\packages\\\\validators\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "Bash(git diff-tree *)",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\features\" -Recurse -Force | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\config\" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })"
     ]
   }
 }
