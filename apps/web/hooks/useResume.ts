@@ -11,6 +11,7 @@ export interface ResumeSection {
   displayOrder: number;
   content: Record<string, unknown>;
   aiGenerated: boolean;
+  visible: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -24,19 +24,29 @@ import { SectionBlock } from "./SectionBlock";
 import { useEditorStore } from "@/stores/editorStore";
 import type { SectionType } from "@/types/resume";
 
-const A4_W = Math.round(210 * 3.7795);
-const A4_H = Math.round(297 * 3.7795);
+// CSS reference px conversion at 96 dpi (1 mm == 96 / 25.4 px ≈ 3.7795).
+const PX_PER_MM = 96 / 25.4;
+const A4_WIDTH_MM = 210;
+const A4_HEIGHT_MM = 297;
+const A4_W = Math.round(A4_WIDTH_MM * PX_PER_MM);
+const A4_H = Math.round(A4_HEIGHT_MM * PX_PER_MM);
 
 export default function ResumeCanvas() {
   const sections = useEditorStore((s) => s.sections);
   const reorderSections = useEditorStore((s) => s.reorderSections);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Memoize the doc so we recompute only when ordering or visibility changes —
+  // not on every keystroke (content edits are owned by NodeViews directly).
+  const visibilityKey = sections.map((s) => `${s.id}:${s.visible ? 1 : 0}`).join(",");
+  const orderKey = sections.map((s) => `${s.id}:${s.displayOrder}`).join(",");
 
-  const contentRef = useRef(sectionsToDoc(sections));
+  const docContent = useMemo(
+    () => sectionsToDoc(sections),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orderKey, visibilityKey],
+  );
+
+  const contentRef = useRef(docContent);
 
   const editor = useEditor({
     extensions: [
@@ -54,14 +64,14 @@ export default function ResumeCanvas() {
 
   useEffect(() => {
     if (!editor) return;
-    const newDoc = sectionsToDoc(sections);
     const currentJson = JSON.stringify(editor.getJSON());
-    const newJson = JSON.stringify(newDoc);
+    const newJson = JSON.stringify(docContent);
     if (currentJson !== newJson) {
-      editor.commands.setContent(newDoc);
+      // emitUpdate:false avoids triggering listeners that might thrash state
+      // back into the store on each setContent.
+      editor.commands.setContent(docContent, { emitUpdate: false });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections.length, sections.map((s) => s.displayOrder).join(",")]);
+  }, [editor, docContent]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -81,16 +91,10 @@ export default function ResumeCanvas() {
     [sections, reorderSections],
   );
 
-  const visibleSectionIds = sections.filter((s) => s.visible).map((s) => s.id);
-
-  if (!mounted) {
-    return (
-      <div
-        className="mx-auto bg-white shadow-lg rounded-sm"
-        style={{ width: A4_W, minHeight: A4_H }}
-      />
-    );
-  }
+  // dnd-kit must see the same id list as the rendered NodeViews. We render
+  // every section (visible or not) so toggling visibility doesn't unmount the
+  // section's edit state — visibility is reflected via opacity on the block.
+  const sectionIds = sections.map((s) => s.id);
 
   if (!editor) return null;
 
@@ -101,10 +105,7 @@ export default function ResumeCanvas() {
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >
-        <SortableContext
-          items={visibleSectionIds}
-          strategy={verticalListSortingStrategy}
-        >
+        <SortableContext items={sectionIds} strategy={verticalListSortingStrategy}>
           <div
             className="bg-white text-black shadow-lg rounded-sm overflow-hidden"
             style={{ width: A4_W, minHeight: A4_H }}
@@ -126,16 +127,14 @@ function sectionsToDoc(
 ) {
   return {
     type: "doc",
-    content: sections
-      .filter((s) => s.visible)
-      .map((s) => ({
-        type: "sectionBlock",
-        attrs: {
-          sectionId: s.id,
-          sectionType: s.sectionType,
-          visible: s.visible,
-          displayOrder: s.displayOrder,
-        },
-      })),
+    content: sections.map((s) => ({
+      type: "sectionBlock",
+      attrs: {
+        sectionId: s.id,
+        sectionType: s.sectionType,
+        visible: s.visible,
+        displayOrder: s.displayOrder,
+      },
+    })),
   };
 }

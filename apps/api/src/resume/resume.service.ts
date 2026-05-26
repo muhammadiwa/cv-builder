@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { prisma } from '@lolos/database';
+import { Prisma, prisma } from '@lolos/database';
+import type { UpdateResumeInput, SectionInput } from '@lolos/validators';
 
 @Injectable()
 export class ResumeService {
@@ -35,45 +36,84 @@ export class ResumeService {
     return r;
   }
 
-  async update(
-    userId: string,
-    resumeId: string,
-    data: {
-      title?: string;
-      status?: 'draft' | 'published' | 'archived';
-      sections?: { id?: string; sectionType: string; displayOrder: number; content: Record<string, unknown>; visible?: boolean }[];
-    },
-  ) {
+  async update(userId: string, resumeId: string, data: UpdateResumeInput) {
     const r = await prisma.resume.findFirst({ where: { id: resumeId, userId } });
     if (!r) throw new NotFoundException();
 
-    if (data.sections) {
-      const existingIds = data.sections.filter((s) => s.id && !s.id.startsWith('new-')).map((s) => s.id!);
-      await prisma.resumeSection.deleteMany({
-        where: { resumeId, id: { notIn: existingIds } },
+    return prisma.$transaction(async (tx) => {
+      if (data.sections !== undefined) {
+        await this.syncSections(tx, resumeId, data.sections);
+      }
+
+      const { sections: _ignored, ...resumeData } = data;
+      if (Object.keys(resumeData).length > 0) {
+        await tx.resume.update({ where: { id: resumeId }, data: resumeData });
+      }
+
+      return tx.resume.findFirst({
+        where: { id: resumeId, userId },
+        include: { sections: { orderBy: { displayOrder: 'asc' } } },
       });
-      for (const s of data.sections) {
-        if (s.id && !s.id.startsWith('new-')) {
-          await prisma.resumeSection.update({
-            where: { id: s.id },
-            data: { sectionType: s.sectionType as any, displayOrder: s.displayOrder, content: s.content as any },
-          });
-        } else {
-          await prisma.resumeSection.create({
-            data: { resumeId, sectionType: s.sectionType as any, displayOrder: s.displayOrder, content: s.content as any },
-          });
-        }
+    });
+  }
+
+  /**
+   * Reconcile resume_sections rows against the client payload inside an open
+   * Prisma transaction. Performs ownership scoping (rejecting cross-resume IDs
+   * to prevent IDOR), bounded delete-of-removed (no `notIn: []` blast radius),
+   * update-in-place for known IDs, and create-for-new.
+   */
+  private async syncSections(
+    tx: Prisma.TransactionClient,
+    resumeId: string,
+    sections: SectionInput[],
+  ) {
+    // Inputs with an `id` are claimed-existing. Verify each claimed ID actually
+    // belongs to this resume before we touch it.
+    const claimedIds = sections.filter((s): s is SectionInput & { id: string } => Boolean(s.id)).map((s) => s.id);
+    if (claimedIds.length > 0) {
+      const owned = await tx.resumeSection.findMany({
+        where: { resumeId, id: { in: claimedIds } },
+        select: { id: true },
+      });
+      const ownedIdSet = new Set(owned.map((s) => s.id));
+      const foreign = claimedIds.filter((id) => !ownedIdSet.has(id));
+      if (foreign.length > 0) {
+        throw new ForbiddenException(
+          `Section id(s) do not belong to resume ${resumeId}: ${foreign.join(', ')}`,
+        );
       }
     }
 
-    const { sections: _, ...resumeData } = data as any;
-    if (Object.keys(resumeData).length > 0) {
-      return prisma.resume.update({ where: { id: resumeId }, data: resumeData });
-    }
-    return prisma.resume.findFirst({
-      where: { id: resumeId, userId },
-      include: { sections: { orderBy: { displayOrder: 'asc' } } },
+    // Delete any section currently on the resume that wasn't included in the
+    // payload (treat the array as the new authoritative state).
+    await tx.resumeSection.deleteMany({
+      where: {
+        resumeId,
+        ...(claimedIds.length > 0 ? { id: { notIn: claimedIds } } : {}),
+      },
     });
+
+    for (const s of sections) {
+      const payload = {
+        sectionType: s.sectionType,
+        displayOrder: s.displayOrder,
+        content: s.content as object,
+        visible: s.visible ?? true,
+      };
+      if (s.id) {
+        // Scope-by-resume update guards against IDOR even if the ownership
+        // check above somehow lets a stale id slip through.
+        await tx.resumeSection.updateMany({
+          where: { id: s.id, resumeId },
+          data: payload,
+        });
+      } else {
+        await tx.resumeSection.create({
+          data: { resumeId, ...payload },
+        });
+      }
+    }
   }
 
   async duplicate(userId: string, resumeId: string): Promise<any> {
@@ -84,7 +124,13 @@ export class ResumeService {
       });
       for (const s of original.sections) {
         await tx.resumeSection.create({
-          data: { resumeId: copy.id, sectionType: s.sectionType, displayOrder: s.displayOrder, content: s.content as any },
+          data: {
+            resumeId: copy.id,
+            sectionType: s.sectionType,
+            displayOrder: s.displayOrder,
+            content: s.content as any,
+            visible: s.visible,
+          },
         });
       }
       return copy;
