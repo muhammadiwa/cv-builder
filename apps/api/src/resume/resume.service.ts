@@ -43,15 +43,17 @@ export class ResumeService {
 
   async duplicate(userId: string, resumeId: string): Promise<any> {
     const original = await this.get(userId, resumeId);
-    const copy = await prisma.resume.create({
-      data: { userId, templateId: original.templateId, title: `${original.title} (Copy)`, language: original.language },
-    });
-    for (const s of original.sections) {
-      await prisma.resumeSection.create({
-        data: { resumeId: copy.id, sectionType: s.sectionType, displayOrder: s.displayOrder, content: s.content as any },
+    return prisma.$transaction(async (tx) => {
+      const copy = await tx.resume.create({
+        data: { userId, templateId: original.templateId, title: `${original.title} (Copy)`, language: original.language },
       });
-    }
-    return this.get(userId, copy.id);
+      for (const s of original.sections) {
+        await tx.resumeSection.create({
+          data: { resumeId: copy.id, sectionType: s.sectionType, displayOrder: s.displayOrder, content: s.content as any },
+        });
+      }
+      return copy;
+    });
   }
 
   async archive(userId: string, resumeId: string) {
