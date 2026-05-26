@@ -90,7 +90,8 @@
       "Bash(sed -i 's/import { UserModule }/import { UserModule } from '\\\\''.\\\\/user\\\\/user.module'\\\\'';\\\\nimport { ResumeModule } from '\\\\''.\\\\/resume\\\\/resume.module'\\\\'';\\\\n/' apps/api/src/app.module.ts)",
       "Bash(sed -i 's/UserModule,/UserModule,\\\\n    ResumeModule,/' apps/api/src/app.module.ts)",
       "Bash(sed -i 's/\\) {/\\) { return/' apps/api/src/resume/resume.controller.ts)",
-      "Bash(sed -i 's/return return/return/' apps/api/src/resume/resume.controller.ts)"
+      "Bash(sed -i 's/return return/return/' apps/api/src/resume/resume.controller.ts)",
+      "Bash(python *)"
     ]
   }
 }
