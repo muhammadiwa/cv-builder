@@ -6,6 +6,7 @@ import { useResume } from "@/hooks/useResume";
 import { useDebouncedSync } from "@/hooks/useDebouncedSync";
 import { useEditorStore } from "@/stores/editorStore";
 import EditorToolbar from "@/components/editor/EditorToolbar";
+import { EditorShell } from "@/components/editor/EditorShell";
 
 const ResumeCanvas = dynamic(
   () => import("@/components/editor/ResumeCanvas"),
@@ -59,11 +60,11 @@ export default function EditorPage({ params }: PageProps) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <EditorShell>
       <EditorToolbar />
-      <div className="flex-1 bg-muted/30">
+      <div className="bg-muted/30 min-h-full">
         <ResumeCanvas />
       </div>
-    </div>
+    </EditorShell>
   );
 }

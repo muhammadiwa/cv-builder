@@ -35,6 +35,8 @@ export interface EditorSection {
 interface EditorState {
   sections: EditorSection[];
   dirty: boolean;
+  /** Timestamp (ms epoch) of the last successful PATCH sync. */
+  lastSyncedAt: number | null;
 
   setSections: (sections: ResumeSection[]) => void;
   /** Replace an entire section content blob. */
@@ -60,6 +62,7 @@ function reindex(sections: EditorSection[]): EditorSection[] {
 export const useEditorStore = create<EditorState>()((set) => ({
   sections: [],
   dirty: false,
+  lastSyncedAt: null,
 
   setSections: (sections) =>
     set({
@@ -74,6 +77,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
         visible: typeof s.visible === "boolean" ? s.visible : true,
       })),
       dirty: false,
+      // Hydrating from server is, by definition, the most recent known sync
+      // point. Stamp it so the status bar shows a sensible "last saved" right
+      // after page load.
+      lastSyncedAt: Date.now(),
     }),
 
   updateSectionContent: (id, content) =>
@@ -156,5 +163,5 @@ export const useEditorStore = create<EditorState>()((set) => ({
       dirty: true,
     })),
 
-  markClean: () => set({ dirty: false }),
+  markClean: () => set({ dirty: false, lastSyncedAt: Date.now() }),
 }));

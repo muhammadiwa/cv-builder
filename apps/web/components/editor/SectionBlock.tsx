@@ -99,6 +99,7 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
       as="div"
       className="group relative mb-4"
       data-section-block=""
+      data-section-id={sectionId}
     >
       <div ref={setNodeRef} style={style}>
         <div
