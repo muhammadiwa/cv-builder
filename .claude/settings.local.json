@@ -84,7 +84,9 @@
       "Bash(rm apps/web/public/icons/README.md)",
       "Bash(rmdir apps/web/public/icons)",
       "Bash(sed -i 's/epic-1-retrospective: optional/epic-1-retrospective: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
-      "Bash(sed -i 's/epic-1: in-progress/epic-1: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)"
+      "Bash(sed -i 's/epic-1: in-progress/epic-1: done/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(sed -i 's/epic-2: backlog/epic-2: in-progress/' _bmad-output/implementation-artifacts/sprint-status.yaml)",
+      "Bash(sed -i 's/2-1-resume-crud-and-data-model: backlog/2-1-resume-crud-and-data-model: ready-for-dev/' _bmad-output/implementation-artifacts/sprint-status.yaml)"
     ]
   }
 }

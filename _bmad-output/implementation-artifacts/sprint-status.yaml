@@ -42,8 +42,8 @@ development_status:
   1-8-user-settings-and-account-management: done
   epic-1-retrospective: done
 
-  epic-2: backlog
-  2-1-resume-crud-and-data-model: backlog
+  epic-2: in-progress
+  2-1-resume-crud-and-data-model: ready-for-dev
   2-2-tiptap-editor-with-section-blocks: backlog
   2-3-multi-panel-layout-with-mobile-adaptation: backlog
   2-4-auto-save-and-offline-persistence: backlog
