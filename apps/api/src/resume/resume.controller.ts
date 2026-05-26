@@ -1,15 +1,13 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import {
+  createResumeSchema,
+  updateResumeSchema,
+  type CreateResumeInput,
+  type UpdateResumeInput,
+} from '@lolos/validators';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ResumeService } from './resume.service';
-import { SectionType } from '@lolos/database';
-
-interface SectionInput {
-  id?: string;
-  sectionType: SectionType;
-  displayOrder: number;
-  content: Record<string, unknown>;
-  visible?: boolean;
-}
 
 @Controller('api/v1/resumes')
 export class ResumeController {
@@ -17,7 +15,10 @@ export class ResumeController {
 
   @Post()
   @UseGuards(AuthGuard('jwt'))
-  create(@Req() req: any, @Body() body: { title: string; language?: string }) {
+  create(
+    @Req() req: any,
+    @Body(new ZodValidationPipe(createResumeSchema)) body: CreateResumeInput,
+  ) {
     return this.resumeService.create(req.user.userId, body);
   }
 
@@ -38,9 +39,9 @@ export class ResumeController {
   update(
     @Req() req: any,
     @Param('id') id: string,
-    @Body() body: { title?: string; status?: string; sections?: SectionInput[] },
-  ) {
-    return this.resumeService.update(req.user.userId, id, body as any);
+    @Body(new ZodValidationPipe(updateResumeSchema)) body: UpdateResumeInput,
+  ): Promise<unknown> {
+    return this.resumeService.update(req.user.userId, id, body);
   }
 
   @Post(':id/duplicate')
@@ -51,7 +52,7 @@ export class ResumeController {
 
   @Post(':id/archive')
   @UseGuards(AuthGuard('jwt'))
-  archive(@Req() req: any, @Param('id') id: string) {
+  archive(@Req() req: any, @Param('id') id: string): Promise<unknown> {
     return this.resumeService.archive(req.user.userId, id);
   }
 

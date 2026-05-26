@@ -51,7 +51,12 @@ export function Providers({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker.register("/sw.js").catch((err) => {
+        // SW registration failed — app still works without it. Log to surface
+        // failures during local dev / in monitoring instead of swallowing.
+        // eslint-disable-next-line no-console
+        console.warn("[SW] registration failed:", err);
+      });
     }
   }, []);
 
