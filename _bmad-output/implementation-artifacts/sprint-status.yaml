@@ -44,7 +44,7 @@ development_status:
 
   epic-2: in-progress
   2-1-resume-crud-and-data-model: done
-  2-2-tiptap-editor-with-section-blocks: ready-for-dev
+  2-2-tiptap-editor-with-section-blocks: review
   2-3-multi-panel-layout-with-mobile-adaptation: backlog
   2-4-auto-save-and-offline-persistence: backlog
   2-5-ai-inline-rewrite: backlog

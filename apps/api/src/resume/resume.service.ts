@@ -35,10 +35,45 @@ export class ResumeService {
     return r;
   }
 
-  async update(userId: string, resumeId: string, data: { title?: string; status?: 'draft' | 'published' | 'archived' }) {
+  async update(
+    userId: string,
+    resumeId: string,
+    data: {
+      title?: string;
+      status?: 'draft' | 'published' | 'archived';
+      sections?: { id?: string; sectionType: string; displayOrder: number; content: Record<string, unknown>; visible?: boolean }[];
+    },
+  ) {
     const r = await prisma.resume.findFirst({ where: { id: resumeId, userId } });
     if (!r) throw new NotFoundException();
-    return prisma.resume.update({ where: { id: resumeId }, data });
+
+    if (data.sections) {
+      const existingIds = data.sections.filter((s) => s.id && !s.id.startsWith('new-')).map((s) => s.id!);
+      await prisma.resumeSection.deleteMany({
+        where: { resumeId, id: { notIn: existingIds } },
+      });
+      for (const s of data.sections) {
+        if (s.id && !s.id.startsWith('new-')) {
+          await prisma.resumeSection.update({
+            where: { id: s.id },
+            data: { sectionType: s.sectionType as any, displayOrder: s.displayOrder, content: s.content as any },
+          });
+        } else {
+          await prisma.resumeSection.create({
+            data: { resumeId, sectionType: s.sectionType as any, displayOrder: s.displayOrder, content: s.content as any },
+          });
+        }
+      }
+    }
+
+    const { sections: _, ...resumeData } = data as any;
+    if (Object.keys(resumeData).length > 0) {
+      return prisma.resume.update({ where: { id: resumeId }, data: resumeData });
+    }
+    return prisma.resume.findFirst({
+      where: { id: resumeId, userId },
+      include: { sections: { orderBy: { displayOrder: 'asc' } } },
+    });
   }
 
   async duplicate(userId: string, resumeId: string): Promise<any> {

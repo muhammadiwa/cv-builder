@@ -108,7 +108,10 @@
       "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\packages\\\\validators\" -Recurse -Depth 2 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
       "Bash(git diff-tree *)",
       "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\features\" -Recurse -Force | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\apps\\\\web\\\\\", \"\"\\) })",
-      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\config\" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })"
+      "PowerShell(Get-ChildItem \"D:\\\\Project\\\\cv-builder\\\\config\" -Recurse -Depth 1 | Select-Object FullName | ForEach-Object { $_.FullName.Replace\\(\"D:\\\\Project\\\\cv-builder\\\\\", \"\"\\) })",
+      "Bash(pnpm --filter @lolos/web build)",
+      "Bash(pnpm --filter @lolos/api build)",
+      "Bash(pnpm test *)"
     ]
   }
 }

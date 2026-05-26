@@ -1,6 +1,15 @@
 import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ResumeService } from './resume.service';
+import { SectionType } from '@lolos/database';
+
+interface SectionInput {
+  id?: string;
+  sectionType: SectionType;
+  displayOrder: number;
+  content: Record<string, unknown>;
+  visible?: boolean;
+}
 
 @Controller('api/v1/resumes')
 export class ResumeController {
@@ -26,7 +35,11 @@ export class ResumeController {
 
   @Patch(':id')
   @UseGuards(AuthGuard('jwt'))
-  update(@Req() req: any, @Param('id') id: string, @Body() body: { title?: string; status?: string }) {
+  update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { title?: string; status?: string; sections?: SectionInput[] },
+  ) {
     return this.resumeService.update(req.user.userId, id, body as any);
   }
 

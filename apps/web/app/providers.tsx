@@ -1,5 +1,6 @@
 "use client";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 type Language = "id" | "en";
@@ -13,11 +14,26 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { staleTime: 30_000, retry: 1 },
+    },
+  });
+}
+
+let browserQueryClient: QueryClient | undefined;
+
+function getQueryClient() {
+  if (typeof window === "undefined") return makeQueryClient();
+  if (!browserQueryClient) browserQueryClient = makeQueryClient();
+  return browserQueryClient;
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   const [isDark, setIsDark] = useState(false);
   const [lang, setLang] = useState<Language>("id");
 
-  // Dark mode init
   useEffect(() => {
     const stored = localStorage.getItem("darkMode");
     if (stored === "true" || (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
@@ -33,19 +49,20 @@ export function Providers({ children }: { children: ReactNode }) {
     localStorage.setItem("darkMode", String(next));
   };
 
-  // Register Service Worker for PWA
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // SW registration failed — app works without it
-      });
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
   }, []);
 
+  const queryClient = getQueryClient();
+
   return (
-    <AppContext.Provider value={{ lang, setLang, isDark, toggleDark }}>
-      {children}
-    </AppContext.Provider>
+    <QueryClientProvider client={queryClient}>
+      <AppContext.Provider value={{ lang, setLang, isDark, toggleDark }}>
+        {children}
+      </AppContext.Provider>
+    </QueryClientProvider>
   );
 }
 
