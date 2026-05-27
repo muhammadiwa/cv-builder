@@ -46,6 +46,13 @@ export function useATSScore(): void {
                 // Dynamically import comlink to avoid SSR issues
                 import("comlink").then((Comlink) => {
                     comlinkApiRef.current = Comlink.wrap(worker);
+                }).catch(() => {
+                    // Dynamic import failed (CSP, network, bundler issue).
+                    // Worker is orphaned — terminate it. Scoring will use
+                    // main-thread fallback.
+                    worker.terminate();
+                    workerRef.current = null;
+                    console.warn("[ATS] comlink import failed, using main thread");
                 });
             } catch (err) {
                 // Worker instantiation failed — fall back to main thread

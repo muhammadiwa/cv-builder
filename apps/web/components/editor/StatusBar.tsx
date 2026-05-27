@@ -58,9 +58,11 @@ function ATSMiniRing({ score, computing }: { score: number | null; computing?: b
     <span
       className={`inline-flex items-center gap-1.5 ${computing ? "animate-pulse" : ""}`}
       title={
-        score == null
+        computing
           ? "ATS score computing…"
-          : `ATS score: ${score}%`
+          : score == null
+            ? "Belum ada skor ATS"
+            : `ATS score: ${score}%`
       }
     >
       <svg width={18} height={18} viewBox="0 0 18 18" aria-hidden="true">
