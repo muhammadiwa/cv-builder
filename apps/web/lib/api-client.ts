@@ -3,7 +3,17 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
+  const prev = accessToken;
   accessToken = token;
+  // On logout (token cleared) wipe the IDB cache so a shared device doesn't
+  // leak the previous user's CV data into the next session. Best-effort —
+  // import is dynamic so this module stays usable in non-browser contexts
+  // (SSR import hits the same `apiFetch` symbols).
+  if (prev !== null && token === null && typeof window !== "undefined") {
+    void import("./db/resumeRepo")
+      .then((m) => m.clearAll())
+      .catch(() => { });
+  }
 }
 
 // Single in-flight refresh promise so concurrent 401s don't stampede the

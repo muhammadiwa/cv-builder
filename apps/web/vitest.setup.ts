@@ -1,4 +1,8 @@
 import "@testing-library/jest-dom/vitest";
+// JSDOM doesn't ship an IndexedDB implementation. `fake-indexeddb/auto`
+// installs an in-memory IDB on `globalThis` per worker so Dexie + repository
+// tests work without spinning up a real browser.
+import "fake-indexeddb/auto";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 
@@ -12,17 +16,17 @@ afterEach(() => {
 // JSDOM doesn't ship these — components like EditorShell and the section
 // blocks rely on them, so polyfill noop versions to keep render() happy.
 class MockResizeObserver {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() { }
+  unobserve() { }
+  disconnect() { }
 }
 class MockIntersectionObserver {
   root = null;
   rootMargin = "";
   thresholds: ReadonlyArray<number> = [];
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe() { }
+  unobserve() { }
+  disconnect() { }
   takeRecords(): IntersectionObserverEntry[] {
     return [];
   }
@@ -47,10 +51,10 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
       matches: false,
       media: query,
       onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
+      addListener: () => { },
+      removeListener: () => { },
+      addEventListener: () => { },
+      removeEventListener: () => { },
       dispatchEvent: () => false,
     }),
   });

@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { gcOldRows } from "@/lib/db/resumeRepo";
 
 type Language = "id" | "en";
 
@@ -58,6 +59,12 @@ export function Providers({ children }: { children: ReactNode }) {
         console.warn("[SW] registration failed:", err);
       });
     }
+  }, []);
+
+  // Sweep stale IDB cache rows once per app boot. Best-effort — failures
+  // (private mode, evicted store) are swallowed at the repo layer.
+  useEffect(() => {
+    void gcOldRows();
   }, []);
 
   const queryClient = getQueryClient();

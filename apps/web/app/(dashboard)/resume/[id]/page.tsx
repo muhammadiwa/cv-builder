@@ -1,9 +1,11 @@
 "use client";
 
-import { use, useEffect, useRef } from "react";
+import { use, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useResume } from "@/hooks/useResume";
 import { useDebouncedSync } from "@/hooks/useDebouncedSync";
+import { useIndexedDBSync } from "@/hooks/useIndexedDBSync";
+import { useResumeRestore } from "@/hooks/useResumeRestore";
 import { useEditorStore } from "@/stores/editorStore";
 import EditorToolbar from "@/components/editor/EditorToolbar";
 import { EditorShell } from "@/components/editor/EditorShell";
@@ -20,24 +22,24 @@ interface PageProps {
 export default function EditorPage({ params }: PageProps) {
   const { id } = use(params);
   const { data, isLoading, error } = useResume(id);
-  const setSections = useEditorStore((s) => s.setSections);
-  const dirty = useEditorStore((s) => s.dirty);
+  const markSyncedAll = useEditorStore((s) => s.markSyncedAll);
 
-  // Track the resume id we last hydrated from the server. We only re-hydrate
-  // when:
-  //   - we move to a different resume (id changes), OR
-  //   - we have no local edits in flight (dirty === false), to avoid
-  //     clobbering an unsaved change with a background React Query refetch.
-  const hydratedForId = useRef<string | null>(null);
+  // Local-first cache restore. Runs in parallel with `useResume`; the LWW
+  // merge inside `markSyncedAll` makes their resolution order irrelevant.
+  useResumeRestore(id);
+
+  // When the React Query result arrives, merge server sections into the store
+  // via per-field LWW. Client-newer fields stay client-side; server-newer
+  // fields replace; conflicts are surfaced to the conflict toast (wired in
+  // useDebouncedSync; here we only need the merge).
   useEffect(() => {
     if (!data?.sections) return;
-    const isNewResume = hydratedForId.current !== data.id;
-    if (isNewResume || !dirty) {
-      setSections(data.sections);
-      hydratedForId.current = data.id;
-    }
-  }, [data, dirty, setSections]);
+    markSyncedAll(data.sections);
+  }, [data, markSyncedAll]);
 
+  // Keep IDB cache in step with the editor store at 800ms idle.
+  useIndexedDBSync(id);
+  // Keep the API in step at 2s idle (with field timestamps + conflict resolve).
   useDebouncedSync(id);
 
   if (isLoading) {
