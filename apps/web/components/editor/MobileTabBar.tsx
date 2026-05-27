@@ -9,9 +9,9 @@ import { useEditorLayoutStore } from "@/stores/editorLayoutStore";
 import { prefersReducedMotion } from "@/hooks/useReducedMotion";
 import {
   AIPanelPlaceholder,
-  ATSPanelPlaceholder,
   SettingsPanelPlaceholder,
 } from "./RightPanelPlaceholders";
+import { ATSPanel } from "../ats/ATSPanel";
 
 /**
  * MobileTabBar
@@ -66,7 +66,7 @@ export function MobileTabBar() {
         ) : openTab === "ai" ? (
           <AIPanelPlaceholder />
         ) : openTab === "ats" ? (
-          <ATSPanelPlaceholder />
+          <ATSPanel />
         ) : openTab === "settings" ? (
           <SettingsPanelPlaceholder />
         ) : null}
