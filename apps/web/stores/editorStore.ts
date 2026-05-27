@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { temporal } from "zundo";
 import type { ResumeSection } from "@/hooks/useResume";
 import type { SectionType } from "@/types/resume";
+import type { ATSScore } from "@/lib/ats-engine/types";
 import {
   FIELD_TS_KEY,
   getFieldTimestamps,
@@ -87,6 +88,14 @@ interface EditorState {
   lockSection: (id: string) => void;
   /** Unlock a section after AI streaming completes. */
   unlockSection: (id: string) => void;
+  /** ATS score (computed by Web Worker, derived state — not undoable). */
+  atsScore: ATSScore | null;
+  /** Whether ATS scoring is currently in-flight. */
+  atsComputing: boolean;
+  /** Set the computed ATS score. */
+  setATSScore: (score: ATSScore | null) => void;
+  /** Set the computing flag. */
+  setATSComputing: (computing: boolean) => void;
 }
 
 function reindex(sections: EditorSection[]): EditorSection[] {
@@ -98,6 +107,8 @@ export const useEditorStore = create<EditorState>()(temporal((set, get) => ({
   dirty: false,
   lastSyncedAt: null,
   lockedSections: new Set<string>(),
+  atsScore: null,
+  atsComputing: false,
 
   setSections: (sections) =>
     set({
@@ -219,6 +230,9 @@ export const useEditorStore = create<EditorState>()(temporal((set, get) => ({
       return { lockedSections: next };
     }),
 
+  setATSScore: (score) => set({ atsScore: score }),
+  setATSComputing: (computing) => set({ atsComputing: computing }),
+
   markSyncedAll: (serverSections, syncedAt) => {
     const now = syncedAt ?? Date.now();
     const conflicts: Array<{ sectionId: string; field: string }> = [];
@@ -313,7 +327,7 @@ export const useEditorStore = create<EditorState>()(temporal((set, get) => ({
         lastSyncedAt,
       };
     }),
-}), { limit: 50, partialize: (state) => ({ sections: state.sections }) }));
+}), { limit: 50, partialize: (state) => ({ sections: state.sections }) as any }));
 
 /**
  * Selector helper: the smallest field-update timestamp newer than

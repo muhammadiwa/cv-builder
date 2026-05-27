@@ -17,13 +17,15 @@ import { useSyncStatus } from "@/hooks/useSyncStatus";
  */
 export function StatusBar() {
   const sections = useEditorStore((s) => s.sections);
+  const atsScore = useEditorStore((s) => s.atsScore);
+  const atsComputing = useEditorStore((s) => s.atsComputing);
   const { status, lastSyncedAt } = useSyncStatus();
 
   const wordCount = countWords(sections);
 
   return (
     <div className="flex items-center gap-4 px-4 h-9 border-t bg-background/80 backdrop-blur text-xs text-muted-foreground">
-      <ATSMiniRing score={null} />
+      <ATSMiniRing score={atsScore?.total ?? null} computing={atsComputing} />
       <Separator />
       <span aria-label={`${wordCount} words`}>{wordCount} kata</span>
       <Separator />
@@ -43,7 +45,7 @@ function Separator() {
  * Placeholder mini ring. Renders a static 0% with a "soon" affordance until
  * the ATS engine lands in Story 3.1.
  */
-function ATSMiniRing({ score }: { score: number | null }) {
+function ATSMiniRing({ score, computing }: { score: number | null; computing?: boolean }) {
   // Clamp to [0,100] so an out-of-range score doesn't render the ring
   // inverted or empty (e.g. negative offsets, or > circumference).
   const raw = score ?? 0;
@@ -54,11 +56,13 @@ function ATSMiniRing({ score }: { score: number | null }) {
 
   return (
     <span
-      className="inline-flex items-center gap-1.5"
+      className={`inline-flex items-center gap-1.5 ${computing ? "animate-pulse" : ""}`}
       title={
-        score == null
-          ? "ATS scoring will arrive in Story 3.1"
-          : `ATS score: ${score}%`
+        computing
+          ? "ATS score computing…"
+          : score == null
+            ? "Belum ada skor ATS"
+            : `ATS score: ${score}%`
       }
     >
       <svg width={18} height={18} viewBox="0 0 18 18" aria-hidden="true">
