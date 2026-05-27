@@ -1,14 +1,17 @@
 "use client";
 
-import { use, useEffect } from "react";
+import { use, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useResume } from "@/hooks/useResume";
 import { useDebouncedSync } from "@/hooks/useDebouncedSync";
 import { useIndexedDBSync } from "@/hooks/useIndexedDBSync";
 import { useResumeRestore } from "@/hooks/useResumeRestore";
+import { useEditorKeyboard } from "@/hooks/useEditorKeyboard";
 import { useEditorStore } from "@/stores/editorStore";
 import EditorToolbar from "@/components/editor/EditorToolbar";
 import { EditorShell } from "@/components/editor/EditorShell";
+import { GlobalCommandPalette } from "@/components/editor/GlobalCommandPalette";
+import { SlashCommandPalette } from "@/components/editor/SlashCommandPalette";
 
 const ResumeCanvas = dynamic(
   () => import("@/components/editor/ResumeCanvas"),
@@ -23,37 +26,24 @@ export default function EditorPage({ params }: PageProps) {
   const { id } = use(params);
   const { data, isLoading, error } = useResume(id);
   const markSyncedAll = useEditorStore((s) => s.markSyncedAll);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
-  // Local-first cache restore. Runs in parallel with `useResume`; the LWW
-  // merge inside `markSyncedAll` makes their resolution order irrelevant.
+  // Local-first cache restore.
   useResumeRestore(id);
 
-  // When the React Query result arrives, merge server sections into the store
-  // via per-field LWW. Client-newer fields stay client-side; server-newer
-  // fields replace; conflicts are surfaced to the conflict toast (wired in
-  // useDebouncedSync; here we only need the merge).
+  // Merge server sections via per-field LWW.
   useEffect(() => {
     if (!data?.sections) return;
     markSyncedAll(data.sections);
   }, [data, markSyncedAll]);
 
-  // Keep IDB cache in step with the editor store at 800ms idle.
+  // Keep IDB cache in step at 800ms idle.
   useIndexedDBSync(id);
-  // Keep the API in step at 2s idle (with field timestamps + conflict resolve).
+  // Keep the API in step at 2s idle.
   useDebouncedSync(id);
 
-  // Global ⌘Z listener for AI undo (single-action, max depth 1).
-  // Full undo/redo stack deferred to Story 2.6 (zundo).
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
-        const restored = useEditorStore.getState().popUndo();
-        if (restored) e.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  // Centralized keyboard shortcuts (⌘Z, ⌘⇧Z, ⌘S, ⌘K, Tab).
+  useEditorKeyboard({ onOpenCommandPalette: () => setCmdPaletteOpen(true) });
 
   if (isLoading) {
     return (
@@ -80,6 +70,8 @@ export default function EditorPage({ params }: PageProps) {
       <div className="bg-muted/30 min-h-full">
         <ResumeCanvas />
       </div>
+      <SlashCommandPalette />
+      <GlobalCommandPalette open={cmdPaletteOpen} onOpenChange={setCmdPaletteOpen} />
     </EditorShell>
   );
 }

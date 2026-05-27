@@ -4,7 +4,7 @@ baseline_commit: edab43d13dea4ec65b25f4d8be0c186a83ded080
 
 # Story 2.6: Slash Commands & Keyboard Navigation
 
-**Status:** ready-for-dev
+**Status:** review
 **Epic:** 2 — Resume Editor
 **Created:** 2026-05-27
 
