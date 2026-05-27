@@ -42,7 +42,7 @@ export class AiService {
 
         // Strip PII before sending to LLM
         const sanitizedContent = this.piiGateway.sanitize(
-            { fieldContent, selectedText },
+            { fieldContent, ...(selectedText ? { selectedText } : {}) },
             userId,
         );
 
@@ -62,11 +62,12 @@ export class AiService {
             maxTokens: 500,
         });
 
-        // Log usage after stream completes (fire-and-forget)
-        result.then(async (r) => {
-            const usage = await r.usage;
+        // Log usage after stream completes (fire-and-forget).
+        // `streamText` returns a StreamTextResult which exposes `usage` as a
+        // promise property, not via `.then()` on the result itself.
+        result.usage.then((usage) => {
             if (usage) {
-                await prisma.aiUsageLog.create({
+                prisma.aiUsageLog.create({
                     data: {
                         userId,
                         operationType: `rewrite_${instruction}`,

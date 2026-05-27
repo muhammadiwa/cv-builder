@@ -81,7 +81,7 @@ export function AISelectionWand({ onSelect }: AISelectionWandProps) {
 
     if (!selection || bp !== "desktop") return null;
 
-    const top = selection.rect.top - 40;
+    const top = Math.max(8, selection.rect.top - 40);
     const left = selection.rect.left + selection.rect.width / 2 - 16;
 
     return (

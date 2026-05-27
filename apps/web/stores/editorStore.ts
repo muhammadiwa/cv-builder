@@ -235,6 +235,9 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
     const state = get();
     if (state.undoStack.length === 0) return false;
     const entry = state.undoStack[0];
+    // Don't attempt undo while the section is still write-locked — the
+    // updateSectionField call would be a no-op and we'd consume the entry.
+    if (state.lockedSections.has(entry.sectionId)) return false;
     // Restore the previous value via updateSectionField (which stamps a new ts).
     state.updateSectionField(entry.sectionId, entry.field, entry.previousValue);
     set({ undoStack: [] });
