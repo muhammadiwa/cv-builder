@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,8 +13,12 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editorStore";
+import { getFieldTimestamps } from "@/lib/sync/fieldTimestamps";
 import type { SectionType } from "@/types/resume";
 import { RichTextField } from "./RichTextField";
+import { AIWandButton, type AIInstruction } from "./AIWandButton";
+import { AIDiffView } from "./AIDiffView";
+import { useAIRewrite } from "@/hooks/useAIRewrite";
 
 const inputClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -23,6 +27,18 @@ const textareaClass = `${inputClass} resize-y min-h-[80px]`;
 // Approximation of a soft spring with CSS easing (Material's "standard" curve).
 // Keeps the AC-4 200ms duration but feels less linear than `ease`.
 const REORDER_TRANSITION = "transform 200ms cubic-bezier(0.4, 0.0, 0.2, 1)";
+
+/** Which field the AI wand targets per section type. Sections without a
+ * meaningful text field (e.g. header) don't show the wand. */
+const PRIMARY_AI_FIELD: Partial<Record<SectionType, string>> = {
+  summary: "summary",
+  experience: "description",
+  education: "description",
+  skills: "skills",
+  projects: "description",
+  certifications: "name",
+  achievements: "description",
+};
 
 export function SectionBlock({ node }: ReactNodeViewProps) {
   const attrs = node.attrs as {
@@ -45,6 +61,39 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
   const moveSectionDown = useEditorStore((s) => s.moveSectionDown);
 
   const [editing, setEditing] = useState(false);
+  const [aiActive, setAiActive] = useState(false);
+  const [aiField, setAiField] = useState<string | null>(null);
+  const isLocked = useEditorStore((s) => s.lockedSections.has(sectionId));
+  const pushUndo = useEditorStore((s) => s.pushUndo);
+  const ai = useAIRewrite();
+
+  // Determine which field the AI wand targets for this section type.
+  const primaryField = PRIMARY_AI_FIELD[sectionType] ?? null;
+
+  const handleAISelect = (instruction: AIInstruction) => {
+    if (!primaryField || !section) return;
+    setAiActive(true);
+    setAiField(primaryField);
+    ai.start({ sectionId, field: primaryField, instruction });
+  };
+
+  const handleAIApply = () => {
+    if (!aiField || !section) return;
+    // Snapshot for undo
+    const currentValue = section.content[aiField];
+    const currentTs = getFieldTimestamps(section.content)[aiField] ?? 0;
+    pushUndo({ sectionId, field: aiField, previousValue: currentValue, previousTs: currentTs });
+    // Apply AI result
+    updateSectionField(sectionId, aiField, ai.result);
+    setAiActive(false);
+    setAiField(null);
+  };
+
+  const handleAICancel = () => {
+    ai.abort();
+    setAiActive(false);
+    setAiField(null);
+  };
 
   const currentIndex = useEditorStore((s) =>
     s.sections.findIndex((sec) => sec.id === sectionId),
@@ -104,9 +153,8 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
     >
       <div ref={setNodeRef} style={style}>
         <div
-          className={`rounded-lg border bg-card transition-colors ${
-            visible ? "" : "opacity-50"
-          }`}
+          className={`rounded-lg border bg-card transition-colors ${visible ? "" : "opacity-50"
+            } ${isLocked ? "ring-2 ring-indigo-400 animate-pulse" : ""}`}
         >
           {/* Section header bar — clickable surface to toggle edit mode */}
           <div
@@ -185,6 +233,16 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
               )}
             </button>
 
+            {/* AI Wand — only for section types with a primary text field */}
+            {primaryField && (
+              <span onClick={(e) => e.stopPropagation()}>
+                <AIWandButton
+                  onSelect={handleAISelect}
+                  disabled={isLocked || aiActive}
+                />
+              </span>
+            )}
+
             {/* Edit chevron — visual affordance, not the only way to toggle */}
             <span className="shrink-0 p-1 rounded">
               <ChevronDown
@@ -198,6 +256,28 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
             className={`px-4 py-3 ${editing ? "" : "cursor-pointer"}`}
             onClick={editing ? undefined : handleHeaderClick}
           >
+            {/* Write-lock indicator */}
+            {isLocked && (
+              <div className="mb-2 flex items-center gap-2 text-xs text-indigo-500 animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-indigo-500" />
+                AI sedang menulis…
+              </div>
+            )}
+
+            {/* AI Diff View — shown inline when AI is active for this section */}
+            {aiActive && aiField && (
+              <div className="mb-3">
+                <AIDiffView
+                  originalText={String(content[aiField] ?? "")}
+                  aiText={ai.result}
+                  isStreaming={ai.isStreaming}
+                  onApply={handleAIApply}
+                  onRetry={ai.retry}
+                  onCancel={handleAICancel}
+                />
+              </div>
+            )}
+
             {editing ? (
               <SectionEditor
                 sectionType={sectionType}
