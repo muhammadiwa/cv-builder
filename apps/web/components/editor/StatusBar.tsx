@@ -139,9 +139,12 @@ function RelativeTime({ ts }: { ts: number | null }) {
     else if (seconds < 86_400) label = rtf.format(-Math.floor(seconds / 3600), "hour");
     else label = rtf.format(-Math.floor(seconds / 86_400), "day");
   } catch {
+    // Fallback for browsers without Intl.RelativeTimeFormat. Use short
+    // Indonesian unit hints: d=detik, m=menit, j=jam, h=hari.
     if (seconds < 60) label = `${seconds}d`;
     else if (seconds < 3600) label = `${Math.floor(seconds / 60)}m`;
-    else label = `${Math.floor(seconds / 3600)}j`;
+    else if (seconds < 86_400) label = `${Math.floor(seconds / 3600)}j`;
+    else label = `${Math.floor(seconds / 86_400)}h`;
   }
 
   return (
@@ -150,10 +153,13 @@ function RelativeTime({ ts }: { ts: number | null }) {
 }
 
 function countWords(
-  sections: { content: Record<string, unknown> | null | undefined }[],
+  sections: ({ content: Record<string, unknown> | null | undefined } | null | undefined)[],
 ): number {
   let total = 0;
   for (const s of sections) {
+    // Section entry itself can be null/undefined during a transient store
+    // state (e.g. mid-reorder splice); guard before touching `s.content`.
+    if (!s) continue;
     // The TS shape says `Record<string, unknown>`, but a partially-loaded or
     // legacy section can be `null`/`undefined` at runtime. Guard so the
     // status bar never crashes the editor footer.

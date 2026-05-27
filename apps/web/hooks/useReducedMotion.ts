@@ -10,7 +10,14 @@ import { useEffect, useState } from "react";
  * reduced motion when we can't detect it).
  */
 export function useReducedMotion(): boolean {
-    const [reduced, setReduced] = useState<boolean>(false);
+    // Lazy initial value reads the preference synchronously on the first
+    // render so the first paint already honors reduced motion. Without this
+    // we'd render one frame at full motion before the useEffect subscribes
+    // and re-renders.
+    const [reduced, setReduced] = useState<boolean>(() => {
+        if (typeof window === "undefined" || !window.matchMedia) return false;
+        return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    });
 
     useEffect(() => {
         if (typeof window === "undefined" || !window.matchMedia) return;

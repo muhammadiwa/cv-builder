@@ -194,6 +194,29 @@ EditorShell (responsive root)
 
 - [x] [Review][Defer] Same as 2026-05-26 review — items not yet addressed remain tracked above (BottomSheet drag-feedback, mobile StatusBar overlap, SectionBlock currentIndex=-1, dangerouslySetInnerHTML sanitization, BottomSheet aria-describedby, LeftNav focus wrap). No additional defers raised this round.
 
+### Review Findings (2026-05-27 — re-run after fixes commit b2c6e60)
+
+Acceptance Auditor: **0 violations** — all 14 patches and both resolved decisions from the prior round were faithfully applied. New round surfaced only follow-up gaps in the patches themselves, not regressions to the original implementation.
+
+#### Patch (actionable)
+
+- [x] [Review][Patch] IntersectionObserver else-branch clears `activeSectionId` on partial delta callbacks — IO entries only include sections whose intersection *changed*, so when one section leaves while others remain in view, `entries.filter(isIntersecting)` returns empty and the indicator clears even though other sections are still visible. Fix: maintain a Set of currently-intersecting elements (toggle add/remove per entry) and pick the topmost from the Set instead of from the delta. [EditorShell.tsx:60-72]
+- [x] [Review][Patch] Grid track snap vs child width transition mismatch — column wrappers animate their `width` over 200ms but `grid-template-columns` snaps instantly, so during transit the wrapper is narrower or wider than the track. Move the transition to the grid template itself via CSS variables (`grid-template-columns: var(--left-w) 1fr var(--right-w)` with width animated on the variable). [EditorShell.tsx:148-172]
+- [x] [Review][Patch] LeftNav arrow-key handler doesn't guard `idx < 0` — if `currentTarget` somehow falls outside the queried button list, the modulo math wraps to position 0 / len-1 instead of staying put. Add an early return on `idx < 0`. [LeftNav.tsx:155-167]
+- [x] [Review][Patch] StatusBar `countWords` doesn't guard a null/undefined section entry — TS shape allows `null`/`undefined` (per the new patched type), but the loop reaches `s.content` without checking `s` first. Add `if (!s) continue;`. [StatusBar.tsx:153-160]
+- [x] [Review][Patch] StatusBar `Intl.RelativeTimeFormat` catch-fallback skips the days bucket — the fallback path tops out at hours, so a one-week-old timestamp renders as `168j` (168 hours) instead of `7h`. Add `else label = \`${Math.floor(seconds/86400)}h\`;`. [StatusBar.tsx:140-147]
+- [x] [Review][Patch] `useReducedMotion` first-paint flash — `useState<boolean>(false)` initial value means animations run at full motion for one render before the `useEffect` subscribes and re-renders. Use lazy init: `useState(() => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)`. [useReducedMotion.ts:11-30]
+- [x] [Review][Patch] BottomSheet `Dialog.Description` uses hardcoded id `"bs-desc"` — multiple BottomSheet instances mounted simultaneously collide on duplicate ids. Use React `useId()` for the description id and wire it into `aria-describedby`. [BottomSheet.tsx:53, 80]
+
+#### Deferred
+
+- [x] [Review][Defer] Mobile StatusBar still overlaps MobileTabBar — z-40 vs z-30 both at `fixed bottom-0`. Already deferred from 2026-05-26 review; needs an explicit `bottom-[56px]` offset OR repositioning, but blocked on tab-bar height being a constant we can subtract. Same finding as before, not a regression of this commit. [EditorShell.tsx:114-122]
+- [x] [Review][Defer] IntersectionObserver `rootMargin: -10% 0% -70% 0%` keeps a narrow 20% detection band — already flagged in 2026-05-26 as unchecked Decision Needed. Widening the band has UX trade-offs (top section over-eager, bottom section under-eager); deferred until we can A/B test the band width with real CV scroll behavior. [EditorShell.tsx:80-83]
+- [x] [Review][Defer] BottomSheet drag end can jitter when `dragSnapToOrigin` competes with exit animation — cosmetic micro-glitch at the threshold. Deferred — doesn't affect correctness, would need a custom drag controller to eliminate. [BottomSheet.tsx:64-74]
+- [x] [Review][Defer] BottomSheet animation transition prop captured at mount — runtime OS toggle of reduced-motion takes effect on the *next* sheet open, not mid-flight. Acceptable trade-off; mid-flight switching would need `key` cycling. [BottomSheet.tsx:36-79]
+- [x] [Review][Defer] SectionBlock orphan state has no UX feedback — `orphaned` flag silently disables move buttons but the user has no indication why. Deferred — orphan is a transient race during reorder and resolves on next render; visible UX would add noise. [SectionBlock.tsx:51-54]
+
+
 ---
 
 ## Dev Agent Record
@@ -263,6 +286,7 @@ EditorShell (responsive root)
 - 2026-05-26: Story created from epic 2.3 spec by code-review follow-up. Branched on green Story 2.2 implementation; layout state intentionally kept in a separate slice to avoid polluting the section-edit hot path.
 - 2026-05-26: Implemented all 13 subtasks. New responsive `EditorShell` orchestrates desktop 3-panel, tablet 2-panel, and mobile single-column + bottom tab layouts. Added scroll-spy via container-level `IntersectionObserver` keyed on `data-section-id`. Status bar tracks word count, last-saved timestamp (`Intl.RelativeTimeFormat`), and sync state. Right panel renders informative placeholders for AI / ATS / Template that point at their follow-up stories. `useEditorStore` extended with `lastSyncedAt` so the status bar can render a meaningful "Disimpan baru saja" without coupling to the network layer.
 - 2026-05-27: Code review (2026-05-27 round) — 3 decisions resolved (no scope creep / keep 40px collapse rail / Pengaturan→SettingsPanelPlaceholder) and 14 patches applied: tab label "AI"→"AI Chat", scoped+debounced MutationObserver, IO root pinned to scrollable `<main>`, RightPanel `Esc` skips inputs/contenteditables, all `scrollIntoView` + Framer animations honor `prefers-reduced-motion` via new `useReducedMotion`, `CSS.escape` on section-id selectors, defensive `countWords`/`ATSMiniRing`/`navigator.onLine` guards, RightPanel active-tab border pre-allocated to remove 2px shift, redundant `setTimeout` band-aid removed, BottomSheet subscribes to reduced-motion at runtime, `useBreakpoint` falls back to legacy `addListener` for older Safari. SectionBlock `currentIndex=-1` orphan handling fixed alongside.
+- 2026-05-27: Code review re-run on fixes commit `b2c6e60` — 0 violations from Acceptance Auditor, 7 follow-up patches applied: IntersectionObserver now keeps a running `intersectingEls` Set so partial deltas don't wipe the active indicator; grid track animates directly via `transition-[grid-template-columns]` (modern browsers interpolate same-track-count grids natively); LeftNav arrow-key guards `idx < 0`; StatusBar `countWords` skips null/undefined section entries; RTF catch-fallback gained a days bucket (`h` for `hari`); `useReducedMotion` lazy-initializes from `matchMedia` to honor preference on first paint; BottomSheet `Dialog.Description` uses `useId()` to avoid id collisions across multiple mounted sheets.
 
 ---
 

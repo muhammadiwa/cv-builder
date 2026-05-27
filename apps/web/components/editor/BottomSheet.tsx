@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -37,6 +37,9 @@ export function BottomSheet({
   // Reactive reduced-motion subscription so the exit animation honors a
   // runtime toggle (user changes the OS preference while the sheet is open).
   const reducedMotion = useReducedMotion();
+  // Unique id per BottomSheet instance so the `aria-describedby` link
+  // doesn't collide when multiple sheets mount simultaneously.
+  const descId = useId();
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -53,7 +56,7 @@ export function BottomSheet({
               />
             </Dialog.Overlay>
 
-            <Dialog.Content asChild aria-describedby="bs-desc">
+            <Dialog.Content asChild aria-describedby={descId}>
               <motion.div
                 className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t bg-background shadow-2xl outline-none"
                 style={{ height: "70vh" }}
@@ -86,7 +89,7 @@ export function BottomSheet({
                 </div>
 
                 <Dialog.Description
-                  id="bs-desc"
+                  id={descId}
                   className="sr-only"
                 >
                   {title} — geser ke bawah untuk menutup

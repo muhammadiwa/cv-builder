@@ -52,34 +52,50 @@ export function EditorShell({ children }: EditorShellProps) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    // IntersectionObserver only delivers entries for elements whose
+    // intersection state CHANGED. To answer "which section is currently
+    // topmost?" we maintain a running Set of currently-intersecting
+    // elements, update it from each delta, then pick the topmost from the
+    // full Set — never from the partial entries argument.
+    const intersectingEls = new Set<HTMLElement>();
+
     const observer = new IntersectionObserver(
       (entries) => {
-        // Pick the entry whose top is closest to the viewport top among the
-        // currently intersecting ones — this is the "you are here" section.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) =>
-              Math.abs(a.boundingClientRect.top) -
-              Math.abs(b.boundingClientRect.top),
-          );
-        if (visible.length > 0) {
-          const id = (visible[0].target as HTMLElement).dataset.sectionId;
-          if (id) setActiveSectionId(id);
-        } else {
-          // No section intersects the detection zone. Clear the active
-          // indicator so the nav doesn't show a stale highlight (e.g. after
-          // the user scrolls past the last section or deletes the active one).
-          setActiveSectionId(null);
+        for (const e of entries) {
+          const target = e.target as HTMLElement;
+          if (e.isIntersecting) intersectingEls.add(target);
+          else intersectingEls.delete(target);
         }
+
+        if (intersectingEls.size === 0) {
+          // No section in the detection zone — clear the indicator so the
+          // nav doesn't show a stale highlight after the user scrolls past
+          // the last section or deletes the active one.
+          setActiveSectionId(null);
+          return;
+        }
+
+        // Pick the element whose top is closest to the root top edge. We
+        // recompute getBoundingClientRect for each candidate because the
+        // entries we cached may be stale by the next callback.
+        let topmostEl: HTMLElement | null = null;
+        let topmostDistance = Infinity;
+        for (const el of intersectingEls) {
+          const dist = Math.abs(el.getBoundingClientRect().top);
+          if (dist < topmostDistance) {
+            topmostDistance = dist;
+            topmostEl = el;
+          }
+        }
+        const id = topmostEl?.dataset.sectionId ?? null;
+        if (id) setActiveSectionId(id);
       },
       {
         // Use the actual scroll container as root on desktop/tablet — the
         // viewport default would never fire because `<main>` owns the scroll.
         root: bp === "mobile" ? null : mainRef.current,
         // Wider detection zone so the topmost visible section reliably
-        // triggers the active indicator. When zero sections intersect (e.g.
-        // scrolled past all blocks), the else-branch above clears the state.
+        // triggers the active indicator.
         rootMargin: "-10% 0% -70% 0%",
         threshold: 0,
       },
@@ -143,32 +159,28 @@ export function EditorShell({ children }: EditorShellProps) {
   return (
     <div className="min-h-screen flex flex-col">
       <div
-        className="flex-1 grid"
+        className="flex-1 grid transition-[grid-template-columns] duration-200 ease-out"
         style={{
           gridTemplateColumns: showLeftNav
             ? `${leftW}px 1fr ${rightW}px`
             : `1fr ${rightW}px`,
-          // Column collapse/expand is animated via width transitions on the
-          // panel wrappers (grid-template-columns is non-animatable per CSS
-          // spec, so the grid tracks snap instantly while the inner widths
-          // animate smoothly).
+          // `grid-template-columns` IS animatable in modern browsers when
+          // the track count stays the same between values (Chrome 80+,
+          // Safari 14.1+, Firefox 66+). We keep 3 tracks throughout, so the
+          // grid track widths interpolate smoothly without the inner-width
+          // / track-width mismatch we'd hit if we animated only the child
+          // wrappers.
         }}
       >
         {showLeftNav && (
-          <div
-            className="transition-[width] duration-200 overflow-hidden"
-            style={{ width: leftW, minWidth: 0 }}
-          >
+          <div className="overflow-hidden" style={{ minWidth: 0 }}>
             <LeftNav />
           </div>
         )}
         <main ref={mainRef} className="overflow-y-auto" style={{ minWidth: 0 }}>
           {children}
         </main>
-        <div
-          className="transition-[width] duration-200 overflow-hidden"
-          style={{ width: rightW, minWidth: 0 }}
-        >
+        <div className="overflow-hidden" style={{ minWidth: 0 }}>
           <RightPanel />
         </div>
       </div>

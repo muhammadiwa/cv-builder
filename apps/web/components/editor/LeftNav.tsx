@@ -159,6 +159,7 @@ export function LeftNav() {
                       const len = buttons.length;
                       if (len === 0) return;
                       const idx = buttons.indexOf(e.currentTarget);
+                      if (idx < 0) return;
                       const nextIdx =
                         e.key === "ArrowDown"
                           ? (idx + 1) % len
