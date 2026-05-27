@@ -6,9 +6,9 @@ import { Sparkles, Target, Palette, ChevronRight, ChevronLeft } from "lucide-rea
 import { useEditorLayoutStore, type RightPanelTab } from "@/stores/editorLayoutStore";
 import {
   AIPanelPlaceholder,
-  ATSPanelPlaceholder,
   TemplatePanelPlaceholder,
 } from "./RightPanelPlaceholders";
+import { ATSPanel } from "../ats/ATSPanel";
 
 const TABS: { value: RightPanelTab; label: string; Icon: typeof Sparkles }[] = [
   { value: "ai", label: "AI Chat", Icon: Sparkles },
@@ -108,8 +108,8 @@ export function RightPanel() {
         <Tabs.Content value="ai" className="flex-1 outline-none">
           <AIPanelPlaceholder />
         </Tabs.Content>
-        <Tabs.Content value="ats" className="flex-1 outline-none">
-          <ATSPanelPlaceholder />
+        <Tabs.Content value="ats" className="flex-1 outline-none overflow-hidden">
+          <ATSPanel />
         </Tabs.Content>
         <Tabs.Content value="template" className="flex-1 outline-none">
           <TemplatePanelPlaceholder />
