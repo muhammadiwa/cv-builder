@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editorStore";
 
@@ -18,6 +18,11 @@ import { useEditorStore } from "@/stores/editorStore";
 export function useEditorKeyboard(opts: {
     onOpenCommandPalette: () => void;
 }) {
+    // Stable ref so the useEffect doesn't re-register on every render
+    // (opts is a new object identity each render from the call site).
+    const optsRef = useRef(opts);
+    optsRef.current = opts;
+
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
             const mod = e.metaKey || e.ctrlKey;
@@ -48,7 +53,7 @@ export function useEditorKeyboard(opts: {
             // ⌘K — global command palette
             if (mod && e.key === "k") {
                 e.preventDefault();
-                opts.onOpenCommandPalette();
+                optsRef.current.onOpenCommandPalette();
                 return;
             }
 
@@ -79,5 +84,5 @@ export function useEditorKeyboard(opts: {
 
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [opts]);
+    }, []); // stable — optsRef handles the callback identity
 }

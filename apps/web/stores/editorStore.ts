@@ -313,7 +313,7 @@ export const useEditorStore = create<EditorState>()(temporal((set, get) => ({
         lastSyncedAt,
       };
     }),
-}), { limit: 50 }));
+}), { limit: 50, partialize: (state) => ({ sections: state.sections }) }));
 
 /**
  * Selector helper: the smallest field-update timestamp newer than

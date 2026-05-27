@@ -137,7 +137,7 @@ export function EditorShell({ children }: EditorShellProps) {
 
   if (bp === "mobile") {
     return (
-      <div className="min-h-screen flex flex-col">
+      <div className="min-h-screen flex flex-col" data-editor-shell="">
         <main
           ref={mainRef}
           className="flex-1 pb-[120px]"
@@ -160,7 +160,7 @@ export function EditorShell({ children }: EditorShellProps) {
   const rightW = rightCollapsed ? RIGHT_PANEL_W_COLLAPSED_PX : RIGHT_PANEL_W_PX;
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col" data-editor-shell="">
       <div
         className="flex-1 grid transition-[grid-template-columns] duration-200 ease-out"
         style={{
