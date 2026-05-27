@@ -7,6 +7,9 @@ import { LeftNav } from "./LeftNav";
 import { RightPanel } from "./RightPanel";
 import { StatusBar } from "./StatusBar";
 import { MobileTabBar } from "./MobileTabBar";
+import { AISelectionWand } from "./AISelectionWand";
+import { useAIRewrite } from "@/hooks/useAIRewrite";
+import { getFieldTimestamps } from "@/lib/sync/fieldTimestamps";
 
 /**
  * EditorShell
@@ -185,6 +188,18 @@ export function EditorShell({ children }: EditorShellProps) {
         </div>
       </div>
       <StatusBar />
+      {/* Floating AI wand for text selection (desktop only) */}
+      <AISelectionWand
+        onSelect={(instruction, sectionId, field, selectedText) => {
+          // The selection wand delegates to the SectionBlock's AI flow.
+          // We dispatch a custom event that the SectionBlock can listen to.
+          window.dispatchEvent(
+            new CustomEvent("ai-selection-rewrite", {
+              detail: { instruction, sectionId, field, selectedText },
+            }),
+          );
+        }}
+      />
     </div>
   );
 }

@@ -77,6 +77,29 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
     ai.start({ sectionId, field: primaryField, instruction });
   };
 
+  // Listen for text-selection AI rewrite events from AISelectionWand
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        instruction: AIInstruction;
+        sectionId: string;
+        field: string;
+        selectedText: string;
+      };
+      if (detail.sectionId !== sectionId) return;
+      setAiActive(true);
+      setAiField(detail.field);
+      ai.start({
+        sectionId,
+        field: detail.field,
+        instruction: detail.instruction,
+        selectedText: detail.selectedText,
+      });
+    };
+    window.addEventListener("ai-selection-rewrite", handler);
+    return () => window.removeEventListener("ai-selection-rewrite", handler);
+  }, [sectionId, ai]);
+
   const handleAIApply = () => {
     if (!aiField || !section) return;
     // Snapshot for undo

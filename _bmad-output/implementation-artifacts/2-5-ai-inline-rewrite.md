@@ -4,7 +4,7 @@ baseline_commit: ae2ebd0c1579f81b1fd962d79a88513f036862f2
 
 # Story 2.5: AI Inline Rewrite
 
-**Status:** in-progress
+**Status:** review
 **Epic:** 2 — Resume Editor
 **Created:** 2026-05-27
 
