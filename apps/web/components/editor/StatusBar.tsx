@@ -44,7 +44,10 @@ function Separator() {
  * the ATS engine lands in Story 3.1.
  */
 function ATSMiniRing({ score }: { score: number | null }) {
-  const value = score ?? 0;
+  // Clamp to [0,100] so an out-of-range score doesn't render the ring
+  // inverted or empty (e.g. negative offsets, or > circumference).
+  const raw = score ?? 0;
+  const value = Math.min(100, Math.max(0, Number.isFinite(raw) ? raw : 0));
   const radius = 7;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (value / 100) * circumference;
@@ -126,14 +129,20 @@ function RelativeTime({ ts }: { ts: number | null }) {
   }
 
   const seconds = Math.max(0, Math.floor((now - ts) / 1000));
-  const rtf = new Intl.RelativeTimeFormat("id", { numeric: "auto" });
 
   let label: string;
-  if (seconds < 30) label = "baru saja";
-  else if (seconds < 60) label = rtf.format(-seconds, "second");
-  else if (seconds < 3600) label = rtf.format(-Math.floor(seconds / 60), "minute");
-  else if (seconds < 86_400) label = rtf.format(-Math.floor(seconds / 3600), "hour");
-  else label = rtf.format(-Math.floor(seconds / 86_400), "day");
+  try {
+    const rtf = new Intl.RelativeTimeFormat("id", { numeric: "auto" });
+    if (seconds < 30) label = "baru saja";
+    else if (seconds < 60) label = rtf.format(-seconds, "second");
+    else if (seconds < 3600) label = rtf.format(-Math.floor(seconds / 60), "minute");
+    else if (seconds < 86_400) label = rtf.format(-Math.floor(seconds / 3600), "hour");
+    else label = rtf.format(-Math.floor(seconds / 86_400), "day");
+  } catch {
+    if (seconds < 60) label = `${seconds}d`;
+    else if (seconds < 3600) label = `${Math.floor(seconds / 60)}m`;
+    else label = `${Math.floor(seconds / 3600)}j`;
+  }
 
   return (
     <span title={new Date(ts).toLocaleString("id-ID")}>Disimpan {label}</span>
@@ -141,10 +150,14 @@ function RelativeTime({ ts }: { ts: number | null }) {
 }
 
 function countWords(
-  sections: { content: Record<string, unknown> }[],
+  sections: { content: Record<string, unknown> | null | undefined }[],
 ): number {
   let total = 0;
   for (const s of sections) {
+    // The TS shape says `Record<string, unknown>`, but a partially-loaded or
+    // legacy section can be `null`/`undefined` at runtime. Guard so the
+    // status bar never crashes the editor footer.
+    if (!s.content || typeof s.content !== "object") continue;
     for (const v of Object.values(s.content)) {
       if (typeof v !== "string") continue;
       // Strip HTML produced by RichTextField, then count whitespace-separated words.

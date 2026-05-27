@@ -1,5 +1,5 @@
 ---
-baseline_commit: 4c7cdece494a085888265fb19293dac56ed537fc
+baseline_commit: 1d29767fc353b3b348a78d81582834eab83a3eaf
 ---
 
 # Story 2.3: Multi-Panel Layout with Mobile Adaptation
@@ -113,7 +113,7 @@ EditorShell (responsive root)
 
 - [x] 3.1 Create `apps/web/components/editor/LeftNav.tsx` — vertical list of sections (icon + label), 6-dot reorder handle is *not* duplicated here (canvas owns drag), only click-to-scroll-into-view. Collapse toggle (`280px ↔ 64px`) animated via CSS variable on the shell.
 - [x] 3.2 Create `apps/web/components/editor/RightPanelPlaceholders.tsx` — three empty-state cards (`AIPanelPlaceholder`, `ATSPanelPlaceholder`, `TemplatePanelPlaceholder`) explaining what's coming.
-- [x] 3.3 Create `apps/web/components/editor/RightPanel.tsx` — Radix Tabs with Lucide icons. Tab state read from `editorLayoutStore.rightPanelTab`. Collapse toggle (`360px ↔ 0`). Keyboard: `Esc` collapses.
+- [x] 3.3 Create `apps/web/components/editor/RightPanel.tsx` — Radix Tabs with Lucide icons. Tab state read from `editorLayoutStore.rightPanelTab`. Collapse toggle (`360px ↔ 40px` rail with chevron — keeps an in-shell affordance to re-expand). Keyboard: `Esc` collapses.
 - [x] 3.4 Add an `IntersectionObserver` in `EditorShell` (desktop only) that watches `[data-section-block]` and writes the topmost visible `data-section-id` into the layout store. `LeftNav` reads that to drive the active-border animation (`framer-motion` `layoutId`).
 
 ### 4. Mobile chrome
@@ -138,6 +138,61 @@ EditorShell (responsive root)
 - [x] 6.2 Verify `pnpm --filter '@lolos/web' build` passes; verify the editor route still renders inside the shell.
 - [x] 6.3 Manually verify three breakpoints: ≤375px (small phone), 768–1023px (tablet), ≥1280px (desktop).
 - [x] 6.4 Verify reduced-motion: panel collapses become instant when `prefers-reduced-motion` is set.
+
+### Review Findings (2026-05-26)
+
+#### Decision Needed
+
+- [ ] [Review][Decision] CSS grid column collapse animation — The spec says "collapse animates column tracks" but grid-template-columns is non-animatable per CSS spec. Options: (a) animate panel width instead, (b) keep snap-toggle, (c) use transform-based slide. [EditorShell.tsx:129-131]
+- [ ] [Review][Decision] IntersectionObserver rootMargin too narrow (-30% 0% -50% 0%) — creates only 20% detection zone. Sections in top 30% of viewport never get highlighted. Should the zone be wider? [EditorShell.tsx:250]
+
+#### Patch (actionable)
+
+- [ ] [Review][Patch] BottomSheet drag-to-dismiss has no visual feedback — dragConstraints top:0,bottom:0 prevents finger tracking [BottomSheet.tsx:59-61]
+- [ ] [Review][Patch] Mobile StatusBar hidden behind MobileTabBar — z-index conflict makes sync status invisible on mobile [EditorShell.tsx:95-107]
+- [ ] [Review][Patch] Intl.RelativeTimeFormat throws in older browsers — no try/catch fallback [StatusBar.tsx:129]
+- [ ] [Review][Patch] Stale activeSectionId never cleared when no sections visible or section deleted [EditorShell.tsx:50-72]
+- [ ] [Review][Patch] SectionBlock currentIndex=-1 disables move buttons silently [SectionBlock.tsx:49-53]
+- [ ] [Review][Patch] dangerouslySetInnerHTML renders stored content without sanitization — defense-in-depth gap [SectionBlock.tsx:247-252]
+- [ ] [Review][Patch] aria-describedby={undefined} on BottomSheet Dialog — suppresses required accessibility description [BottomSheet.tsx:116]
+- [ ] [Review][Patch] LeftNav keyboard focus not wrapped — ArrowUp at first item loses focus [LeftNav.tsx:464-481]
+
+#### Deferred
+
+- [x] [Review][Defer] ATS mini-ring hardcoded 0% — replaced by Story 3.1 [StatusBar.tsx:899-939]
+- [x] [Review][Defer] BottomSheet calc(70vh-80px) can go negative on ultra-short viewports — edge case, very rare [BottomSheet.tsx:100]
+- [x] [Review][Defer] Hardcoded pb-[120px] decoupled from bar heights — follow-up cleanup [EditorShell.tsx:99]
+- [x] [Review][Defer] countWords runs without memoization — acceptable for current section counts [StatusBar.tsx:143-157]
+- [x] [Review][Defer] AnimatePresence + forceMount double-mount on rapid cycles — rare interaction [BottomSheet.tsx:40]
+
+### Review Findings (2026-05-27)
+
+#### Decision Needed
+
+- [x] [Review][Decision] Scope creep: testing framework rollout bundled in this story diff — TESTING.md, jest/vitest/playwright configs across 5 packages, e2e + unit tests, ~15 new dev-deps, and `apps/workers/src/main.ts` are all in this story's diff but Dev Agent Record decision #7 explicitly states no test framework was added in scope. **Resolved 2026-05-27:** false alarm — git history is already clean (Story 2.3 lives entirely in PR #2 / merge `4e059d7`; Story 1.9 lives in PR #4 / merge `5ec3c32`). The diff phantom came from `baseline_commit` in this frontmatter being set to `4c7cdec` (Story 2.2 review tip) instead of master HEAD just before Story 2.3 branched. `baseline_commit` updated to `1d29767` so subsequent reviews use the correct window. No code action required.
+- [x] [Review][Decision] Right panel collapse: 40px rail vs spec's `360px ↔ 0` — Dev Context says "Collapse toggle (`360px ↔ 0`)" but EditorShell defines `RIGHT_PANEL_W_COLLAPSED_PX = 40` and RightPanel renders a chevron rail when collapsed. Keep the rail (better re-expand affordance) or honor spec literally? **Resolved 2026-05-27:** keep the 40px rail — without a rail there's no in-shell affordance to re-expand the panel until Story 2.6 (`⌘K` command palette). Dev Context updated below to `360 ↔ 40`.
+- [x] [Review][Decision] Mobile "Pengaturan" tab opens TemplatePanelPlaceholder — semantically Settings ≠ Template. Spec lists tabs as `Bagian | AI | ATS | Pengaturan` but doesn't define what Pengaturan should contain. Map it to a Settings stub, or rename the tab to "Template", or surface theme/language/account stubs? **Resolved 2026-05-27:** added `SettingsPanelPlaceholder` (theme/language/account stub) and wired the mobile "Pengaturan" tab to it. Mobile now matches AC-2's 4-tab vocabulary (`Bagian | AI | ATS | Pengaturan`) without semantic debt; desktop right panel keeps its 3 tabs per AC-1.
+
+#### Patch (actionable)
+
+- [x] [Review][Patch] AC-1 violation: right panel tab labeled "AI" instead of spec's "AI Chat" [RightPanel.tsx:13]
+- [x] [Review][Patch] MutationObserver scoped to `document.body` fires on every TipTap keystroke — observer + querySelectorAll runs on every mutation across the whole tree. Scope to canvas root and debounce. [EditorShell.tsx:75-77]
+- [x] [Review][Patch] IntersectionObserver doesn't set `root` to the main scroll container — `<main className="overflow-y-auto">` is the actual scroller, but IO defaults to viewport. Active section indicator stays stuck during in-column scroll. [EditorShell.tsx:42-66]
+- [x] [Review][Patch] RightPanel `Esc` keydown collapses panel even when focus is inside an input/contenteditable — hits users mid-edit. Skip when target matches `input, textarea, [contenteditable]`. [RightPanel.tsx:30-38]
+- [x] [Review][Patch] `scrollIntoView({behavior:"smooth"})` ignores `prefers-reduced-motion` in LeftNav and MobileTabBar — both should branch to `auto` when reduced-motion is set. [LeftNav.tsx:67-71, MobileTabBar.tsx:106-112]
+- [x] [Review][Patch] LeftNav `motion.span` layoutId active-border animation ignores `prefers-reduced-motion` — Framer spring overrides Tailwind motion-reduce CSS. Pass `transition={{duration: 0}}` when reduced. [LeftNav.tsx:97-104]
+- [x] [Review][Patch] `querySelector(\`[data-section-id="${id}"]\`)` doesn't escape the id — throws SyntaxError if id ever contains a quote/backslash/bracket. Wrap in `CSS.escape`. [LeftNav.tsx:67-71, MobileTabBar.tsx:104-110]
+- [x] [Review][Patch] `countWords` calls `Object.values(s.content)` without guarding null — TypeScript types declare `Record<string, unknown>` but runtime can be null. TypeError crashes the StatusBar. [StatusBar.tsx:140-153]
+- [x] [Review][Patch] `ATSMiniRing` doesn't clamp score to [0,100] — out-of-range value renders inverted or empty ring. [StatusBar.tsx:53-61]
+- [x] [Review][Patch] RightPanel active tab border (`data-[state=active]:border-b-2`) introduces 2px layout shift on tab switch — use a transparent border on inactive or absolute-positioned underline. [RightPanel.tsx:65-78]
+- [x] [Review][Patch] `navigator.onLine` consumed without guarding `undefined` — non-browser/stripped envs report falsy and dot stays red. Default to `true` when undefined. [useSyncStatus.ts:30-37]
+- [x] [Review][Patch] `setTimeout(attach, 200)` band-aid for late-mounted sections is redundant once MutationObserver is scoped properly — remove after fixing the MO scope above. [EditorShell.tsx:83]
+- [x] [Review][Patch] BottomSheet doesn't subscribe to `prefers-reduced-motion` at runtime — if user toggles the OS preference while a sheet is open, exit animation still runs at full motion. Subscribe via media query. [BottomSheet.tsx:62-72]
+- [x] [Review][Patch] `useBreakpoint` calls `mq.addEventListener('change', ...)` without fallback — older Safari (iOS 13) needs `mq.addListener`. [useBreakpoint.ts:55-61]
+
+#### Deferred
+
+- [x] [Review][Defer] Same as 2026-05-26 review — items not yet addressed remain tracked above (BottomSheet drag-feedback, mobile StatusBar overlap, SectionBlock currentIndex=-1, dangerouslySetInnerHTML sanitization, BottomSheet aria-describedby, LeftNav focus wrap). No additional defers raised this round.
 
 ---
 
@@ -185,20 +240,21 @@ EditorShell (responsive root)
 **New files:**
 - `apps/web/hooks/useBreakpoint.ts`
 - `apps/web/hooks/useSyncStatus.ts`
+- `apps/web/hooks/useReducedMotion.ts` — reactive `prefers-reduced-motion` hook + imperative `prefersReducedMotion()` helper
 - `apps/web/stores/editorLayoutStore.ts`
 - `apps/web/components/editor/EditorShell.tsx`
 - `apps/web/components/editor/LeftNav.tsx`
 - `apps/web/components/editor/RightPanel.tsx`
-- `apps/web/components/editor/RightPanelPlaceholders.tsx`
+- `apps/web/components/editor/RightPanelPlaceholders.tsx` — now exports a fourth `SettingsPanelPlaceholder` for the mobile "Pengaturan" tab
 - `apps/web/components/editor/StatusBar.tsx`
 - `apps/web/components/editor/MobileTabBar.tsx`
 - `apps/web/components/editor/BottomSheet.tsx`
 
 **Modified files:**
 - `apps/web/app/(dashboard)/resume/[id]/page.tsx` — replaced flat layout with `<EditorShell>` wrapper
-- `apps/web/components/editor/SectionBlock.tsx` — added `data-section-id={sectionId}` on `NodeViewWrapper` so LeftNav scroll-spy and MobileTabBar can target sections
+- `apps/web/components/editor/SectionBlock.tsx` — added `data-section-id={sectionId}` on `NodeViewWrapper`; review fix: explicit `orphaned` flag drives `isFirst`/`isLast` so move buttons don't silently disable on `currentIndex=-1`
 - `apps/web/stores/editorStore.ts` — added `lastSyncedAt` field; `markClean()` and `setSections()` stamp it
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` — story status `ready-for-dev` → `in-progress` → `review`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — story status `ready-for-dev` → `in-progress` → `review` → `done`
 
 ---
 
@@ -206,10 +262,11 @@ EditorShell (responsive root)
 
 - 2026-05-26: Story created from epic 2.3 spec by code-review follow-up. Branched on green Story 2.2 implementation; layout state intentionally kept in a separate slice to avoid polluting the section-edit hot path.
 - 2026-05-26: Implemented all 13 subtasks. New responsive `EditorShell` orchestrates desktop 3-panel, tablet 2-panel, and mobile single-column + bottom tab layouts. Added scroll-spy via container-level `IntersectionObserver` keyed on `data-section-id`. Status bar tracks word count, last-saved timestamp (`Intl.RelativeTimeFormat`), and sync state. Right panel renders informative placeholders for AI / ATS / Template that point at their follow-up stories. `useEditorStore` extended with `lastSyncedAt` so the status bar can render a meaningful "Disimpan baru saja" without coupling to the network layer.
+- 2026-05-27: Code review (2026-05-27 round) — 3 decisions resolved (no scope creep / keep 40px collapse rail / Pengaturan→SettingsPanelPlaceholder) and 14 patches applied: tab label "AI"→"AI Chat", scoped+debounced MutationObserver, IO root pinned to scrollable `<main>`, RightPanel `Esc` skips inputs/contenteditables, all `scrollIntoView` + Framer animations honor `prefers-reduced-motion` via new `useReducedMotion`, `CSS.escape` on section-id selectors, defensive `countWords`/`ATSMiniRing`/`navigator.onLine` guards, RightPanel active-tab border pre-allocated to remove 2px shift, redundant `setTimeout` band-aid removed, BottomSheet subscribes to reduced-motion at runtime, `useBreakpoint` falls back to legacy `addListener` for older Safari. SectionBlock `currentIndex=-1` orphan handling fixed alongside.
 
 ---
 
 ## Status
 
-**Current Status:** review
-**Last Updated:** 2026-05-26
+**Current Status:** done
+**Last Updated:** 2026-05-27

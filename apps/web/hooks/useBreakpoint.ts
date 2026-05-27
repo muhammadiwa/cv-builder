@@ -46,12 +46,27 @@ export function useBreakpoint(): Breakpoint {
     const mqMobile = window.matchMedia(`(max-width: ${MOBILE_MAX_PX}px)`);
     const mqTablet = window.matchMedia(`(max-width: ${TABLET_MAX_PX}px)`);
     const onChange = () => update();
-    mqMobile.addEventListener("change", onChange);
-    mqTablet.addEventListener("change", onChange);
+
+    // Older Safari (<14) only supports the legacy `addListener` API. Probe
+    // for the modern API first; fall back to the legacy one so the editor
+    // doesn't crash on iOS 13.
+    const supportsModern = typeof mqMobile.addEventListener === "function";
+    if (supportsModern) {
+      mqMobile.addEventListener("change", onChange);
+      mqTablet.addEventListener("change", onChange);
+    } else {
+      mqMobile.addListener(onChange);
+      mqTablet.addListener(onChange);
+    }
 
     return () => {
-      mqMobile.removeEventListener("change", onChange);
-      mqTablet.removeEventListener("change", onChange);
+      if (supportsModern) {
+        mqMobile.removeEventListener("change", onChange);
+        mqTablet.removeEventListener("change", onChange);
+      } else {
+        mqMobile.removeListener(onChange);
+        mqTablet.removeListener(onChange);
+      }
     };
   }, []);
 

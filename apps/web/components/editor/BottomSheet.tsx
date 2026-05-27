@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 /**
  * BottomSheet
@@ -33,6 +34,10 @@ export function BottomSheet({
   title,
   children,
 }: BottomSheetProps) {
+  // Reactive reduced-motion subscription so the exit animation honors a
+  // runtime toggle (user changes the OS preference while the sheet is open).
+  const reducedMotion = useReducedMotion();
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <AnimatePresence>
@@ -44,11 +49,11 @@ export function BottomSheet({
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
+                transition={{ duration: reducedMotion ? 0 : 0.18 }}
               />
             </Dialog.Overlay>
 
-            <Dialog.Content asChild aria-describedby={undefined}>
+            <Dialog.Content asChild aria-describedby="bs-desc">
               <motion.div
                 className="fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t bg-background shadow-2xl outline-none"
                 style={{ height: "70vh" }}
@@ -57,31 +62,35 @@ export function BottomSheet({
                 exit={{ y: "100%" }}
                 drag="y"
                 dragDirectionLock
-                dragConstraints={{ top: 0, bottom: 0 }}
+                dragConstraints={{ top: 0, bottom: 180 }}
+                dragSnapToOrigin
                 dragElastic={0.15}
                 onDragEnd={(_, info) => {
-                  // Generous threshold so accidental scroll touches don't
-                  // close the sheet.
                   if (info.offset.y > 120 || info.velocity.y > 600) {
                     onOpenChange(false);
                   }
                 }}
-                transition={{
-                  type: "spring",
-                  damping: 30,
-                  stiffness: 300,
-                  // Reduced-motion users get a fast, non-spring transition.
-                  ...((typeof window !== "undefined" &&
-                    window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+                transition={
+                  reducedMotion
                     ? { type: "tween", duration: 0.12 }
-                    : {}),
-                }}
+                    : {
+                      type: "spring",
+                      damping: 30,
+                      stiffness: 300,
+                    }
+                }
               >
                 {/* Drag affordance */}
                 <div className="flex justify-center pt-2 pb-1" aria-hidden="true">
                   <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
                 </div>
 
+                <Dialog.Description
+                  id="bs-desc"
+                  className="sr-only"
+                >
+                  {title} — geser ke bawah untuk menutup
+                </Dialog.Description>
                 <div className="flex items-center justify-between px-4 py-2 border-b">
                   <Dialog.Title className="text-sm font-semibold">
                     {title}

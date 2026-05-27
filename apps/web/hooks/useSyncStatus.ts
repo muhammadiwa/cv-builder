@@ -29,7 +29,15 @@ export function useSyncStatus(): SyncStatusInfo {
   const [online, setOnline] = useState<boolean>(true);
 
   useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
+    // Some test/embed environments leave `navigator.onLine` undefined; treat
+    // that as online so we don't show a permanent red dot when no API exists
+    // to ask.
+    const read = () =>
+      typeof navigator !== "undefined" &&
+        typeof navigator.onLine === "boolean"
+        ? navigator.onLine
+        : true;
+    const update = () => setOnline(read());
     update();
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
