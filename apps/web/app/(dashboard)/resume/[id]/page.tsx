@@ -7,6 +7,7 @@ import { useDebouncedSync } from "@/hooks/useDebouncedSync";
 import { useIndexedDBSync } from "@/hooks/useIndexedDBSync";
 import { useResumeRestore } from "@/hooks/useResumeRestore";
 import { useEditorKeyboard } from "@/hooks/useEditorKeyboard";
+import { useATSScore } from "@/features/ats/useATSScore";
 import { useEditorStore } from "@/stores/editorStore";
 import EditorToolbar from "@/components/editor/EditorToolbar";
 import { EditorShell } from "@/components/editor/EditorShell";
@@ -63,6 +64,19 @@ export default function EditorPage({ params }: PageProps) {
       </div>
     );
   }
+
+  return (
+    <EditorWithScoring cmdPaletteOpen={cmdPaletteOpen} setCmdPaletteOpen={setCmdPaletteOpen} />
+  );
+}
+
+/** Mounted only after data loads — keeps useATSScore from computing on empty sections. */
+function EditorWithScoring({ cmdPaletteOpen, setCmdPaletteOpen }: {
+  cmdPaletteOpen: boolean;
+  setCmdPaletteOpen: (v: boolean) => void;
+}) {
+  // ATS scoring: subscribes to sections, debounces 500ms, posts to Worker.
+  useATSScore();
 
   return (
     <EditorShell>
