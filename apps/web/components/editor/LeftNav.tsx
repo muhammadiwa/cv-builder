@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editorStore";
 import { useEditorLayoutStore } from "@/stores/editorLayoutStore";
+import {
+  prefersReducedMotion,
+  useReducedMotion,
+} from "@/hooks/useReducedMotion";
 import type { SectionType } from "@/types/resume";
 
 /**
@@ -62,13 +66,23 @@ export function LeftNav() {
   const collapsed = useEditorLayoutStore((s) => s.leftNavCollapsed);
   const toggle = useEditorLayoutStore((s) => s.toggleLeftNav);
   const activeSectionId = useEditorLayoutStore((s) => s.activeSectionId);
+  const reducedMotion = useReducedMotion();
 
   const handleNavigate = (sectionId: string) => {
+    // CSS.escape so a section id with a quote/backslash/bracket doesn't
+    // throw a SyntaxError. Falls back to the raw id in older browsers.
+    const sel =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(sectionId)
+        : sectionId;
     const el = document.querySelector<HTMLElement>(
-      `[data-section-id="${sectionId}"]`,
+      `[data-section-id="${sel}"]`,
     );
     if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+        block: "start",
+      });
     }
   };
 
@@ -112,14 +126,19 @@ export function LeftNav() {
               <li key={s.id} className="relative">
                 {isActive && (
                   // Shared-layout indicator: animates between active items.
+                  // When the user prefers reduced motion, snap instantly.
                   <motion.span
                     layoutId="leftnav-active"
                     className="absolute left-0 top-1 bottom-1 w-0.5 rounded-r bg-primary motion-reduce:transition-none"
-                    transition={{
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 35,
-                    }}
+                    transition={
+                      reducedMotion
+                        ? { duration: 0 }
+                        : {
+                          type: "spring",
+                          stiffness: 500,
+                          damping: 35,
+                        }
+                    }
                     aria-hidden="true"
                   />
                 )}
@@ -137,11 +156,14 @@ export function LeftNav() {
                           'button[data-leftnav-item="true"]',
                         ),
                       );
+                      const len = buttons.length;
+                      if (len === 0) return;
                       const idx = buttons.indexOf(e.currentTarget);
+                      if (idx < 0) return;
                       const nextIdx =
                         e.key === "ArrowDown"
-                          ? Math.min(idx + 1, buttons.length - 1)
-                          : Math.max(idx - 1, 0);
+                          ? (idx + 1) % len
+                          : (idx - 1 + len) % len;
                       buttons[nextIdx]?.focus();
                     }
                   }}

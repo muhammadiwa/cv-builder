@@ -1,15 +1,16 @@
 "use client";
 
-import { Sparkles, Target, Palette } from "lucide-react";
+import { Sparkles, Target, Palette, Settings as SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
- * Three empty-state placeholders for the right panel tabs.
+ * Four empty-state placeholders for the editor's side panels.
  *
  * Each panel will be replaced by the real implementation in a follow-up story:
- *   - AI    → Story 2.5 (AI Inline Rewrite) / Epic 4 (Kak Chat)
- *   - ATS   → Story 3.1 (ATS Scoring Engine)
+ *   - AI       → Story 2.5 (AI Inline Rewrite) / Epic 4 (Kak Chat)
+ *   - ATS      → Story 3.1 (ATS Scoring Engine)
  *   - Template → Story 5.1 (Template Gallery)
+ *   - Settings → preferences/account stubs landing in a follow-up story
  *
  * The placeholders are intentionally informative so the user understands the
  * surface they are looking at — we want to communicate *what's coming*,
@@ -44,6 +45,17 @@ export function TemplatePanelPlaceholder() {
       icon={<Palette className="h-6 w-6" />}
       title="Template"
       description="Pilih dan ganti template visual di sini. Layout berubah real-time tanpa kehilangan isi CV-mu."
+      cta="Coming soon"
+    />
+  );
+}
+
+export function SettingsPanelPlaceholder() {
+  return (
+    <Placeholder
+      icon={<SettingsIcon className="h-6 w-6" />}
+      title="Pengaturan"
+      description="Tema, bahasa, dan pengaturan akun akan berkumpul di sini. Sekarang masih placeholder — preferensi spesifik akan menyusul di story berikutnya."
       cta="Coming soon"
     />
   );

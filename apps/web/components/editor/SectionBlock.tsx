@@ -49,8 +49,9 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
   const currentIndex = useEditorStore((s) =>
     s.sections.findIndex((sec) => sec.id === sectionId),
   );
-  const isFirst = currentIndex <= 0;
-  const isLast = currentIndex < 0 || currentIndex >= sectionsLength - 1;
+  const orphaned = currentIndex < 0;
+  const isFirst = orphaned || currentIndex === 0;
+  const isLast = orphaned || currentIndex >= sectionsLength - 1;
 
   const {
     attributes,

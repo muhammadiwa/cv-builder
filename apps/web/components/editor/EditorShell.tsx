@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useBreakpoint } from "@/hooks/useBreakpoint";
 import { useEditorLayoutStore } from "@/stores/editorLayoutStore";
 import { LeftNav } from "./LeftNav";
@@ -43,66 +43,109 @@ export function EditorShell({ children }: EditorShellProps) {
   const rightCollapsed = useEditorLayoutStore((s) => s.rightPanelCollapsed);
   const setActiveSectionId = useEditorLayoutStore((s) => s.setActiveSectionId);
 
+  // Ref to the scrollable main element so the IntersectionObserver can use
+  // it as `root` on desktop/tablet (where main has `overflow-y-auto`). On
+  // mobile the viewport scrolls, so we leave `root` at the default (null).
+  const mainRef = useRef<HTMLElement | null>(null);
+
   // Scroll-spy: report the topmost visible section to the layout store.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    // IntersectionObserver only delivers entries for elements whose
+    // intersection state CHANGED. To answer "which section is currently
+    // topmost?" we maintain a running Set of currently-intersecting
+    // elements, update it from each delta, then pick the topmost from the
+    // full Set — never from the partial entries argument.
+    const intersectingEls = new Set<HTMLElement>();
+
     const observer = new IntersectionObserver(
       (entries) => {
-        // Pick the entry whose top is closest to the viewport top among the
-        // currently intersecting ones — this is the "you are here" section.
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) =>
-              Math.abs(a.boundingClientRect.top) -
-              Math.abs(b.boundingClientRect.top),
-          );
-        if (visible.length > 0) {
-          const id = (visible[0].target as HTMLElement).dataset.sectionId;
-          if (id) setActiveSectionId(id);
+        for (const e of entries) {
+          const target = e.target as HTMLElement;
+          if (e.isIntersecting) intersectingEls.add(target);
+          else intersectingEls.delete(target);
         }
+
+        if (intersectingEls.size === 0) {
+          // No section in the detection zone — clear the indicator so the
+          // nav doesn't show a stale highlight after the user scrolls past
+          // the last section or deletes the active one.
+          setActiveSectionId(null);
+          return;
+        }
+
+        // Pick the element whose top is closest to the root top edge. We
+        // recompute getBoundingClientRect for each candidate because the
+        // entries we cached may be stale by the next callback.
+        let topmostEl: HTMLElement | null = null;
+        let topmostDistance = Infinity;
+        for (const el of intersectingEls) {
+          const dist = Math.abs(el.getBoundingClientRect().top);
+          if (dist < topmostDistance) {
+            topmostDistance = dist;
+            topmostEl = el;
+          }
+        }
+        const id = topmostEl?.dataset.sectionId ?? null;
+        if (id) setActiveSectionId(id);
       },
       {
-        // 30% top + 50% bottom margin makes the indicator settle on the
-        // section the user is reading rather than racing past at the top.
-        rootMargin: "-30% 0% -50% 0%",
+        // Use the actual scroll container as root on desktop/tablet — the
+        // viewport default would never fire because `<main>` owns the scroll.
+        root: bp === "mobile" ? null : mainRef.current,
+        // Wider detection zone so the topmost visible section reliably
+        // triggers the active indicator.
+        rootMargin: "-10% 0% -70% 0%",
         threshold: 0,
       },
     );
 
-    // Observe existing and future blocks. The TipTap NodeView portal mounts
-    // them lazily, so we re-query a few frames after mount.
+    // Scope MutationObserver to the canvas root rather than the whole
+    // document — TipTap edits fire mutations on every keystroke and we
+    // don't want to re-query the whole document body each time. Debounce
+    // attach() so a burst of mutations only triggers one re-query.
+    const canvasRoot = mainRef.current ?? document.body;
     const attach = () => {
-      document
+      canvasRoot
         .querySelectorAll<HTMLElement>("[data-section-id]")
         .forEach((el) => observer.observe(el));
     };
     attach();
-    const id = window.setTimeout(attach, 200);
 
-    // Re-query on DOM mutations (sections added, reordered).
-    const mo = new MutationObserver(attach);
-    mo.observe(document.body, { childList: true, subtree: true });
+    let pending: number | null = null;
+    const debouncedAttach = () => {
+      if (pending != null) return;
+      pending = window.setTimeout(() => {
+        pending = null;
+        attach();
+      }, 100);
+    };
+
+    const mo = new MutationObserver(debouncedAttach);
+    mo.observe(canvasRoot, { childList: true, subtree: true });
 
     return () => {
       observer.disconnect();
       mo.disconnect();
-      window.clearTimeout(id);
+      if (pending != null) window.clearTimeout(pending);
     };
-  }, [setActiveSectionId]);
+  }, [setActiveSectionId, bp]);
 
   if (bp === "mobile") {
     return (
       <div className="min-h-screen flex flex-col">
-        <main className="flex-1 pb-[120px]">
+        <main
+          ref={mainRef}
+          className="flex-1 pb-[120px]"
+        >
           {/* Pad bottom so MobileTabBar + StatusBar don't cover content */}
           {children}
         </main>
-        <div className="fixed bottom-0 inset-x-0 z-20">
+        <div className="fixed bottom-0 inset-x-0 z-40">
           <StatusBar />
-          <MobileTabBar />
         </div>
+        <MobileTabBar />
       </div>
     );
   }
@@ -116,29 +159,28 @@ export function EditorShell({ children }: EditorShellProps) {
   return (
     <div className="min-h-screen flex flex-col">
       <div
-        className="flex-1 grid"
+        className="flex-1 grid transition-[grid-template-columns] duration-200 ease-out"
         style={{
           gridTemplateColumns: showLeftNav
             ? `${leftW}px 1fr ${rightW}px`
             : `1fr ${rightW}px`,
-          // CSS grid track changes are visually animated by Tailwind's
-          // duration utilities on the column children; the grid container
-          // itself can't animate `grid-template-columns` cross-browser, so
-          // we rely on the column-element widths being fixed (above) and
-          // animations happening inside the columns.
-          transition:
-            "grid-template-columns 200ms cubic-bezier(0.4, 0.0, 0.2, 1)",
+          // `grid-template-columns` IS animatable in modern browsers when
+          // the track count stays the same between values (Chrome 80+,
+          // Safari 14.1+, Firefox 66+). We keep 3 tracks throughout, so the
+          // grid track widths interpolate smoothly without the inner-width
+          // / track-width mismatch we'd hit if we animated only the child
+          // wrappers.
         }}
       >
         {showLeftNav && (
-          <div style={{ minWidth: 0 }}>
+          <div className="overflow-hidden" style={{ minWidth: 0 }}>
             <LeftNav />
           </div>
         )}
-        <main className="overflow-y-auto" style={{ minWidth: 0 }}>
+        <main ref={mainRef} className="overflow-y-auto" style={{ minWidth: 0 }}>
           {children}
         </main>
-        <div style={{ minWidth: 0 }}>
+        <div className="overflow-hidden" style={{ minWidth: 0 }}>
           <RightPanel />
         </div>
       </div>

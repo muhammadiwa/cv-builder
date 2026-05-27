@@ -11,7 +11,7 @@ import {
 } from "./RightPanelPlaceholders";
 
 const TABS: { value: RightPanelTab; label: string; Icon: typeof Sparkles }[] = [
-  { value: "ai", label: "AI", Icon: Sparkles },
+  { value: "ai", label: "AI Chat", Icon: Sparkles },
   { value: "ats", label: "ATS", Icon: Target },
   { value: "template", label: "Template", Icon: Palette },
 ];
@@ -28,9 +28,20 @@ export function RightPanel() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !collapsed) {
-        toggle();
+      if (e.key !== "Escape" || collapsed) return;
+      // Don't collapse the panel out from under the user while they are
+      // editing CV content — Esc inside an input/textarea/contenteditable
+      // commonly means "cancel inline edit", not "close the side panel".
+      const t = e.target as HTMLElement | null;
+      if (
+        t &&
+        (t.tagName === "INPUT" ||
+          t.tagName === "TEXTAREA" ||
+          t.isContentEditable)
+      ) {
+        return;
       }
+      toggle();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -71,7 +82,11 @@ export function RightPanel() {
                   "inline-flex items-center gap-1.5 px-3 py-2 text-sm",
                   "text-muted-foreground hover:text-foreground transition-colors",
                   "data-[state=active]:text-foreground",
-                  "data-[state=active]:border-b-2 data-[state=active]:border-primary",
+                  // Border is always 2px tall — transparent when inactive,
+                  // primary when active — to avoid a 2px layout shift on
+                  // tab switch.
+                  "border-b-2 border-transparent",
+                  "data-[state=active]:border-primary",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm",
                 ].join(" ")}
               >

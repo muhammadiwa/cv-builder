@@ -6,10 +6,11 @@ import type { LucideIcon } from "lucide-react";
 import { BottomSheet } from "./BottomSheet";
 import { useEditorStore } from "@/stores/editorStore";
 import { useEditorLayoutStore } from "@/stores/editorLayoutStore";
+import { prefersReducedMotion } from "@/hooks/useReducedMotion";
 import {
   AIPanelPlaceholder,
   ATSPanelPlaceholder,
-  TemplatePanelPlaceholder,
+  SettingsPanelPlaceholder,
 } from "./RightPanelPlaceholders";
 
 /**
@@ -67,7 +68,7 @@ export function MobileTabBar() {
         ) : openTab === "ats" ? (
           <ATSPanelPlaceholder />
         ) : openTab === "settings" ? (
-          <TemplatePanelPlaceholder />
+          <SettingsPanelPlaceholder />
         ) : null}
       </BottomSheet>
     </>
@@ -99,11 +100,21 @@ function SectionsList({ onNavigate }: { onNavigate: () => void }) {
             <button
               type="button"
               onClick={() => {
+                // CSS.escape so a section id with a quote/backslash/bracket
+                // doesn't blow up querySelector. Falls back to the raw id in
+                // pre-2018 browsers without CSS.escape.
+                const sel =
+                  typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                    ? CSS.escape(s.id)
+                    : s.id;
                 const el = document.querySelector<HTMLElement>(
-                  `[data-section-id="${s.id}"]`,
+                  `[data-section-id="${sel}"]`,
                 );
                 if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  el.scrollIntoView({
+                    behavior: prefersReducedMotion() ? "auto" : "smooth",
+                    block: "start",
+                  });
                 }
                 onNavigate();
               }}
