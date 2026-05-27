@@ -57,7 +57,7 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress
-  3-1-ats-scoring-engine: in-progress
+  3-1-ats-scoring-engine: review
   3-2-ats-score-visualization: backlog
   3-3-improvement-suggestions-with-quick-fix: backlog
   3-4-indonesian-ats-platform-rules: backlog
