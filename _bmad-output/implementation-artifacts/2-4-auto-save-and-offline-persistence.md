@@ -81,12 +81,16 @@ This story introduces three concrete moving parts:
 
 - Each `ResumeSection.content` field carries a sibling timestamp object `__field_updated_at` (one numeric ms epoch per field key, e.g. `{ summary: 1717000000000, location: 1717000010000 }`). The PATCH payload also includes these.
 - Backend applies per-field LWW: for each incoming field, keep the value whose `fieldUpdatedAt` is newer than the stored one. Discarded client fields are returned in the response under `{ conflicts: [{ sectionId, field, kept: "server", serverValue, clientValue }] }`.
+- **Server is also a clock authority.** Whenever the backend accepts a write to a field (whether from this client or a different device on a previous round), it stamps `content.__field_updated_at[field] = serverNow()` before persisting. The next round of LWW from any client compares its claimed timestamps against the server's stamp. This keeps the protocol convergent even when client clocks are skewed — the server-stamped value becomes the canonical "this server saw the write at T".
 - Client toasts each conflict and offers "Pulihkan versi saya" — clicking it issues a new PATCH with a bumped `fieldUpdatedAt` so the user's value wins on the next round.
 
-**Restore on load** is a coordinated dance between IndexedDB and React Query:
+**Restore on load** is a coordinated dance between IndexedDB and React Query. IndexedDB access is asynchronous; we cannot paint synchronously from cache before the first React commit. Instead we use a **paint-server-then-patch** strategy:
 
-- On page mount, `useResumeRestore({ resumeId })` reads the IndexedDB cache **synchronously** from a hydration suspense boundary; if a row exists for this resume id, the store is seeded from it before the first paint of `<EditorShell>`.
-- React Query then fetches the server payload in the background. When it arrives, the same `setSections` rule from Story 2.2 (refetch only when `!dirty`) is replaced with the new merge: client deltas (any field with `fieldUpdatedAt > serverUpdatedAt`) are kept; everything else is replaced with server values.
+1. The page mounts as today — `useResume(...)` (React Query) drives the first render. While the network is in flight, React Query returns its cached payload (or `undefined` for a cold load), so the canvas paints either the previously-fetched server state or a skeleton.
+2. `useResumeRestore({ resumeId })` mounts in parallel and reads `resumeRepo.loadResume(resumeId)` from IndexedDB. When that promise resolves (typically within ~10 ms on warm IDB, ~50 ms on cold open), it merges the IDB row into the editor store via `mergeWithLWW` — so any unsynced client field deltas patch onto the server-painted canvas.
+3. When the React Query result arrives, the same `mergeWithLWW` runs again with the server payload. The merge is idempotent (timestamp-based), so it doesn't matter whether IDB resolves first or the server resolves first — the final state is the per-field newest of (server, IDB, in-memory edits).
+
+**Hook ownership during restore**: `useResume` owns the canonical server state and React Query cache. `useResumeRestore` owns the IDB-cached edits and only writes to the editor store. The editor store is the single source of truth that `<EditorShell>` and `<ResumeCanvas>` render from. Neither hook blocks the other; both feed the same merge function.
 
 ### Technical Specs
 
@@ -105,6 +109,7 @@ This story introduces three concrete moving parts:
   // version 1: by('id')
   ```
 - **IndexedDB debounce: 800ms idle**, separate from the 2 s API debounce. The two run independently — IDB write fires faster so a tab close at t=900ms still preserves the edit.
+  - **Note on architecture doc.** `_bmad-output/planning-artifacts/architecture.md` Decision 6 cites `150ms → IndexedDB`. Epic AC-1 specifies `800ms`. The AC supersedes the architecture cell — 150 ms was the original aspirational target; 800 ms was chosen for the AC because it batches whole-word edits and reduces IDB churn on mid-range Android (the primary target device). The architecture doc will be reconciled in the Epic 2 retrospective; until then this spec is the source of truth.
 - **API debounce stays 2 s** (already in `useDebouncedSync`). The PATCH body grows by including `fieldUpdatedAt` per field; **payload size cap stays at 64 KB per section** (already enforced server-side via `sectionInputSchema`).
 - **Conflict response shape** (server → client):
   ```ts
@@ -121,14 +126,17 @@ This story introduces three concrete moving parts:
     }>;
   };
   ```
+- **Field name convention.** `__field_updated_at` lives inside the section's `content` JSONB as a sibling object to the user-facing fields. Double-underscore prefix is used to mark "framework metadata, not user content" so renderers and content schemas can filter it out without a separate column. Keep it **flat** (top-level keys only) — nested-field LWW (e.g., `experience.bullets[2].text`) is out of scope; bullet-array re-orders ship as a single field replacement.
 - **Online/offline transition:** when `online` flips to `true`, `useDebouncedSync` triggers a flush of any IDB row marked `dirtySince != null`. When it flips to `false`, the in-flight `AbortController` is aborted and the row stays dirty.
 - **Sync states:**
   - `synced` — `dirtySince == null && navigator.onLine === true`
   - `pending` — `dirtySince != null` (regardless of why — debounce, in-flight, or queued)
   - `offline` — `navigator.onLine === false`
   - The UI from Story 2.3 already renders these three states; we just point the hook at IDB-backed state instead of the in-memory flag.
-- **Restore is per-tab session.** We do NOT cross-tab broadcast (no `BroadcastChannel`) yet — opening the same resume in two tabs on the same browser stays an unspecified scenario for this story (multi-tab race goes to a follow-up). The single-tab restore-on-reload is the AC.
-- **Data lifetime in IndexedDB:** rows older than 30 days with `dirtySince == null` are GC'd on app boot. Dirty rows are never auto-deleted.
+- **Restore is per-tab session.** We do NOT cross-tab broadcast (no `BroadcastChannel`) yet — opening the same resume in two tabs on the same browser will produce a stream of conflict toasts on every sync (each tab's PATCH overwrites the other's last write). This is documented behavior, not a bug, until cross-tab reconciliation lands as a follow-up.
+- **Storage durability is best-effort.** IndexedDB can be evicted by the browser under storage pressure (Safari is the most aggressive). The server remains the durable source of truth; IDB is a cache + offline queue, never the only copy. We do NOT call `navigator.storage.persist()` in this story — that surfaces a permission prompt and is a UX decision for a follow-up.
+- **Data lifetime in IndexedDB:** rows older than **90 days** with `dirtySince == null` are GC'd on app boot — chosen so users returning after a few weeks (the resume-builder norm) still get instant restore. Dirty rows are never auto-deleted regardless of age.
+- **On logout, the IDB store for the logging-out user must be cleared** — see Task 8.2. Leaving CV data in shared-device IDB is a privacy issue, not a deferred polish item.
 - **Privacy:** IndexedDB content is NOT encrypted — the device is trusted, the user is logged in, and IDB respects the same-origin policy. PII passes through the existing PII gateway during export, not at rest in IDB.
 
 ### Files (planned)
@@ -178,12 +186,14 @@ This story introduces three concrete moving parts:
 
 ### Out of scope (deferred to other stories)
 
-- **Multi-tab edit collisions on the same browser** — this story handles single-tab close-and-reopen. Cross-tab reconciliation needs `BroadcastChannel` and is a separate ticket.
+- **Multi-tab edit collisions on the same browser** — when a user opens the same resume in two tabs concurrently, every sync from either tab will trigger a conflict toast on the other. The two-tab race is documented behavior for this story. Cross-tab reconciliation needs `BroadcastChannel` and is a separate ticket.
 - **Background Sync API** — using vanilla `online`/`offline` events plus on-load flush gets us the AC. The Service Worker Background Sync API is broader and gated on browser availability; deferred until we have telemetry showing it's worth the complexity.
 - **Per-edit operational transform / CRDT** — explicitly rejected by Architecture Decision 6. Field-level LWW is the bargain.
 - **Conflict UI beyond toast** — a full diff viewer / merge editor is a UX research project. Toast + "Pulihkan versi saya" undo is the contract for this story.
 - **Encrypted IDB at rest** — see Privacy note above; out of scope without a key-management story.
+- **`navigator.storage.persist()` opt-in** — surfaces a permission prompt on most browsers; UX decision for a follow-up.
 - **Sync queue depth indicator** — the dot is binary (synced/pending/offline). A "queue: 3 changes" badge is a follow-up if user testing shows people want it.
+- **Nested-field LWW** — `__field_updated_at` is flat (top-level content keys only). Sub-arrays like `experience.bullets[]` are a single LWW unit; per-bullet conflict resolution is a separate ticket if telemetry shows it's needed.
 
 ---
 
@@ -191,14 +201,16 @@ This story introduces three concrete moving parts:
 
 ### 1. IndexedDB foundation (Dexie)
 
-- [ ] 1.1 Add `dexie@^4` to `apps/web/package.json`. Run `pnpm install` to update the lock.
-- [ ] 1.2 Create `apps/web/lib/db/dexie.ts` — `CvBuilderDB` class extending Dexie, schema v1: `resumes` table keyed by `id` with the shape from Technical Specs.
-- [ ] 1.3 Create `apps/web/lib/db/resumeRepo.ts` exposing:
+- [ ] 1.1 Add `dexie@^4` to `apps/web/package.json` (runtime dep) and `fake-indexeddb@^6` to `apps/web/devDependencies` (test-only — JSDOM doesn't ship an IDB implementation, and Story 1.9's Vitest setup currently doesn't pull it in). Run `pnpm install` to update the lock.
+- [ ] 1.2 Extend `apps/web/vitest.setup.ts` to import `fake-indexeddb/auto` at the top of the file so every test gets a fresh in-memory IDB. Document with a one-line comment that this exists *because* JSDOM ≠ a real browser.
+- [ ] 1.3 Create `apps/web/lib/db/dexie.ts` — `CvBuilderDB` class extending Dexie, schema v1: `resumes` table keyed by `id` with the shape from Technical Specs.
+- [ ] 1.4 Create `apps/web/lib/db/resumeRepo.ts` exposing:
   - `loadResume(id: string): Promise<DexieResume | null>`
   - `saveResume(row: DexieResume): Promise<void>`
   - `markSynced(id: string, lastSyncedAt: number): Promise<void>` — clears `dirtySince`, stamps `lastSyncedAt`
-  - `gcOldRows(maxAgeMs = 30*24*3600*1000): Promise<void>` — deletes non-dirty rows older than `maxAgeMs`
-- [ ] 1.4 Add a Vitest unit test for `resumeRepo` against `fake-indexeddb` (already pulled in as a dev-dep by the testing framework story 1.9). Cover: round-trip save→load, GC respects `dirtySince != null`, schema-version mismatch is dropped not crashed.
+  - `gcOldRows(maxAgeMs = 90*24*3600*1000): Promise<void>` — deletes non-dirty rows older than `maxAgeMs`
+  - `clearAll(): Promise<void>` — drops the whole `resumes` table; called on logout
+- [ ] 1.5 Add a Vitest unit test for `resumeRepo` against `fake-indexeddb`. Cover: round-trip save→load, GC respects `dirtySince != null`, GC respects 90-day boundary, `clearAll` empties the table, schema-version mismatch is dropped not crashed.
 
 ### 2. Field-level timestamps in the editor store
 
@@ -223,15 +235,15 @@ This story introduces three concrete moving parts:
 
 ### 4. Restore-on-load
 
-- [ ] 4.1 Create `apps/web/hooks/useResumeRestore.ts`. On mount, calls `resumeRepo.loadResume(resumeId)`. If found, dispatches `setSections` (preserving server `id`s, not regenerating local-prefixed ids), sets `lastSyncedAt`, sets `dirtySince` from the IDB row.
-- [ ] 4.2 Wire into `apps/web/app/(dashboard)/resume/[id]/page.tsx` so it runs **before** the React Query subscription mounts. Restore appears synchronous (we read IDB in `useEffect` but mark the layout as "hydrating from cache" so the canvas paints from the cached store immediately on the first commit).
-- [ ] 4.3 When the React Query result arrives, call `markSyncedAll(serverSections)` (which uses `mergeWithLWW`) so any unsynced client fields stay client-side and the rest is replaced from server.
+- [ ] 4.1 Create `apps/web/hooks/useResumeRestore.ts`. On mount, calls `resumeRepo.loadResume(resumeId)` (async). When the promise resolves, dispatches `markSyncedAll(idbSections)` so the IDB-cached `__field_updated_at`s merge cleanly into the existing store via the same LWW reducer used for server payloads. The hook returns `{ status: "loading" | "restored" | "empty" }` for tests; the actual canvas paints from the editor store and doesn't block on this hook.
+- [ ] 4.2 Wire into `apps/web/app/(dashboard)/resume/[id]/page.tsx`. **Hook ownership:** `useResume(...)` owns the React Query cache + server payload; `useResumeRestore(...)` owns the IDB read. Both hooks write to the editor store via `markSyncedAll`. The editor store's per-field timestamps + the LWW merge make the order in which they resolve irrelevant — IDB-first or server-first both end at the same final state.
+- [ ] 4.3 When the React Query result arrives, call `markSyncedAll(serverSections)` (which uses `mergeWithLWW` per section) so any unsynced client fields stay client-side and the rest is replaced from server.
 - [ ] 4.4 Remove the previous shortcut at `apps/web/app/(dashboard)/resume/[id]/page.tsx` that only re-hydrates when `!dirty` — superseded by the merge.
-- [ ] 4.5 Vitest+RTL test: seed Dexie with a row whose `summary` field has `fieldUpdatedAt` newer than the mock server's value; mount the editor; expect `summary` to render the IDB value, not the server value, and the StatusBar dot to start `pending` until the next sync.
+- [ ] 4.5 Vitest+RTL test: seed Dexie with a row whose `summary` field has `fieldUpdatedAt` newer than the mock server's value; mount the editor; expect the canvas to paint server values first, then patch to the IDB value within the next React commit, with the StatusBar dot starting `pending` and staying `pending` until the next sync. Also test the inverse — server newer than IDB → server value sticks.
 
 ### 5. Conflict-resolving sync
 
-- [ ] 5.1 Backend: extend `apps/api/src/resume/resume.service.ts` `update()` so that when the incoming section payload includes `__field_updated_at`, it does per-field LWW vs the stored row's `__field_updated_at` (also kept in `content`). Build a `conflicts[]` array of fields where the stored timestamp is newer.
+- [ ] 5.1 Backend: extend `apps/api/src/resume/resume.service.ts` `update()` so that when the incoming section payload includes `__field_updated_at`, it does per-field LWW vs the stored row's `__field_updated_at` (also kept in `content`). For every field the server accepts (whether the client value wins OR the server value wins after the round), it stamps `content.__field_updated_at[field] = serverNow()` before persisting — this makes the server the convergent clock authority and immunizes the protocol against client clock skew. Build a `conflicts[]` array of fields where the stored timestamp was newer (i.e., client lost).
 - [ ] 5.2 Backend: response shape from `PATCH /resumes/:id` becomes `{ resume, sections, conflicts? }`. Update the controller's return type and `apps/api/src/resume/resume.controller.ts`.
 - [ ] 5.3 Validators: extend `sectionInputSchema.content` to allow an optional `__field_updated_at: Record<string, number>` (each value a positive integer ≤ `Date.now() + 60_000` for clock-skew leniency). Export `PatchResumeResponse` type.
 - [ ] 5.4 Frontend: in `apps/web/hooks/useDebouncedSync.ts`, include the latest `__field_updated_at` per section in the PATCH payload. On 200 response: `markSyncedAll(response.sections)`; if `conflicts?.length`, hand off to `ConflictToast`.
@@ -243,9 +255,10 @@ This story introduces three concrete moving parts:
 
 - [ ] 6.1 Create `apps/web/components/editor/ConflictToast.tsx` — exports `showConflictToast(conflict)` that calls `sonner`'s `toast.message()` with action button "Pulihkan versi saya" (text in `id` locale), dismiss after 10 s, no max — separate toast per conflict.
 - [ ] 6.2 The action handler:
-  - reads the current store value for `(sectionId, field)`
-  - if the user's value still differs from the server value (else dismiss silently — they may have already overwritten),
-  - calls `updateSectionField(sectionId, field, conflict.clientValue)` which stamps a new `__field_updated_at` and triggers the standard 2 s sync
+  - reads the current store value and `__field_updated_at[field]` for `(sectionId, field)`
+  - **race guard**: if the user has already typed a newer value (current store `fieldUpdatedAt > conflict.clientFieldUpdatedAt`), do nothing — they have already moved past the conflict and a re-stamp would clobber their newer keystrokes
+  - if the user's stored value still equals `conflict.clientValue`, calls `updateSectionField(sectionId, field, conflict.clientValue)` which stamps a new `__field_updated_at` and triggers the standard 2 s sync
+  - otherwise dismiss silently — the user's value differs from both the conflict's client value and the server value, meaning they kept editing past the conflict point and a re-stamp would surprise them
 - [ ] 6.3 Vitest test: clicking "Pulihkan versi saya" re-stamps and triggers a PATCH. Multiple conflicts → multiple toasts.
 
 ### 7. Sync status wiring
@@ -256,12 +269,13 @@ This story introduces three concrete moving parts:
 ### 8. GC and lifecycle
 
 - [ ] 8.1 In `apps/web/app/providers.tsx`, kick off `gcOldRows()` once on app boot via `useEffect(() => { resumeRepo.gcOldRows().catch(() => {}) }, [])` in a small client provider.
-- [ ] 8.2 On logout (when reset is called), clear all Dexie rows (`db.resumes.clear()`). Hook into the existing `browserQueryClient` reset point — it's still deferred per Story 2.2's deferred-work, so add a TODO referencing the deferred ticket and clear on best-effort manual logout for now.
+- [ ] 8.2 **Logout cleanup.** Wire `resumeRepo.clearAll()` into the logout flow in `apps/web/lib/api-client.ts` (the `setAccessToken(null)` path that already exists for token clearing). Leaving CV data in IDB after logout is a privacy regression on shared devices; this is a real subtask, not deferred. Best-effort `.catch(noop)` is fine — IDB clear is fire-and-forget on the way out.
+- [ ] 8.3 Vitest test for the lifecycle: seed two resumes in IDB, call `clearAll()`, confirm both are gone; seed one dirty + one clean row 100 days old, call `gcOldRows()`, confirm only the clean old row is deleted.
 
 ### 9. Verification
 
 - [ ] 9.1 `pnpm --filter '@lolos/web' typecheck` passes clean.
-- [ ] 9.2 `pnpm --filter '@lolos/web' build` passes; new bundle delta for `/resume/[id]` is documented in Dev Agent Record (Dexie + helpers ≈ 35 KB gz).
+- [ ] 9.2 `pnpm --filter '@lolos/web' build` passes; **measure** the actual bundle delta for `/resume/[id]` (Dexie + helpers) and record both the size and the source map breakdown in Dev Agent Record. Flag in review if the delta exceeds 50 KB gzipped.
 - [ ] 9.3 `pnpm --filter '@lolos/api' typecheck` and `build` clean.
 - [ ] 9.4 Manual smoke (documented in Dev Agent Record):
   - edit a field → IDB row written within 800 ms (verify in DevTools → Application → IndexedDB)
@@ -299,6 +313,7 @@ This story introduces three concrete moving parts:
 ## Change Log
 
 - 2026-05-27: Story created from epic 2.4 spec on branch `spec/story-2-4-auto-save-and-offline-persistence`. Builds directly on Stories 2.2 (editor store + debounced sync) and 2.3 (StatusBar UI + useSyncStatus hook). Architecture Decision 6 (Dexie 800 ms / API 2 s, field-level LWW, no CRDT) honored as-is.
+- 2026-05-27: Spec self-review pass — clarified server-as-clock-authority for `__field_updated_at`, switched restore-on-load to async paint-server-then-patch (IDB is async; the previous "synchronous" claim was wrong), added the missing `fake-indexeddb` test dep + `vitest.setup.ts` wiring task, promoted logout IDB cleanup from deferred TODO to a real Task 8.2 subtask (privacy concern, not polish), added a conflict-toast race guard in Task 6.2, expanded multi-tab note + storage-quota note in Out of Scope, raised GC retention from 30 → 90 days to match returning-user cadence, replaced fabricated "≈35 KB gz" bundle estimate with a measurement subtask (50 KB gz hard cap), called out the architecture-doc 150ms vs AC 800ms reconciliation, and added the `__field_updated_at` flat-keys-only convention.
 
 ---
 
