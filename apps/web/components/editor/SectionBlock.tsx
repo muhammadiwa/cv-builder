@@ -13,7 +13,6 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editorStore";
-import { getFieldTimestamps } from "@/lib/sync/fieldTimestamps";
 import type { SectionType } from "@/types/resume";
 import { RichTextField } from "./RichTextField";
 import { AIWandButton, type AIInstruction } from "./AIWandButton";
@@ -64,7 +63,6 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
   const [aiActive, setAiActive] = useState(false);
   const [aiField, setAiField] = useState<string | null>(null);
   const isLocked = useEditorStore((s) => s.lockedSections.has(sectionId));
-  const pushUndo = useEditorStore((s) => s.pushUndo);
   const ai = useAIRewrite();
   const aiRef = useRef(ai);
   aiRef.current = ai;
@@ -104,11 +102,8 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
 
   const handleAIApply = () => {
     if (!aiField || !section) return;
-    // Snapshot for undo
-    const currentValue = section.content[aiField];
-    const currentTs = getFieldTimestamps(section.content)[aiField] ?? 0;
-    pushUndo({ sectionId, field: aiField, previousValue: currentValue, previousTs: currentTs });
-    // Apply AI result
+    // zundo captures the state diff automatically — no manual snapshot needed.
+    // ⌘Z will revert this updateSectionField call as a single undo step.
     updateSectionField(sectionId, aiField, ai.result);
     setAiActive(false);
     setAiField(null);

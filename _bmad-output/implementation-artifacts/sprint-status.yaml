@@ -53,7 +53,7 @@ development_status:
   2-3-multi-panel-layout-with-mobile-adaptation: done
   2-4-auto-save-and-offline-persistence: review
   2-5-ai-inline-rewrite: review
-  2-6-slash-commands-and-keyboard-navigation: ready-for-dev
+  2-6-slash-commands-and-keyboard-navigation: review
   epic-2-retrospective: optional
 
   epic-3: backlog
