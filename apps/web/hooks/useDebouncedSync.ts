@@ -52,8 +52,12 @@ export function useDebouncedSync(resumeId: string) {
     abortRef.current = controller;
     inFlightRef.current = true;
 
+    // Read sections from the live store (not the render closure) so the
+    // payload always reflects the latest edits, even if React batched
+    // multiple state updates before this flush fires.
+    const currentState = useEditorStore.getState();
     const payload = {
-      sections: sections.map((s) => ({
+      sections: currentState.sections.map((s) => ({
         ...(isNewSectionId(s.id) ? {} : { id: s.id }),
         sectionType: s.sectionType,
         displayOrder: s.displayOrder,

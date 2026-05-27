@@ -55,11 +55,10 @@ function restoreClientValue(conflict: SyncConflict): void {
     if (!section) return;
 
     const currentTs = getFieldTimestamps(section.content)[field] ?? 0;
-    const conflictTs = readConflictClientTs(conflict);
 
-    // Race guard: user has already moved past the conflict point. Don't
-    // overwrite their newer typing.
-    if (currentTs > conflictTs && conflictTs > 0) return;
+    // Race guard: if the user has edited this field AFTER the sync that
+    // produced the conflict, don't restore — they've already moved past it.
+    if (currentTs > (state.lastSyncedAt ?? 0)) return;
 
     // If the current value already matches what we'd restore, dismiss silently.
     const currentValue = (section.content as Record<string, unknown>)[field];
@@ -70,17 +69,6 @@ function restoreClientValue(conflict: SyncConflict): void {
     }
 
     state.updateSectionField(sectionId, field, clientValue);
-}
-
-function readConflictClientTs(conflict: SyncConflict): number {
-    // The conflict carries the client's snapshot value but not its timestamp
-    // explicitly — we infer it as "the field timestamp at the moment of PATCH",
-    // which is what the server compared against. If a richer wire shape is
-    // added later (`clientFieldUpdatedAt`), prefer that here.
-    const explicit = (conflict as unknown as Record<string, unknown>)[
-        "clientFieldUpdatedAt"
-    ];
-    return typeof explicit === "number" && Number.isFinite(explicit) ? explicit : 0;
 }
 
 function humanizeField(field: string): string {

@@ -197,12 +197,13 @@ export class ResumeService {
  * the metadata key itself.
  */
 function stampNewSectionFields(
-  content: Record<string, unknown>,
+  content: Record<string, unknown> | null | undefined,
   serverNow: number,
 ): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...content };
+  const safe = content && typeof content === 'object' ? content : {};
+  const out: Record<string, unknown> = { ...safe };
   const ts: Record<string, number> = {};
-  for (const key of Object.keys(content)) {
+  for (const key of Object.keys(safe)) {
     if (key === '__field_updated_at') continue;
     ts[key] = serverNow;
   }

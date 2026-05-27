@@ -218,6 +218,15 @@ export const useEditorStore = create<EditorState>()((set) => ({
         return result.merged;
       });
 
+      // Preserve locally-added sections (local- prefix) that the server
+      // hasn't seen yet — they'll be persisted on the next sync round.
+      const serverIds = new Set(serverSections.map((s) => s.id));
+      for (const s of state.sections) {
+        if (isNewSectionId(s.id) && !serverIds.has(s.id)) {
+          merged.push(s);
+        }
+      }
+
       // Determine if the merged store still has any pending field newer than
       // the new sync point. If so, stay dirty so the next debounce runs.
       const stillDirty = merged.some((s) => {
@@ -235,7 +244,18 @@ export const useEditorStore = create<EditorState>()((set) => ({
   },
 
   hydrateFromCache: (sections, lastSyncedAt) =>
-    set(() => {
+    set((state) => {
+      // If the server has already merged a fresher snapshot (e.g. useResume
+      // resolved before useResumeRestore), skip the IDB hydration — the
+      // store already has newer data and overwriting would regress it.
+      if (
+        state.lastSyncedAt !== null &&
+        lastSyncedAt !== null &&
+        state.lastSyncedAt > lastSyncedAt
+      ) {
+        return state;
+      }
+
       const cleanThreshold = lastSyncedAt ?? 0;
       // Restore dirty when any field has a timestamp newer than the cached
       // sync point — that's exactly what `dirtySince` was tracking in IDB.
