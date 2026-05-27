@@ -80,16 +80,30 @@ interface EditorState {
     sections: EditorSection[],
     lastSyncedAt: number | null,
   ) => void;
+  /** Section IDs currently being rewritten by AI — edits are blocked. */
+  lockedSections: Set<string>;
+  /** Minimal undo stack for AI actions (max depth 1). */
+  undoStack: Array<{ sectionId: string; field: string; previousValue: unknown; previousTs: number }>;
+  /** Lock a section during AI streaming. */
+  lockSection: (id: string) => void;
+  /** Unlock a section after AI streaming completes. */
+  unlockSection: (id: string) => void;
+  /** Push a snapshot before AI apply (max depth 1). */
+  pushUndo: (entry: { sectionId: string; field: string; previousValue: unknown; previousTs: number }) => void;
+  /** Pop and restore the last AI undo entry. Returns true if restored. */
+  popUndo: () => boolean;
 }
 
 function reindex(sections: EditorSection[]): EditorSection[] {
   return sections.map((s, i) => ({ ...s, displayOrder: i }));
 }
 
-export const useEditorStore = create<EditorState>()((set) => ({
+export const useEditorStore = create<EditorState>()((set, get) => ({
   sections: [],
   dirty: false,
   lastSyncedAt: null,
+  lockedSections: new Set<string>(),
+  undoStack: [],
 
   setSections: (sections) =>
     set({
@@ -120,6 +134,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
 
   updateSectionField: (id, field, value) =>
     set((state) => {
+      // Write-lock: if the section is being rewritten by AI, block edits.
+      if (state.lockedSections.has(id)) return state;
       const now = Date.now();
       return {
         sections: state.sections.map((s) =>
@@ -194,6 +210,39 @@ export const useEditorStore = create<EditorState>()((set) => ({
     })),
 
   markClean: () => set({ dirty: false, lastSyncedAt: Date.now() }),
+
+  lockSection: (id) =>
+    set((state) => {
+      const next = new Set(state.lockedSections);
+      next.add(id);
+      return { lockedSections: next };
+    }),
+
+  unlockSection: (id) =>
+    set((state) => {
+      const next = new Set(state.lockedSections);
+      next.delete(id);
+      return { lockedSections: next };
+    }),
+
+  pushUndo: (entry) =>
+    set(() => ({
+      // Max depth 1 — only the last AI action is undoable.
+      undoStack: [entry],
+    })),
+
+  popUndo: () => {
+    const state = get();
+    if (state.undoStack.length === 0) return false;
+    const entry = state.undoStack[0];
+    // Don't attempt undo while the section is still write-locked — the
+    // updateSectionField call would be a no-op and we'd consume the entry.
+    if (state.lockedSections.has(entry.sectionId)) return false;
+    // Restore the previous value via updateSectionField (which stamps a new ts).
+    state.updateSectionField(entry.sectionId, entry.field, entry.previousValue);
+    set({ undoStack: [] });
+    return true;
+  },
 
   markSyncedAll: (serverSections, syncedAt) => {
     const now = syncedAt ?? Date.now();

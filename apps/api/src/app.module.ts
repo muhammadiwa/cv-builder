@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { ResumeModule } from './resume/resume.module';
+import { AiModule } from './ai/ai.module';
 import { RedisModule } from './common/redis.module';
 import { PiiGatewayService } from './common/pii-gateway.service';
 import { PiiInjectionService } from './common/pii-injection.service';
@@ -16,6 +17,7 @@ import { PiiInjectionService } from './common/pii-injection.service';
     AuthModule,
     UserModule,
     ResumeModule,
+    AiModule,
     RedisModule,
   ],
   providers: [
@@ -25,4 +27,4 @@ import { PiiInjectionService } from './common/pii-injection.service';
   ],
   exports: [PiiGatewayService, PiiInjectionService],
 })
-export class AppModule {}
+export class AppModule { }

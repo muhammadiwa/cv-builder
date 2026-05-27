@@ -42,6 +42,19 @@ export default function EditorPage({ params }: PageProps) {
   // Keep the API in step at 2s idle (with field timestamps + conflict resolve).
   useDebouncedSync(id);
 
+  // Global ⌘Z listener for AI undo (single-action, max depth 1).
+  // Full undo/redo stack deferred to Story 2.6 (zundo).
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+        const restored = useEditorStore.getState().popUndo();
+        if (restored) e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
