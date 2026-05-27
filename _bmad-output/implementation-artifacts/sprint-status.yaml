@@ -51,7 +51,7 @@ development_status:
   2-1-resume-crud-and-data-model: done
   2-2-tiptap-editor-with-section-blocks: done
   2-3-multi-panel-layout-with-mobile-adaptation: done
-  2-4-auto-save-and-offline-persistence: backlog
+  2-4-auto-save-and-offline-persistence: ready-for-dev
   2-5-ai-inline-rewrite: backlog
   2-6-slash-commands-and-keyboard-navigation: backlog
   epic-2-retrospective: optional
