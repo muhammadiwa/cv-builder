@@ -21,8 +21,12 @@ export class AiController {
      * POST /api/v1/ai/rewrite
      *
      * Streams an AI-rewritten version of a resume field back to the client
-     * via Server-Sent Events. The Vercel AI SDK's `toDataStreamResponse()`
-     * produces a standard Response that we pipe through Express.
+     * via Server-Sent Events. Uses @Res() for manual response control since
+     * NestJS @Sse() only works on GET endpoints.
+     *
+     * IMPORTANT: Because we use @Res() without passthrough, NestJS's built-in
+     * exception filter is bypassed. We must catch errors ourselves and send
+     * appropriate JSON error responses before SSE headers are set.
      */
     @Post('rewrite')
     @UseGuards(AuthGuard('jwt'), TokenBudgetGuard)
@@ -33,17 +37,30 @@ export class AiController {
     ) {
         const userId = req.user.userId;
 
-        const result = await this.aiService.rewrite({
-            userId,
-            sectionId: body.sectionId,
-            sectionType: body.sectionType,
-            content: body.content,
-            field: body.field,
-            instruction: body.instruction,
-            selectedText: body.selectedText,
-        });
+        // Call the AI service BEFORE setting SSE headers. If it throws
+        // (validation error, bad instruction, empty field), we can still
+        // return a normal JSON error response.
+        let result;
+        try {
+            result = await this.aiService.rewrite({
+                userId,
+                sectionId: body.sectionId,
+                sectionType: body.sectionType,
+                content: body.content,
+                field: body.field,
+                instruction: body.instruction,
+                selectedText: body.selectedText,
+            });
+        } catch (err: any) {
+            const status = err.status ?? err.getStatus?.() ?? 500;
+            res.status(status).json({
+                statusCode: status,
+                message: err.message ?? 'AI rewrite failed',
+            });
+            return;
+        }
 
-        // Set SSE headers manually — NestJS @Sse() only works on GET endpoints.
+        // Set SSE headers — from this point, errors go to the stream.
         res.setHeader('Content-Type', 'text/event-stream');
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');

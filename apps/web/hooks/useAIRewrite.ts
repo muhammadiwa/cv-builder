@@ -123,6 +123,7 @@ export function useAIRewrite(): UseAIRewriteReturn {
 
                     const decoder = new TextDecoder();
                     let accumulated = "";
+                    let lineBuf = ""; // Buffer for incomplete lines across chunks
 
                     while (true) {
                         const { done, value } = await reader.read();
@@ -131,8 +132,14 @@ export function useAIRewrite(): UseAIRewriteReturn {
 
                         const chunk = decoder.decode(value, { stream: true });
                         // Parse Vercel AI SDK data stream format: lines starting with "0:"
-                        // contain the text tokens as JSON strings.
-                        for (const line of chunk.split("\n")) {
+                        // contain the text tokens as JSON strings. A chunk boundary can
+                        // split a line, so we buffer incomplete lines between reads.
+                        const lines = (lineBuf + chunk).split("\n");
+                        // The last element may be incomplete (no trailing \n) — keep it
+                        // in the buffer for the next chunk.
+                        lineBuf = lines.pop() ?? "";
+
+                        for (const line of lines) {
                             if (line.startsWith("0:")) {
                                 try {
                                     const token = JSON.parse(line.slice(2)) as string;
@@ -143,6 +150,17 @@ export function useAIRewrite(): UseAIRewriteReturn {
                                     // Non-JSON line — skip (could be metadata)
                                 }
                             }
+                        }
+                    }
+
+                    // Process any remaining buffered content after stream ends
+                    if (lineBuf.startsWith("0:")) {
+                        try {
+                            const token = JSON.parse(lineBuf.slice(2)) as string;
+                            accumulated += token;
+                            setResult(accumulated);
+                        } catch {
+                            // Incomplete final token — best-effort
                         }
                     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -66,6 +66,8 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
   const isLocked = useEditorStore((s) => s.lockedSections.has(sectionId));
   const pushUndo = useEditorStore((s) => s.pushUndo);
   const ai = useAIRewrite();
+  const aiRef = useRef(ai);
+  aiRef.current = ai;
 
   // Determine which field the AI wand targets for this section type.
   const primaryField = PRIMARY_AI_FIELD[sectionType] ?? null;
@@ -74,7 +76,7 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
     if (!primaryField || !section) return;
     setAiActive(true);
     setAiField(primaryField);
-    ai.start({ sectionId, field: primaryField, instruction });
+    aiRef.current.start({ sectionId, field: primaryField, instruction });
   };
 
   // Listen for text-selection AI rewrite events from AISelectionWand
@@ -89,7 +91,7 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
       if (detail.sectionId !== sectionId) return;
       setAiActive(true);
       setAiField(detail.field);
-      ai.start({
+      aiRef.current.start({
         sectionId,
         field: detail.field,
         instruction: detail.instruction,
@@ -98,7 +100,7 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
     };
     window.addEventListener("ai-selection-rewrite", handler);
     return () => window.removeEventListener("ai-selection-rewrite", handler);
-  }, [sectionId, ai]);
+  }, [sectionId]);
 
   const handleAIApply = () => {
     if (!aiField || !section) return;
