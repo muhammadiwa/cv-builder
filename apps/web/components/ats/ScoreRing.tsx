@@ -51,11 +51,7 @@ export function ScoreRing({
     const displayValue = useTransform(springValue, (v) => Math.round(v));
 
     useEffect(() => {
-        if (prefersReduced || !animated) {
-            motionValue.set(clampedValue);
-        } else {
-            motionValue.set(clampedValue);
-        }
+        motionValue.set(clampedValue);
     }, [clampedValue, motionValue, prefersReduced, animated]);
 
     const scoreColor = getScoreColor(clampedValue);

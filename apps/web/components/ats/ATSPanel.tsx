@@ -27,6 +27,7 @@ export function ATSPanel() {
     const resumeId = params?.id ?? "unknown";
 
     const isFirstRenderRef = useRef(true);
+    const lastAppendedScoreRef = useRef<number | null>(null);
     const [history, setHistory] = useState<HistoryEntry[]>(() =>
         loadHistory(resumeId),
     );
@@ -35,9 +36,10 @@ export function ATSPanel() {
     useEffect(() => {
         if (!atsScore) return;
 
-        const last = history[history.length - 1];
-        if (last && Math.abs(atsScore.total - last.total) < MIN_SCORE_DIFF) return;
+        const lastScore = lastAppendedScoreRef.current;
+        if (lastScore !== null && Math.abs(atsScore.total - lastScore) < MIN_SCORE_DIFF) return;
 
+        lastAppendedScoreRef.current = atsScore.total;
         const entry: HistoryEntry = {
             total: atsScore.total,
             computedAt: atsScore.computedAt,
@@ -47,7 +49,7 @@ export function ATSPanel() {
             saveHistory(resumeId, next);
             return next;
         });
-    }, [atsScore?.total, atsScore?.computedAt, resumeId]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [atsScore?.total, atsScore?.computedAt, resumeId]);
 
     // After first score renders, mark subsequent renders as updates (faster animation)
     useEffect(() => {

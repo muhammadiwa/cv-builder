@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 interface ScoreHistoryEntry {
@@ -21,6 +22,7 @@ const PADDING = 8;
  */
 export function ScoreHistorySparkline({ history }: ScoreHistorySparklineProps) {
     const prefersReduced = useReducedMotion();
+    const fillId = useId();
 
     if (history.length === 0) return null;
 
@@ -52,7 +54,7 @@ export function ScoreHistorySparkline({ history }: ScoreHistorySparklineProps) {
                 aria-hidden="true"
             >
                 <defs>
-                    <linearGradient id="sparkline-fill" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.2} />
                         <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                     </linearGradient>
@@ -62,7 +64,7 @@ export function ScoreHistorySparkline({ history }: ScoreHistorySparklineProps) {
                 {areaPath && (
                     <motion.path
                         d={areaPath}
-                        fill="url(#sparkline-fill)"
+                        fill={`url(#${fillId})`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={prefersReduced ? { duration: 0 } : { duration: 0.5 }}

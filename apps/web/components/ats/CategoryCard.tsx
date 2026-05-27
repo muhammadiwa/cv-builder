@@ -40,12 +40,14 @@ export function CategoryCard({
         }
     };
 
+    const Wrapper = onCardClick ? "button" : "div";
+
     return (
-        <button
-            type="button"
+        <Wrapper
+            type={onCardClick ? "button" : undefined}
             onClick={onCardClick}
             className="group w-full text-left rounded-lg border border-border p-3 transition-colors hover:border-primary/30 focus-visible:outline-2 focus-visible:outline-ring"
-            aria-label={`${name}: ${score} persen. ${onCardClick ? "Ketuk untuk detail." : ""}`}
+            aria-label={onCardClick ? `${name}: ${score} persen. Ketuk untuk detail.` : undefined}
         >
             <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[13px] font-medium text-foreground">{name}</span>
@@ -105,6 +107,6 @@ export function CategoryCard({
                     {details[0]}
                 </p>
             )}
-        </button>
+        </Wrapper>
     );
 }
