@@ -227,17 +227,34 @@ export const useEditorStore = create<EditorState>()((set) => ({
         }
       }
 
+      // Compute the highest field timestamp from the SERVER's response
+      // (before merge). This represents the server's clock at PATCH time.
+      // If the server's clock is ahead of the client's, we need
+      // lastSyncedAt to be at least this high so server-stamped fields
+      // don't appear "dirty" to selectDirtySince and trigger an infinite
+      // sync loop. We intentionally exclude client-preserved fields from
+      // this calculation — those ARE still dirty and should trigger a sync.
+      let maxServerTs = now;
+      for (const srv of serverSections) {
+        const ts = getFieldTimestamps(srv.content);
+        for (const t of Object.values(ts)) {
+          if (t > maxServerTs) maxServerTs = t;
+        }
+      }
+      const effectiveSyncedAt = maxServerTs;
+
       // Determine if the merged store still has any pending field newer than
-      // the new sync point. If so, stay dirty so the next debounce runs.
+      // the effective sync point. Only locally-stamped edits that happened
+      // AFTER this merge should keep the store dirty.
       const stillDirty = merged.some((s) => {
         const ts = getFieldTimestamps(s.content);
-        return Object.values(ts).some((t) => t > now);
+        return Object.values(ts).some((t) => t > effectiveSyncedAt);
       });
 
       return {
         sections: merged,
         dirty: stillDirty,
-        lastSyncedAt: now,
+        lastSyncedAt: effectiveSyncedAt,
       };
     });
     return conflicts;
