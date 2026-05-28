@@ -32,15 +32,21 @@
     --ats-blue: 217 91% 60%;
     --ats-emerald: 160 84% 39%;
 
+    /* Chat — Kak Interview */
+    --color-kak-bubble: 263 100% 97%;
+    --color-kak-bubble-border: 263 90% 94%;
+    --color-user-bubble: 239 84% 67%;
+    --color-user-bubble-text: 0 0% 100%;
+
     /* Radius */
     --radius: 0.5rem;
 
     /* Shadows — Light */
-    --shadow-level-1: 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-level-2: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-    --shadow-level-3: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.03);
-    --shadow-level-4: 0 10px 15px rgba(0,0,0,0.08), 0 4px 6px rgba(0,0,0,0.04);
-    --shadow-level-5: 0 20px 40px rgba(0,0,0,0.12), 0 8px 12px rgba(0,0,0,0.06);
+    --shadow-level-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-level-2: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-level-3: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.03);
+    --shadow-level-4: 0 10px 15px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.04);
+    --shadow-level-5: 0 20px 40px rgba(0, 0, 0, 0.12), 0 8px 12px rgba(0, 0, 0, 0.06);
 
     /* Animation Timing */
     --duration-micro: 150ms;
@@ -70,11 +76,15 @@
     --border: 240 4% 16%;
     --ring: 234 89% 74%;
 
-    --shadow-level-1: 0 1px 2px rgba(0,0,0,0.4);
-    --shadow-level-2: 0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.3);
-    --shadow-level-3: 0 4px 6px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.3);
-    --shadow-level-4: 0 10px 15px rgba(0,0,0,0.6), 0 4px 6px rgba(0,0,0,0.4);
-    --shadow-level-5: 0 20px 40px rgba(0,0,0,0.7), 0 8px 12px rgba(0,0,0,0.5);
+    /* Chat — Kak Interview (dark) */
+    --color-kak-bubble: 240 10% 12%;
+    --color-kak-bubble-border: 240 10% 16%;
+
+    --shadow-level-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-level-2: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-level-3: 0 4px 6px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-level-4: 0 10px 15px rgba(0, 0, 0, 0.6), 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-level-5: 0 20px 40px rgba(0, 0, 0, 0.7), 0 8px 12px rgba(0, 0, 0, 0.5);
 
     --gradient-hero: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15), transparent);
   }
@@ -104,13 +114,16 @@
   ::-webkit-scrollbar {
     width: 6px;
   }
+
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.4);
     border-radius: 3px;
   }
+
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.6);
   }
@@ -119,6 +132,7 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
