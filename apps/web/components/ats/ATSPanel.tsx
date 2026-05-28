@@ -8,6 +8,7 @@ import { ScoreContextText } from "./ScoreContextText";
 import { CategoryBreakdown } from "./CategoryBreakdown";
 import { ScoreHistorySparkline } from "./ScoreHistorySparkline";
 import { ATSImproveSheet } from "./ATSImproveSheet";
+import { ApplyAllButton } from "./ApplyAllButton";
 import { useATSImprove, isImprovableDimension } from "@/features/ats/useATSImprove";
 import type { DimensionKey } from "@/lib/ats-engine/types";
 
@@ -39,12 +40,10 @@ export function ATSPanel() {
     const improve = useATSImprove();
 
     const handleImprove = (dimensionKey: DimensionKey) => {
-        if (!isImprovableDimension(dimensionKey)) {
-            improve.start(dimensionKey); // will show toast for non-improvable
-            return;
-        }
         improve.start(dimensionKey);
-        setImproveActive(true);
+        if (isImprovableDimension(dimensionKey)) {
+            setImproveActive(true);
+        }
     };
 
     const handleApply = () => {
@@ -113,6 +112,9 @@ export function ATSPanel() {
                     Rincian Skor
                 </h3>
                 <CategoryBreakdown onImprove={handleImprove} />
+                <div className="mt-3">
+                    <ApplyAllButton onImproveStart={handleImprove} />
+                </div>
             </div>
 
             {history.length >= 2 && (

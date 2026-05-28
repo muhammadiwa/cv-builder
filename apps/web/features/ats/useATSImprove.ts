@@ -43,6 +43,7 @@ export function useATSImprove(): UseATSImproveReturn {
 
     const abortRef = useRef<AbortController | null>(null);
     const lastDimensionRef = useRef<DimensionKey | null>(null);
+    const targetSectionIdRef = useRef<string | null>(null);
 
     const lockSection = useEditorStore((s) => s.lockSection);
     const unlockSection = useEditorStore((s) => s.unlockSection);
@@ -78,6 +79,7 @@ export function useATSImprove(): UseATSImproveReturn {
             setTargetSectionId(target.sectionId);
             setTargetField(target.field);
             setOriginalText(target.fieldContent);
+            targetSectionIdRef.current = target.sectionId;
             setSuggestion("");
             setError(null);
             setIsStreaming(true);
@@ -185,9 +187,10 @@ export function useATSImprove(): UseATSImproveReturn {
 
     const abort = useCallback(() => {
         abortRef.current?.abort();
-        if (targetSectionId) unlockSection(targetSectionId);
+        const sid = targetSectionIdRef.current;
+        if (sid) unlockSection(sid);
         setIsStreaming(false);
-    }, [targetSectionId, unlockSection]);
+    }, [unlockSection]);
 
     const retry = useCallback(() => {
         if (lastDimensionRef.current) {
