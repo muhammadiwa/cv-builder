@@ -8,6 +8,11 @@ import {
     isValidInstruction,
     type RewriteInstruction,
 } from './prompts/rewrite';
+import {
+    buildATSImprovePrompt,
+    isImprovableDimension,
+    type ImprovableDimension,
+} from './prompts/ats-improve';
 
 export interface RewriteParams {
     userId: string;
@@ -17,6 +22,15 @@ export interface RewriteParams {
     field: string;
     instruction: string;
     selectedText?: string;
+}
+
+export interface ATSImproveParams {
+    userId: string;
+    sectionId: string;
+    sectionType: string;
+    content: Record<string, unknown>;
+    field: string;
+    dimensionKey: string;
 }
 
 @Injectable()
@@ -85,6 +99,61 @@ export class AiService {
         }).catch(() => {
             // Stream itself may fail — usage logging is best-effort
         });
+
+        return result;
+    }
+
+    async atsImprove(params: ATSImproveParams) {
+        const { userId, sectionType, content, field, dimensionKey } = params;
+
+        if (!isImprovableDimension(dimensionKey)) {
+            throw new BadRequestException(
+                `Dimension "${dimensionKey}" is not improvable via AI. Only: keywordMatch, readability, metricsImpact, optimization`,
+            );
+        }
+
+        const fieldContent = content[field];
+        if (typeof fieldContent !== 'string' || !fieldContent.trim()) {
+            throw new BadRequestException(
+                `Field "${field}" is empty or not a string — nothing to improve.`,
+            );
+        }
+
+        // Strip PII before sending to LLM
+        const sanitized = this.piiGateway.sanitize({ fieldContent }, userId);
+
+        const prompt = buildATSImprovePrompt({
+            dimensionKey,
+            sectionType,
+            fieldContent: sanitized.fieldContent,
+        });
+
+        const result = streamText({
+            model: openai('gpt-4o-mini'),
+            system: prompt.system,
+            prompt: prompt.user,
+            temperature: 0.7,
+            maxTokens: 500,
+        });
+
+        // Log usage (fire-and-forget)
+        result.usage.then((usage) => {
+            if (usage) {
+                prisma.aiUsageLog.create({
+                    data: {
+                        userId,
+                        operationType: `ats_improve_${dimensionKey}`,
+                        modelUsed: 'gpt-4o-mini',
+                        tokensIn: usage.promptTokens ?? 0,
+                        tokensOut: usage.completionTokens ?? 0,
+                        cost: ((usage.promptTokens ?? 0) * 0.00000015) +
+                            ((usage.completionTokens ?? 0) * 0.0000006),
+                    },
+                }).catch((err) => {
+                    console.error('[AI] Failed to log ats-improve usage:', err);
+                });
+            }
+        }).catch(() => { });
 
         return result;
     }
