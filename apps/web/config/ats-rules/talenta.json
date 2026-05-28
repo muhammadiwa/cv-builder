@@ -1,0 +1,57 @@
+{
+    "id": "talenta",
+    "name": "Talenta (Mekari)",
+    "description": "Platform HRIS terbesar di Indonesia. Digunakan oleh 35,000+ perusahaan.",
+    "preferredFormat": "docx",
+    "requiredHeaders": {
+        "header": [
+            "Data Pribadi",
+            "Informasi Pribadi"
+        ],
+        "summary": [
+            "Ringkasan",
+            "Tentang Saya",
+            "Profil"
+        ],
+        "experience": [
+            "Pengalaman Kerja",
+            "Pengalaman Profesional"
+        ],
+        "education": [
+            "Pendidikan",
+            "Riwayat Pendidikan"
+        ],
+        "skills": [
+            "Keahlian",
+            "Kemampuan",
+            "Keterampilan"
+        ],
+        "certifications": [
+            "Sertifikasi",
+            "Lisensi & Sertifikasi"
+        ],
+        "projects": [
+            "Proyek",
+            "Portofolio"
+        ]
+    },
+    "formatting": {
+        "singleColumnOnly": true,
+        "maxFontCount": 2,
+        "allowedFonts": [
+            "Arial",
+            "Calibri",
+            "Times New Roman",
+            "Helvetica",
+            "Inter"
+        ],
+        "noTables": true,
+        "noTextBoxes": true,
+        "noHeadersFooters": true
+    },
+    "warnings": [
+        "Talenta lebih baik membaca format DOCX daripada PDF.",
+        "Gunakan header section dalam Bahasa Indonesia.",
+        "Hindari tabel dan text box — parser Talenta tidak bisa membacanya."
+    ]
+}

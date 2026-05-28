@@ -1,0 +1,59 @@
+{
+    "id": "greatday",
+    "name": "GreatDay HR",
+    "description": "Platform HR berbasis cloud untuk perusahaan Indonesia.",
+    "preferredFormat": "pdf",
+    "requiredHeaders": {
+        "header": [
+            "Data Pribadi",
+            "Informasi Pribadi"
+        ],
+        "summary": [
+            "Ringkasan",
+            "Tentang Saya",
+            "Profil"
+        ],
+        "experience": [
+            "Pengalaman Kerja",
+            "Pengalaman Profesional"
+        ],
+        "education": [
+            "Pendidikan",
+            "Riwayat Pendidikan"
+        ],
+        "skills": [
+            "Keahlian",
+            "Kemampuan",
+            "Keterampilan"
+        ],
+        "certifications": [
+            "Sertifikasi",
+            "Lisensi & Sertifikasi"
+        ],
+        "projects": [
+            "Proyek",
+            "Portofolio"
+        ]
+    },
+    "formatting": {
+        "singleColumnOnly": true,
+        "maxFontCount": 3,
+        "allowedFonts": [
+            "Arial",
+            "Calibri",
+            "Times New Roman",
+            "Helvetica",
+            "Inter",
+            "Roboto",
+            "Open Sans"
+        ],
+        "noTables": true,
+        "noTextBoxes": true,
+        "noHeadersFooters": true
+    },
+    "warnings": [
+        "GreatDay HR lebih optimal dengan format PDF.",
+        "Gunakan header section dalam Bahasa Indonesia.",
+        "Hindari formatting kompleks — gunakan layout sederhana satu kolom."
+    ]
+}
