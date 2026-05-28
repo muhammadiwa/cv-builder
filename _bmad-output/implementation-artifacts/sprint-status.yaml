@@ -65,8 +65,8 @@ development_status:
   3-5-ats-score-dashboard-desktop-3-panel: done
   epic-3-retrospective: done
 
-  epic-4: backlog
-  4-1-kak-chat-interface: backlog
+  epic-4: in-progress
+  4-1-kak-chat-interface: ready-for-dev
   4-2-adaptive-question-engine: backlog
   4-3-structured-data-extraction: backlog
   4-4-interview-persistence-and-resume: backlog
