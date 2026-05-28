@@ -7,6 +7,10 @@ import { ScoreRing } from "./ScoreRing";
 import { ScoreContextText } from "./ScoreContextText";
 import { CategoryBreakdown } from "./CategoryBreakdown";
 import { ScoreHistorySparkline } from "./ScoreHistorySparkline";
+import { ATSImproveSheet } from "./ATSImproveSheet";
+import { ApplyAllButton } from "./ApplyAllButton";
+import { useATSImprove, isImprovableDimension } from "@/features/ats/useATSImprove";
+import type { DimensionKey } from "@/lib/ats-engine/types";
 
 interface HistoryEntry {
     total: number;
@@ -31,6 +35,26 @@ export function ATSPanel() {
     const [history, setHistory] = useState<HistoryEntry[]>(() =>
         loadHistory(resumeId),
     );
+    const [improveActive, setImproveActive] = useState(false);
+
+    const improve = useATSImprove();
+
+    const handleImprove = (dimensionKey: DimensionKey) => {
+        improve.start(dimensionKey);
+        if (isImprovableDimension(dimensionKey)) {
+            setImproveActive(true);
+        }
+    };
+
+    const handleApply = () => {
+        improve.apply();
+        setImproveActive(false);
+    };
+
+    const handleCancel = () => {
+        improve.abort();
+        setImproveActive(false);
+    };
 
     // Track score changes → append to history
     useEffect(() => {
@@ -87,7 +111,10 @@ export function ATSPanel() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
                     Rincian Skor
                 </h3>
-                <CategoryBreakdown />
+                <CategoryBreakdown onImprove={handleImprove} />
+                <div className="mt-3">
+                    <ApplyAllButton onImproveStart={handleImprove} />
+                </div>
             </div>
 
             {history.length >= 2 && (
@@ -97,6 +124,17 @@ export function ATSPanel() {
                     </h3>
                     <ScoreHistorySparkline history={history} />
                 </div>
+            )}
+
+            {improveActive && (
+                <ATSImproveSheet
+                    originalText={improve.originalText}
+                    suggestion={improve.suggestion}
+                    isStreaming={improve.isStreaming}
+                    onApply={handleApply}
+                    onRetry={improve.retry}
+                    onCancel={handleCancel}
+                />
             )}
         </div>
     );

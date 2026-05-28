@@ -11,7 +11,7 @@ import { DIMENSION_LABELS, DIMENSION_SECTION_MAP } from "./ats-colors";
 /**
  * Staggered list of 6 CategoryCards reading from editorStore.atsScore.dimensions.
  */
-export function CategoryBreakdown() {
+export function CategoryBreakdown({ onImprove }: { onImprove?: (key: DimensionKey) => void }) {
     const dimensions = useEditorStore((s) => s.atsScore?.dimensions);
     const sections = useEditorStore((s) => s.sections);
     const setActiveSectionId = useEditorLayoutStore((s) => s.setActiveSectionId);
@@ -69,6 +69,7 @@ export function CategoryBreakdown() {
                             score={dim.score}
                             details={dim.details}
                             staggerDelay={i * 0.05}
+                            onImprove={onImprove ? () => onImprove(key) : undefined}
                             onCardClick={
                                 DIMENSION_SECTION_MAP[key]
                                     ? () => handleCardClick(key)
