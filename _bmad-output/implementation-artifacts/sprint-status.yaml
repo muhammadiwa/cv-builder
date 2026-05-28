@@ -57,13 +57,13 @@ development_status:
   2-6-slash-commands-and-keyboard-navigation: review
   epic-2-retrospective: optional
 
-  epic-3: in-progress
+  epic-3: done
   3-1-ats-scoring-engine: done
   3-2-ats-score-visualization: done
   3-3-improvement-suggestions-with-quick-fix: done
-  3-4-indonesian-ats-platform-rules: review
-  3-5-ats-score-dashboard-desktop-3-panel: review
-  epic-3-retrospective: optional
+  3-4-indonesian-ats-platform-rules: done
+  3-5-ats-score-dashboard-desktop-3-panel: done
+  epic-3-retrospective: done
 
   epic-4: backlog
   4-1-kak-chat-interface: backlog
