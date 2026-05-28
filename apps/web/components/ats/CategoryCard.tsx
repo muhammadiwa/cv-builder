@@ -103,7 +103,7 @@ export function CategoryCard({
 
             {/* First detail hint */}
             {details.length > 0 && (
-                <p className="mt-1 text-[11px] text-muted-foreground line-clamp-1">
+                <p className="mt-1 text-[11px] md:text-[12px] text-muted-foreground line-clamp-1">
                     {details[0]}
                 </p>
             )}
