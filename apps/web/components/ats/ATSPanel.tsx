@@ -9,8 +9,23 @@ import { CategoryBreakdown } from "./CategoryBreakdown";
 import { ScoreHistorySparkline } from "./ScoreHistorySparkline";
 import { ATSImproveSheet } from "./ATSImproveSheet";
 import { ApplyAllButton } from "./ApplyAllButton";
+import { PlatformSelector } from "./PlatformSelector";
+import { PlatformWarnings } from "./PlatformWarnings";
 import { useATSImprove, isImprovableDimension } from "@/features/ats/useATSImprove";
+import { validatePlatformRules } from "@/lib/ats-engine/platform-validator";
+import type { PlatformConfig, PlatformValidationResult } from "@/lib/ats-engine/platform-types";
 import type { DimensionKey } from "@/lib/ats-engine/types";
+
+// Static imports of platform configs
+import talentaConfig from "@/config/ats-rules/talenta.json";
+import linovhrConfig from "@/config/ats-rules/linovhr.json";
+import greatdayConfig from "@/config/ats-rules/greatday.json";
+
+const PLATFORM_CONFIGS: Record<string, PlatformConfig> = {
+    talenta: talentaConfig as unknown as PlatformConfig,
+    linovhr: linovhrConfig as unknown as PlatformConfig,
+    greatday: greatdayConfig as unknown as PlatformConfig,
+};
 
 interface HistoryEntry {
     total: number;
@@ -36,6 +51,8 @@ export function ATSPanel() {
         loadHistory(resumeId),
     );
     const [improveActive, setImproveActive] = useState(false);
+    const [platformId, setPlatformId] = useState("general");
+    const [platformResult, setPlatformResult] = useState<PlatformValidationResult | null>(null);
 
     const improve = useATSImprove();
 
@@ -85,6 +102,30 @@ export function ATSPanel() {
         }
     }, [atsScore]);
 
+    // Platform validation — runs when platform or score changes
+    const sections = useEditorStore((s) => s.sections);
+    useEffect(() => {
+        if (platformId === "general" || !atsScore) {
+            setPlatformResult(null);
+            return;
+        }
+        const config = PLATFORM_CONFIGS[platformId];
+        if (!config) {
+            setPlatformResult(null);
+            return;
+        }
+        // Prepare scoring sections (strip non-scoring fields)
+        const scoringSections = sections
+            .filter((s) => s.visible)
+            .map((s) => ({
+                sectionType: s.sectionType,
+                content: s.content,
+                visible: s.visible,
+            }));
+        const result = validatePlatformRules(scoringSections, config);
+        setPlatformResult(result);
+    }, [platformId, atsScore, sections]);
+
     // Loading state: computing with no score yet
     if (atsComputing && !atsScore) {
         return <LoadingSkeleton />;
@@ -106,6 +147,17 @@ export function ATSPanel() {
             </div>
 
             <ScoreContextText score={atsScore.total} />
+
+            <PlatformSelector onChange={setPlatformId} />
+
+            {platformResult && platformResult.warnings.length > 0 && (
+                <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                        Validasi Platform
+                    </h3>
+                    <PlatformWarnings result={platformResult} />
+                </div>
+            )}
 
             <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">

@@ -1,0 +1,58 @@
+{
+    "id": "linovhr",
+    "name": "LinovHR",
+    "description": "Software HR Indonesia untuk manajemen karyawan dan rekrutmen.",
+    "preferredFormat": "both",
+    "requiredHeaders": {
+        "header": [
+            "Data Pribadi",
+            "Informasi Pribadi"
+        ],
+        "summary": [
+            "Ringkasan",
+            "Tentang Saya",
+            "Profil"
+        ],
+        "experience": [
+            "Pengalaman Kerja",
+            "Pengalaman Profesional"
+        ],
+        "education": [
+            "Pendidikan",
+            "Riwayat Pendidikan"
+        ],
+        "skills": [
+            "Keahlian",
+            "Kemampuan",
+            "Keterampilan"
+        ],
+        "certifications": [
+            "Sertifikasi",
+            "Lisensi & Sertifikasi"
+        ],
+        "projects": [
+            "Proyek",
+            "Portofolio"
+        ]
+    },
+    "formatting": {
+        "singleColumnOnly": true,
+        "maxFontCount": 2,
+        "allowedFonts": [
+            "Arial",
+            "Calibri",
+            "Times New Roman",
+            "Helvetica",
+            "Inter",
+            "Roboto"
+        ],
+        "noTables": true,
+        "noTextBoxes": true,
+        "noHeadersFooters": false
+    },
+    "warnings": [
+        "LinovHR menerima PDF dan DOCX.",
+        "Gunakan header section dalam Bahasa Indonesia untuk parsing optimal.",
+        "Hindari layout multi-kolom dan tabel."
+    ]
+}
