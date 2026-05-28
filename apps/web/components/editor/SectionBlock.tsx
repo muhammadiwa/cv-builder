@@ -13,6 +13,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editorStore";
+import { useEditorLayoutStore } from "@/stores/editorLayoutStore";
 import type { SectionType } from "@/types/resume";
 import { RichTextField } from "./RichTextField";
 import { AIWandButton, type AIInstruction } from "./AIWandButton";
@@ -62,10 +63,21 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
   const [editing, setEditing] = useState(false);
   const [aiActive, setAiActive] = useState(false);
   const [aiField, setAiField] = useState<string | null>(null);
+  const [highlighted, setHighlighted] = useState(false);
   const isLocked = useEditorStore((s) => s.lockedSections.has(sectionId));
   const ai = useAIRewrite();
   const aiRef = useRef(ai);
   aiRef.current = ai;
+
+  // Highlight briefly when this section is scrolled-to via ATS card click
+  const activeSectionId = useEditorLayoutStore((s) => s.activeSectionId);
+  useEffect(() => {
+    if (activeSectionId === sectionId) {
+      setHighlighted(true);
+      const t = setTimeout(() => setHighlighted(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [activeSectionId, sectionId]);
 
   // Determine which field the AI wand targets for this section type.
   const primaryField = PRIMARY_AI_FIELD[sectionType] ?? null;
@@ -174,7 +186,7 @@ export function SectionBlock({ node }: ReactNodeViewProps) {
       <div ref={setNodeRef} style={style}>
         <div
           className={`rounded-lg border bg-card transition-colors ${visible ? "" : "opacity-50"
-            } ${isLocked ? "ring-2 ring-indigo-400 animate-pulse" : ""}`}
+            } ${isLocked ? "ring-2 ring-indigo-400 animate-pulse" : ""} ${highlighted ? "ring-2 ring-primary/50 transition-all duration-300" : ""}`}
         >
           {/* Section header bar — clickable surface to toggle edit mode */}
           <div

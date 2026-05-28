@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useEditorStore } from "@/stores/editorStore";
+import { useIsDesktop } from "@/hooks/useBreakpoint";
 import { ScoreRing } from "./ScoreRing";
 import { ScoreContextText } from "./ScoreContextText";
 import { CategoryBreakdown } from "./CategoryBreakdown";
@@ -42,6 +43,7 @@ const MIN_SCORE_DIFF = 2;
 export function ATSPanel() {
     const atsScore = useEditorStore((s) => s.atsScore);
     const atsComputing = useEditorStore((s) => s.atsComputing);
+    const isDesktop = useIsDesktop();
     const params = useParams<{ id: string }>();
     const resumeId = params?.id ?? "unknown";
 
@@ -141,6 +143,7 @@ export function ATSPanel() {
             <div className="flex justify-center pt-2">
                 <ScoreRing
                     value={atsScore.total}
+                    size={isDesktop ? 140 : 120}
                     animated
                     isFirstRender={isFirstRenderRef.current}
                 />
