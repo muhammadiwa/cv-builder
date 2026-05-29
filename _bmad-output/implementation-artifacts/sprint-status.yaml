@@ -24,7 +24,7 @@
 #   - done: Retrospective has been completed
 
 generated: 2026-05-26
-last_updated: 2026-05-28
+last_updated: 2026-05-29
 
 project: cv-builder
 project_key: NOKEY
@@ -66,7 +66,7 @@ development_status:
   epic-3-retrospective: done
 
   epic-4: in-progress
-  4-1-kak-chat-interface: ready-for-dev
+  4-1-kak-chat-interface: done
   4-2-adaptive-question-engine: backlog
   4-3-structured-data-extraction: backlog
   4-4-interview-persistence-and-resume: backlog
