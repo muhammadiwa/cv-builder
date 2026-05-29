@@ -6,10 +6,19 @@ import { useRouter } from 'next/navigation';
 export function ChatHeader() {
     const router = useRouter();
 
+    const handleBack = () => {
+        // Fallback to dashboard root when there's no history (deep-link entry)
+        if (typeof window !== 'undefined' && window.history.length <= 1) {
+            router.push('/');
+            return;
+        }
+        router.back();
+    };
+
     return (
         <header className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm">
             <button
-                onClick={() => router.back()}
+                onClick={handleBack}
                 className="p-1.5 rounded-lg hover:bg-muted transition-colors focus-ring"
                 aria-label="Kembali"
             >

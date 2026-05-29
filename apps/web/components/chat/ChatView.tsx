@@ -13,7 +13,7 @@ import type { Message } from './types';
 const FIRST_MESSAGE =
     'Halo! Aku Kak, asisten karirmu. Yuk kita bikin CV bareng. Ceritain dikit ya — kamu lulusan apa?';
 
-const MOCK_RESPONSES: { text: string; chips: string[] }[] = [
+const MOCK_RESPONSES = [
     {
         text: 'Wah keren! Terus sekarang kamu kerja di bidang apa? Atau lagi cari kerja di bidang tertentu?',
         chips: ['Software Engineer', 'Data Analyst', 'Lagi cari kerja'],
@@ -26,7 +26,7 @@ const MOCK_RESPONSES: { text: string; chips: string[] }[] = [
         text: 'Bagus banget! Nanti kita susun jadi CV yang rapi. Ada skill teknis apa aja yang kamu kuasai?',
         chips: ['JavaScript & React', 'Python & ML', 'Desain UI/UX'],
     },
-];
+] as const;
 
 function generateId() {
     return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -35,20 +35,30 @@ function generateId() {
 export function ChatView() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [isTyping, setIsTyping] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
     const [typingLabel, setTypingLabel] = useState(TYPING_LABELS[0]);
     const [chips, setChips] = useState<string[]>([]);
     const [responseIndex, setResponseIndex] = useState(0);
+    // Show typing indicator during the initial 500ms pre-stream delay
+    // so AC-1 perceived latency stays under ~100ms.
+    const [showInitialTyping, setShowInitialTyping] = useState(true);
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const isNearBottomRef = useRef(true);
+    // Track in-flight async work so we can cancel on unmount.
+    const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const replyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Auto-scroll logic
+    // Unified busy gate — guards both typing-indicator and streaming phases
+    const isBusy = isTyping || isStreaming;
+
+    // Auto-scroll: only follow if user is near the bottom of the transcript.
     const scrollToBottom = useCallback(() => {
         if (!scrollRef.current || !isNearBottomRef.current) return;
         scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, []);
 
-    const handleScroll = useCallback(() => {
+    const recomputeNearBottom = useCallback(() => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
         isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
@@ -56,11 +66,25 @@ export function ChatView() {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, isTyping, scrollToBottom]);
+    }, [messages, isTyping, isStreaming, scrollToBottom]);
+
+    // Recompute near-bottom on viewport resize (keyboard open/close on iOS),
+    // not just on user scroll — otherwise auto-scroll stalls after the keyboard pops.
+    useEffect(() => {
+        const viewport = typeof window !== 'undefined' ? window.visualViewport : null;
+        if (!viewport) return;
+        const onResize = () => {
+            recomputeNearBottom();
+            scrollToBottom();
+        };
+        viewport.addEventListener('resize', onResize);
+        return () => viewport.removeEventListener('resize', onResize);
+    }, [recomputeNearBottom, scrollToBottom]);
 
     // Stream text character by character at ~40 chars/sec
     const streamMessage = useCallback(
         (text: string, onComplete?: () => void) => {
+            setIsStreaming(true);
             const id = generateId();
             const msg: Message = {
                 id,
@@ -87,27 +111,48 @@ export function ChatView() {
 
                 if (charIndex >= text.length) {
                     clearInterval(interval);
+                    streamIntervalRef.current = null;
+                    setIsStreaming(false);
                     onComplete?.();
                 }
-            }, 25); // ~40 chars/sec
+            }, 25);
+
+            streamIntervalRef.current = interval;
         },
         []
     );
 
-    // Initial message on mount
+    // Initial message on mount.
+    // Show typing indicator during the 500ms pre-stream delay so AC-1 has visible feedback.
     useEffect(() => {
         const timer = setTimeout(() => {
+            setShowInitialTyping(false);
             streamMessage(FIRST_MESSAGE, () => {
                 setChips(['Teknik Informatika', 'Manajemen', 'Desain Komunikasi Visual']);
             });
         }, 500);
-        return () => clearTimeout(timer);
+
+        return () => {
+            clearTimeout(timer);
+            // Cancel any in-flight async work to avoid setState-after-unmount and leaks
+            if (streamIntervalRef.current) {
+                clearInterval(streamIntervalRef.current);
+                streamIntervalRef.current = null;
+            }
+            if (replyTimeoutRef.current) {
+                clearTimeout(replyTimeoutRef.current);
+                replyTimeoutRef.current = null;
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Handle user sending a message
     const handleSend = useCallback(
         (text: string) => {
+            // Guard against double-send during typing indicator OR streaming
+            if (isBusy) return;
+
             const userMsg: Message = {
                 id: generateId(),
                 role: 'user',
@@ -124,16 +169,20 @@ export function ChatView() {
 
             const delay = 1000 + Math.random() * 1000; // 1-2s
 
-            setTimeout(() => {
+            const timer = setTimeout(() => {
                 setIsTyping(false);
                 const response = MOCK_RESPONSES[responseIndex % MOCK_RESPONSES.length];
                 streamMessage(response.text, () => {
-                    setChips(response.chips);
+                    // Copy the readonly chip array so consumers can mutate freely
+                    setChips([...response.chips]);
                 });
                 setResponseIndex((i) => i + 1);
+                replyTimeoutRef.current = null;
             }, delay);
+
+            replyTimeoutRef.current = timer;
         },
-        [responseIndex, streamMessage]
+        [responseIndex, streamMessage, isBusy]
     );
 
     const handleChipSelect = useCallback(
@@ -149,9 +198,12 @@ export function ChatView() {
 
             <div
                 ref={scrollRef}
-                onScroll={handleScroll}
+                onScroll={recomputeNearBottom}
                 className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scrollbar-none"
                 role="log"
+                aria-live="polite"
+                aria-atomic="false"
+                aria-relevant="additions"
                 aria-label="Percakapan dengan Kak"
             >
                 {messages.map((msg) => (
@@ -159,15 +211,18 @@ export function ChatView() {
                 ))}
 
                 <AnimatePresence>
-                    {isTyping && <TypingIndicator label={typingLabel} />}
+                    {(isTyping || showInitialTyping) && (
+                        <TypingIndicator label={typingLabel} />
+                    )}
                 </AnimatePresence>
-
-                {chips.length > 0 && !isTyping && (
-                    <SuggestedChips chips={chips} onSelect={handleChipSelect} />
-                )}
             </div>
 
-            <ChatInput onSend={handleSend} disabled={isTyping} />
+            {/* Chips live OUTSIDE the role="log" so screen readers don't read them as transcript */}
+            {chips.length > 0 && !isBusy && (
+                <SuggestedChips chips={chips} onSelect={handleChipSelect} />
+            )}
+
+            <ChatInput onSend={handleSend} disabled={isBusy} />
         </>
     );
 }

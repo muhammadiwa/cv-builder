@@ -20,10 +20,16 @@ export function SuggestedChips({ chips, onSelect }: SuggestedChipsProps) {
         >
             {chips.map((chip, i) => (
                 <motion.button
-                    key={chip}
+                    // Compose key with index so duplicate chip text doesn't collide
+                    key={`${i}-${chip}`}
                     initial={prefersReduced ? undefined : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 + i * 0.08, duration: 0.2 }}
+                    // Skip stagger entirely under prefers-reduced-motion
+                    transition={
+                        prefersReduced
+                            ? { duration: 0 }
+                            : { delay: 0.3 + i * 0.08, duration: 0.2 }
+                    }
                     onClick={() => onSelect(chip)}
                     className="px-3 py-1.5 text-sm border border-primary/40 text-primary rounded-full hover:bg-primary/10 transition-colors focus-ring"
                 >

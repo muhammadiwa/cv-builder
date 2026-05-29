@@ -18,21 +18,22 @@ export function ChatBubble({ message }: ChatBubbleProps) {
 
     return (
         <motion.article
-            initial={prefersReduced ? undefined : { opacity: 0, y: 12, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ type: 'spring', duration: 0.2, bounce: 0.3 }}
+            initial={prefersReduced ? undefined : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            // Modern framer-motion springs require `bounce` to honor `duration`
+            transition={{ type: 'spring', duration: 0.2, bounce: 0.25 }}
             className={`flex ${isKak ? 'justify-start' : 'justify-end'}`}
         >
             <div
                 className={`
-          relative max-w-[80%] px-4 py-2.5 text-sm leading-relaxed
+          relative max-w-[80%] px-4 py-2.5 text-sm leading-relaxed break-words
           ${isKak
-                        ? 'bg-[hsl(var(--color-kak-bubble))] border border-[hsl(var(--color-kak-bubble-border))] rounded-2xl rounded-tl-sm text-foreground'
-                        : 'bg-[hsl(var(--color-user-bubble))] text-white rounded-2xl rounded-br-sm ml-auto'
+                        ? 'bg-[hsl(var(--color-kak-bubble))] border border-[hsl(var(--color-kak-bubble-border))] rounded-2xl rounded-tl text-foreground'
+                        : 'bg-[hsl(var(--color-user-bubble))] text-white rounded-2xl rounded-br ml-auto'
                     }
         `}
             >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <p className="whitespace-pre-wrap break-words">{message.content}</p>
                 {!message.streaming && (
                     <span
                         className={`block mt-1 text-[11px] text-right ${isKak ? 'text-muted-foreground' : 'text-white/70'

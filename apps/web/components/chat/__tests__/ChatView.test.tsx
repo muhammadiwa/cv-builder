@@ -1,6 +1,6 @@
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ChatView } from '../ChatView';
 
 // Mock next/navigation
@@ -33,66 +33,44 @@ vi.mock('framer-motion', () => ({
 }));
 
 describe('ChatView', () => {
-    it('renders chat area with correct accessibility attributes', () => {
+    it('renders shell with accessible chat log and input controls', () => {
         render(<ChatView />);
 
         const log = screen.getByRole('log');
         expect(log).toHaveAttribute('aria-label', 'Percakapan dengan Kak');
+
+        expect(screen.getByLabelText('Pesan untuk Kak')).toBeInTheDocument();
+        expect(screen.getByLabelText('Rekam suara')).toBeInTheDocument();
+        expect(screen.getByLabelText('Kirim pesan')).toBeInTheDocument();
     });
 
-    it('streams Kak first message after page load', async () => {
+    it('streams Kak first message and shows suggested chips when complete', async () => {
         render(<ChatView />);
 
-        // Wait for the streaming to start and show some content
+        // Streaming complete is signaled by chips rendering (set in onComplete callback).
+        // Asserting the chip implies the full message was streamed too.
         await waitFor(
             () => {
-                expect(screen.getByText(/Halo/)).toBeInTheDocument();
-            },
-            { timeout: 3000 }
-        );
-    });
-
-    it('shows full first message after streaming completes', async () => {
-        render(<ChatView />);
-
-        // Full message is ~95 chars at 25ms/char = ~2.4s + 500ms delay
-        await waitFor(
-            () => {
-                expect(screen.getByText(/kamu lulusan apa/)).toBeInTheDocument();
-            },
-            { timeout: 5000 }
-        );
-    });
-
-    it('allows user to send a message', async () => {
-        const user = userEvent.setup();
-        render(<ChatView />);
-
-        // Wait for first message to finish streaming
-        await waitFor(
-            () => {
-                expect(screen.getByText(/kamu lulusan apa/)).toBeInTheDocument();
+                expect(
+                    screen.getByRole('button', { name: 'Teknik Informatika' })
+                ).toBeInTheDocument();
             },
             { timeout: 5000 }
         );
 
-        const input = screen.getByLabelText('Pesan untuk Kak');
-        await user.type(input, 'Teknik Informatika');
+        expect(screen.getByText(/kamu lulusan apa/)).toBeInTheDocument();
+    }, 7000);
 
-        const sendBtn = screen.getByLabelText('Kirim pesan');
-        await user.click(sendBtn);
-
-        expect(screen.getByText('Teknik Informatika')).toBeInTheDocument();
-    }, 10000);
-
-    it('shows typing indicator after user sends message', async () => {
+    it('lets user send a message and shows typing indicator afterwards', async () => {
         const user = userEvent.setup();
         render(<ChatView />);
 
-        // Wait for first message
+        // Wait for streaming to fully complete (input is disabled during stream)
         await waitFor(
             () => {
-                expect(screen.getByText(/kamu lulusan apa/)).toBeInTheDocument();
+                expect(
+                    screen.getByRole('button', { name: 'Teknik Informatika' })
+                ).toBeInTheDocument();
             },
             { timeout: 5000 }
         );
@@ -103,17 +81,15 @@ describe('ChatView', () => {
         const sendBtn = screen.getByLabelText('Kirim pesan');
         await user.click(sendBtn);
 
-        // Typing indicator should appear
-        await waitFor(() => {
-            expect(screen.getByRole('status')).toBeInTheDocument();
-        });
+        // User bubble appears (disambiguate from chip via the <p> selector)
+        expect(screen.getByText('Test', { selector: 'p' })).toBeInTheDocument();
+
+        // Typing indicator appears within the 1-2s reply delay
+        await waitFor(
+            () => {
+                expect(screen.getByRole('status')).toBeInTheDocument();
+            },
+            { timeout: 3000 }
+        );
     }, 10000);
-
-    it('renders input area with voice and send buttons', () => {
-        render(<ChatView />);
-
-        expect(screen.getByLabelText('Pesan untuk Kak')).toBeInTheDocument();
-        expect(screen.getByLabelText('Rekam suara')).toBeInTheDocument();
-        expect(screen.getByLabelText('Kirim pesan')).toBeInTheDocument();
-    });
 });

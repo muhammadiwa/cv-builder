@@ -37,7 +37,8 @@ describe('ChatBubble', () => {
         expect(article).toHaveClass('justify-start');
 
         const bubble = article?.querySelector('div');
-        expect(bubble?.className).toContain('rounded-tl-sm');
+        // AC-2 specifies 4px corner (rounded-tl), not 2px (rounded-tl-sm)
+        expect(bubble?.className).toMatch(/\brounded-tl\b/);
         expect(bubble?.className).toContain('color-kak-bubble');
     });
 
@@ -48,7 +49,8 @@ describe('ChatBubble', () => {
         expect(article).toHaveClass('justify-end');
 
         const bubble = article?.querySelector('div');
-        expect(bubble?.className).toContain('rounded-br-sm');
+        // AC-2 specifies 4px corner (rounded-br), not 2px (rounded-br-sm)
+        expect(bubble?.className).toMatch(/\brounded-br\b/);
         expect(bubble?.className).toContain('color-user-bubble');
     });
 
