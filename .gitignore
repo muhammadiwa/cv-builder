@@ -1,0 +1,39 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+*.egg-info/
+.venv/
+venv/
+
+# Env
+.env
+
+# Storage
+storage/
+*.db
+
+# Build
+dist/
+build/
+.vite/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# Python
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
