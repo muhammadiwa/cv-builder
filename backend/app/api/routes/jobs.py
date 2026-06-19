@@ -217,3 +217,47 @@ def delete_job(
     job.deleted_at = _utcnow()
     db.commit()
     return None
+
+
+@router.post("/{job_id}/reanalyze", response_model=JobOut, status_code=202)
+async def reanalyze_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Re-run scrape (if URL) + analysis on an existing failed job.
+
+    Resets status to scraping/parsing, clears prior error_message and
+    analysis fields, then kicks off the same background pipeline as the
+    create endpoint. Useful when:
+      - The source page was fixed/temporarily down.
+      - The LLM provider had a transient error.
+      - The user wants to retry after editing raw_description manually
+        (Phase 5+ — once we expose that editor).
+
+    Already-pending jobs (scraping/parsing) are idempotent: returns 409
+    so the client doesn't double-fire the worker.
+    """
+    job = db.get(Job, job_id)
+    if job is None or job.user_id != user.id or job.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.status in ("scraping", "parsing"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"job is already {job.status}; wait for it to finish",
+        )
+
+    # Reset state so the analyzer sees a clean slate.
+    job.error_message = None
+    job.job_analysis_json = {}
+    job.ats_keywords_json = {}
+    # Title/company/etc. stay — they're either from the user's manual
+    # payload (still valid) or stale from the failed scrape. The analyzer
+    # will overwrite them if the new scrape succeeds.
+    job.status = "scraping" if job.source_type == "url" else "parsing"
+    db.commit()
+    db.refresh(job)
+
+    background_tasks.add_task(_safe_scrape_and_analyze, job.id)
+    return _job_to_out(job)

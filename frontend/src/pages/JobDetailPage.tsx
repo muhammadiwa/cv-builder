@@ -149,7 +149,7 @@ export default function JobDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-16 text-center text-slate-500">
+      <div className="max-w-6xl mx-auto px-6 py-16 text-center text-slate-500">
         <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
         Loading job…
       </div>
@@ -158,7 +158,7 @@ export default function JobDetailPage() {
 
   if (error || !job) {
     return (
-      <div className="max-w-4xl mx-auto px-6 py-16">
+      <div className="max-w-6xl mx-auto px-6 py-16">
         <Link
           to="/jobs"
           className="inline-flex items-center gap-1.5 text-[13px] text-slate-600 hover:text-slate-900 mb-4"
@@ -195,7 +195,7 @@ export default function JobDetailPage() {
   const hasSalary = Boolean(salaryCurrency && (salaryMin || salaryMax));
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div className="max-w-6xl mx-auto px-6 py-8">
       {/* Back link */}
       <Link
         to="/jobs"

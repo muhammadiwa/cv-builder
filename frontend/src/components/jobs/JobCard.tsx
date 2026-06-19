@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { Briefcase, MapPin, Building2, ExternalLink, Trash2, Loader2 } from 'lucide-react';
+import { Briefcase, MapPin, Building2, ExternalLink, Trash2, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { JobOut, JobStatus } from '../../lib/api';
 
 interface JobCardProps {
   job: JobOut;
   onDelete?: (id: string) => void;
+  onRetry?: (id: string) => void;
 }
 
 const statusStyles: Record<JobStatus, { label: string; cls: string }> = {
@@ -29,8 +30,9 @@ function formatRelative(iso: string): string {
   return d.toLocaleDateString();
 }
 
-export default function JobCard({ job, onDelete }: JobCardProps) {
+export default function JobCard({ job, onDelete, onRetry }: JobCardProps) {
   const isLoading = job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
+  const isFailed = job.status === 'failed';
   const st = statusStyles[job.status] || statusStyles.pending;
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -39,6 +41,12 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
     if (confirm(`Delete this job posting? "${job.title || 'Untitled'}"`)) {
       onDelete?.(job.id);
     }
+  };
+
+  const handleRetry = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onRetry?.(job.id);
   };
 
   return (
@@ -51,23 +59,36 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             {isLoading && <Loader2 className="w-4 h-4 text-brand-600 animate-spin shrink-0" />}
-            {!isLoading && <Briefcase className="w-4 h-4 text-slate-400 shrink-0" />}
-            <h3 className="text-[15px] font-semibold text-slate-900 truncate">
+            {!isLoading && isFailed && <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />}
+            {!isLoading && !isFailed && <Briefcase className="w-4 h-4 text-slate-400 shrink-0" />}
+            <h3
+              className="text-[15px] font-semibold text-slate-900 line-clamp-2"
+              title={job.title || 'Untitled role'}
+            >
               {job.title || 'Untitled role'}
             </h3>
           </div>
 
+          {isFailed && job.error_message && (
+            <p
+              className="text-[11px] text-red-600 mb-1.5 line-clamp-1"
+              title={job.error_message}
+            >
+              {job.error_message.replace(/^[a-z_]+:\s*/, '')}
+            </p>
+          )}
+
           {job.company && (
             <div className="flex items-center gap-1.5 text-[13px] text-slate-600 mb-1">
               <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">{job.company}</span>
+              <span className="truncate" title={job.company}>{job.company}</span>
             </div>
           )}
 
           {job.location && (
             <div className="flex items-center gap-1.5 text-[13px] text-slate-600">
               <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate">{job.location}</span>
+              <span className="truncate" title={job.location}>{job.location}</span>
             </div>
           )}
         </div>
@@ -102,6 +123,17 @@ export default function JobCard({ job, onDelete }: JobCardProps) {
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
+          )}
+          {isFailed && onRetry && (
+            <button
+              type="button"
+              onClick={handleRetry}
+              data-testid={`job-retry-${job.id}`}
+              className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
+              title="Retry analysis"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           )}
           {onDelete && (
             <button

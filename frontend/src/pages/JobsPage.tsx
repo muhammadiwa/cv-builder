@@ -1,8 +1,27 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Briefcase, RefreshCw, AlertCircle, Plus, X } from 'lucide-react';
-import { jobsApi, type JobOut } from '../lib/api';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
+import clsx from 'clsx';
+import { jobsApi, type JobOut, type JobStatus } from '../lib/api';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
+
+type StatusFilter = 'all' | JobStatus;
+type SortBy = 'newest' | 'oldest' | 'title';
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'parsed', label: 'Analyzed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'scraping', label: 'Scraping' },
+  { value: 'parsing', label: 'Analyzing' },
+  { value: 'pending', label: 'Pending' },
+];
+
+const SORT_OPTIONS: { value: SortBy; label: string }[] = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'title', label: 'Title A–Z' },
+];
 
 // Module-level so HMR + Strict Mode double-invoke can't double-schedule.
 // Mirrors the Phase 2 ProfilePage pattern.
@@ -21,6 +40,8 @@ export default function JobsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('newest');
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -94,10 +115,51 @@ export default function JobsPage() {
     }
   };
 
+  const handleRetry = async (id: string) => {
+    try {
+      const updated = await jobsApi.reanalyze(id);
+      // Replace the row in-place so the card flips to "scraping/parsing" instantly.
+      setJobs((prev) => prev.map((j) => (j.id === id ? updated : j)));
+      setToast({ type: 'success', msg: 'Retrying analysis…' });
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to retry';
+      setToast({ type: 'error', msg });
+    }
+  };
+
   const handleRefresh = () => {
     setRefreshing(true);
     fetchJobs();
   };
+
+  // Derive filter + sort in one pass. useMemo so it only re-runs when
+  // jobs / statusFilter / sortBy actually change.
+  const visibleJobs = useMemo(() => {
+    const filtered =
+      statusFilter === 'all'
+        ? jobs
+        : jobs.filter((j) => j.status === statusFilter);
+    const sorted = [...filtered];
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    } else if (sortBy === 'oldest') {
+      sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
+    } else if (sortBy === 'title') {
+      sorted.sort((a, b) =>
+        (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
+      );
+    }
+    return sorted;
+  }, [jobs, statusFilter, sortBy]);
+
+  // Count per status for the filter chips' badges.
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: jobs.length };
+    for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
+    return counts;
+  }, [jobs]);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -170,6 +232,60 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Filter chips + sort dropdown (only when we have rows) */}
+      {!loading && jobs.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap gap-1.5" data-testid="status-filters">
+            {STATUS_FILTERS.map((f) => {
+              const count = statusCounts[f.value] ?? 0;
+              const active = statusFilter === f.value;
+              return (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => setStatusFilter(f.value)}
+                  data-testid={`filter-${f.value}`}
+                  className={clsx(
+                    'px-3 py-1.5 text-[12px] font-medium rounded-full border transition-colors',
+                    active
+                      ? 'bg-brand-50 border-brand-300 text-brand-700'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                  )}
+                >
+                  {f.label}
+                  {count > 0 && (
+                    <span
+                      className={clsx(
+                        'ml-1.5 text-[11px]',
+                        active ? 'text-brand-600' : 'text-slate-400'
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortBy)}
+              data-testid="sort-select"
+              className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       {/* Error banner */}
       {error && !loading && (
         <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
@@ -217,17 +333,39 @@ export default function JobsPage() {
           data-testid="jobs-grid"
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
         >
-          {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDelete={handleDelete} />
+          {visibleJobs.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              onDelete={handleDelete}
+              onRetry={handleRetry}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Empty-after-filter state */}
+      {!loading && jobs.length > 0 && visibleJobs.length === 0 && (
+        <div className="card card-pad text-center py-12">
+          <p className="text-[14px] text-slate-600">
+            No jobs match the <span className="font-semibold">{statusFilter}</span> filter.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className="mt-3 text-[13px] text-brand-600 hover:text-brand-700 font-medium"
+          >
+            Show all jobs
+          </button>
         </div>
       )}
 
       {/* Footer hint */}
       {!loading && jobs.length > 0 && (
         <p className="mt-6 text-center text-[12px] text-slate-500">
-          {jobs.length} {jobs.length === 1 ? 'job' : 'jobs'} ·{' '}
-          {jobs.filter((j) => j.status === 'parsed').length} analyzed
+          {visibleJobs.length === jobs.length
+            ? `${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'} · ${jobs.filter((j) => j.status === 'parsed').length} analyzed`
+            : `Showing ${visibleJobs.length} of ${jobs.length} jobs`}
         </p>
       )}
     </div>

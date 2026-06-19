@@ -148,4 +148,9 @@ export const jobsApi = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/jobs/${id}`);
   },
+
+  reanalyze: async (id: string): Promise<JobOut> => {
+    const resp = await api.post<JobOut>(`/jobs/${id}/reanalyze`);
+    return resp.data;
+  },
 };
