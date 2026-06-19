@@ -281,23 +281,97 @@ class JobAnalysisOut(JobAnalysisIn):
 
 # ── Job Match ───────────────────────────────────────────────────────
 
-class JobMatchIn(BaseModel):
-    job_id: str
-    profile_id: str
+class SkillMatchDetail(BaseModel):
+    """One required skill → best profile match (or gap)."""
+    required_skill: str          # category name from job (e.g. "Programming Languages")
+    required_keyword: str        # specific keyword (e.g. "Java Spring Boot")
+    matched_keyword: str | None = None   # profile skill that matched (None if missing)
+    strength: float              # 0.0–1.0; 0 means no match found
+
+
+class ExperienceBreakdown(BaseModel):
+    required_years: int | None = None
+    profile_years: int | None = None
+    status: Literal["exceeds", "meets", "close", "below", "unknown"]
+
+
+class SeniorityBreakdown(BaseModel):
+    job_seniority: str | None = None
+    profile_seniority: str | None = None
+    status: Literal["match", "close", "mismatch", "unknown"]
+
+
+class EducationBreakdown(BaseModel):
+    required: str | None = None
+    profile: str | None = None
+    status: Literal["exceeds", "meets", "below", "unknown"]
+
+
+class ScoreBreakdown(BaseModel):
+    """Component scores (each 0.0–1.0) that combined give the overall."""
+    skill: float
+    experience: float
+    seniority: float
+    education: float
+
+
+class LLMNarrative(BaseModel):
+    """Optional LLM-generated narrative. None if narrator didn't run (or failed)."""
+    summary: str | None = None
+    strengths: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
 
 
 class JobMatchOut(BaseModel):
+    """Phase 5 — match report between a parsed Job and the user's Profile.
+
+    Stored across the existing JobMatch table columns; the semantic shape
+    is enriched here so the FE gets a clean, documented contract.
+    """
     model_config = ConfigDict(from_attributes=True)
+
     id: str
     job_id: str
     profile_id: str
+
+    # The headline number. 0.0 = no fit, 1.0 = perfect fit.
     match_score: float
-    risk_level: Literal["low", "medium", "high"]
-    score_breakdown_json: dict[str, Any] = Field(default_factory=dict)
-    matched_items_json: list[Any] = Field(default_factory=list)
-    missing_items_json: list[Any] = Field(default_factory=list)
-    strategy_json: dict[str, Any] = Field(default_factory=dict)
-    recommendations_json: list[Any] = Field(default_factory=list)
+
+    # Maps to the legacy ``risk_level`` column. Semantically inverted from
+    # the old "low/medium/high chance of being screened out" meaning: here
+    # we say what the user should do with the role.
+    #   apply    → strong fit, go for it
+    #   stretch  → partial fit, worth applying with effort
+    #   skip     → too many gaps, not worth the time
+    recommendation: Literal["apply", "stretch", "skip"]
+
+    score_breakdown: ScoreBreakdown
+
+    # Per-required-skill detail. Drives the strengths/gaps UI in MatchPanel.
+    matched_skills: list[SkillMatchDetail] = Field(default_factory=list)
+    missing_skills: list[SkillMatchDetail] = Field(default_factory=list)
+
+    # Non-skill component breakdowns.
+    experience: ExperienceBreakdown
+    seniority: SeniorityBreakdown
+    education: EducationBreakdown
+
+    # LLM narrative — may be None if narrator failed or wasn't run.
+    llm: LLMNarrative | None = None
+    confidence_score: float | None = None
+
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class JobMatchBrief(BaseModel):
+    """Slim version for list endpoints (no per-skill detail)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    job_id: str
+    match_score: float
+    recommendation: Literal["apply", "stretch", "skip"]
+    score_breakdown: ScoreBreakdown
     created_at: datetime
 
 

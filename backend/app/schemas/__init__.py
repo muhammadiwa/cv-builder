@@ -43,8 +43,8 @@ from app.schemas.schemas import (  # noqa: F401
     JobIn,
     JobOut,
     # Job Match
-    JobMatchIn,
     JobMatchOut,
+    JobMatchBrief,
     # CV Draft
     CVDraftIn,
     CVDraftOut,

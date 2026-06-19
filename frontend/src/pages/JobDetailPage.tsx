@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -22,7 +22,8 @@ import {
   Heart,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { jobsApi, type JobOut, type JobAnalysis, type JobSkillCategory } from '../lib/api';
+import { jobsApi, matchesApi, type JobOut, type JobAnalysis, type JobSkillCategory, type JobMatch } from '../lib/api';
+import MatchPanel from '../components/jobs/MatchPanel';
 
 // Module-level so HMR + Strict Mode double-invoke can't double-schedule.
 // Mirrors the Phase 2 ProfilePage pattern.
@@ -85,6 +86,7 @@ export default function JobDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [job, setJob] = useState<JobOut | null>(null);
+  const [match, setMatch] = useState<JobMatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -109,6 +111,32 @@ export default function JobDetailPage() {
   useEffect(() => {
     fetchJob();
   }, [fetchJob]);
+
+  // Fetch existing match (silently fails if none — that's fine).
+  const fetchMatch = useCallback(async () => {
+    try {
+      const data = await matchesApi.get(id);
+      setMatch(data);
+    } catch {
+      // 404 = no match yet. Other errors we surface on the panel itself.
+      setMatch(null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchMatch();
+  }, [fetchMatch]);
+
+  // Re-fetch match when job transitions to 'parsed'. Without this the
+  // user would still see "Compute match" CTA on a freshly parsed job
+  // that already has a match from a previous session.
+  const prevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (job?.status === "parsed" && prevStatusRef.current !== "parsed") {
+      fetchMatch();
+    }
+    prevStatusRef.current = job?.status ?? null;
+  }, [job?.status, fetchMatch]);
 
   // Poll while still analyzing.
   // Pattern: only re-arm when transitioning into "is analyzing" state.
@@ -344,6 +372,14 @@ export default function JobDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Match panel — Phase 5 */}
+      <MatchPanel
+        jobId={id}
+        jobStatus={job.status}
+        match={match}
+        onMatchChange={setMatch}
+      />
 
       {/* Summary */}
       {hasAnalysis && analysis?.summary && (

@@ -154,3 +154,77 @@ export const jobsApi = {
     return resp.data;
   },
 };
+
+// ── Match (Phase 5) ──────────────────────────────────────────────────
+
+export type Recommendation = 'apply' | 'stretch' | 'skip';
+
+export interface SkillMatchDetail {
+  required_skill: string;
+  required_keyword: string;
+  matched_keyword: string | null;
+  strength: number;
+}
+
+export interface ExperienceBreakdown {
+  required_years: number | null;
+  profile_years: number | null;
+  status: 'exceeds' | 'meets' | 'close' | 'below' | 'unknown';
+}
+
+export interface SeniorityBreakdown {
+  job_seniority: string | null;
+  profile_seniority: string | null;
+  status: 'match' | 'close' | 'mismatch' | 'unknown';
+}
+
+export interface EducationBreakdown {
+  required: string | null;
+  profile: string | null;
+  status: 'exceeds' | 'meets' | 'below' | 'unknown';
+}
+
+export interface ScoreBreakdown {
+  skill: number;
+  experience: number;
+  seniority: number;
+  education: number;
+}
+
+export interface LLMNarrative {
+  summary: string | null;
+  strengths: string[];
+  gaps: string[];
+}
+
+export interface JobMatch {
+  id: string;
+  job_id: string;
+  profile_id: string;
+  match_score: number;
+  recommendation: Recommendation;
+  score_breakdown: ScoreBreakdown;
+  matched_skills: SkillMatchDetail[];
+  missing_skills: SkillMatchDetail[];
+  experience: ExperienceBreakdown;
+  seniority: SeniorityBreakdown;
+  education: EducationBreakdown;
+  llm: LLMNarrative | null;
+  confidence_score: number | null;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export const matchesApi = {
+  compute: async (jobId: string): Promise<JobMatch> => {
+    const resp = await api.post<JobMatch>(`/jobs/${jobId}/match`);
+    return resp.data;
+  },
+  get: async (jobId: string): Promise<JobMatch> => {
+    const resp = await api.get<JobMatch>(`/jobs/${jobId}/match`);
+    return resp.data;
+  },
+  delete: async (jobId: string): Promise<void> => {
+    await api.delete(`/jobs/${jobId}/match`);
+  },
+};

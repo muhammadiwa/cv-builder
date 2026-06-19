@@ -1,0 +1,314 @@
+"""Phase 5 — Match API routes.
+
+POST /api/jobs/{job_id}/match  — compute/refresh a match for a parsed job.
+GET  /api/jobs/{job_id}/match  — read the latest match for a job.
+DELETE /api/jobs/{job_id}/match — clear the match record.
+
+We store the match in the existing ``job_matches`` table; the columns were
+defined in Phase 2 as generic JSON containers. The mapping from the
+``MatchResult`` dataclass to those columns is::
+
+    match_score          → result.score
+    risk_level           → result.recommendation ("apply" | "stretch" | "skip")
+    score_breakdown_json → {skill, experience, seniority, education}
+    matched_items_json   → [SkillMatchDetail, ...]
+    missing_items_json   → [SkillMatchDetail, ...]
+    strategy_json        → {experience, seniority, education, llm_summary}
+    recommendations_json → [llm_strength, ...]
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.logging import get_logger
+from app.db.session import get_db
+from app.models.models import Job, JobMatch, Profile
+from app.schemas.schemas import JobMatchOut
+from app.services.matcher import MatchResult, compute_match
+from app.services.match_narrator import narrate_match
+
+from .jobs import get_current_user
+
+
+log = get_logger("matches_api")
+
+router = APIRouter(tags=["matches"])
+
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _load_profile(db: Session, user_id: str) -> tuple[dict[str, Any], str]:
+    """Return (profile_dict, profile_id). Raises 400 if no profile yet."""
+    profile = db.execute(
+        select(Profile).where(Profile.user_id == user_id).limit(1)
+    ).scalar_one_or_none()
+    if profile is None:
+        raise HTTPException(
+            status_code=400,
+            detail="no profile yet — upload a resume first",
+        )
+    return _profile_to_dict(profile), profile.id
+
+
+def _profile_to_dict(profile: Profile) -> dict[str, Any]:
+    """Coerce ORM Profile → plain dict for the deterministic matcher.
+
+    The Profile row keeps the canonical fields as columns and stores the
+    structured section (skills, work, education, …) in ``base_profile_json``.
+    The matcher wants a single dict; we merge both into its expected shape.
+    """
+    base = profile.base_profile_json or {}
+    out: dict[str, Any] = {
+        "name": profile.name,
+        "title": profile.title,
+        "email": profile.email,
+        "phone": profile.phone,
+        "location": profile.location,
+        "linkedin": str(profile.linkedin) if profile.linkedin else None,
+        "github": str(profile.github) if profile.github else None,
+        "skills": base.get("skills") or [],
+        "work": base.get("work") or [],
+        "education": base.get("education") or [],
+        "seniority": base.get("seniority"),
+    }
+    return out
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _match_to_out(m: JobMatch) -> JobMatchOut:
+    """ORM JobMatch → JobMatchOut Pydantic.
+
+    Reads the legacy JSON containers and re-projects them into the rich
+    Phase 5 schema (score_breakdown, matched_skills, llm, etc).
+    """
+    breakdown = m.score_breakdown_json or {}
+    strategy = m.strategy_json or {}
+
+    return JobMatchOut(
+        id=m.id,
+        job_id=m.job_id,
+        profile_id=m.profile_id,
+        match_score=m.match_score,
+        recommendation=m.risk_level,  # "apply" | "stretch" | "skip"
+        score_breakdown={
+            "skill": breakdown.get("skill", 0.0),
+            "experience": breakdown.get("experience", 0.0),
+            "seniority": breakdown.get("seniority", 0.0),
+            "education": breakdown.get("education", 0.0),
+        },
+        matched_skills=m.matched_items_json or [],
+        missing_skills=m.missing_items_json or [],
+        experience=strategy.get("experience") or {
+            "required_years": None, "profile_years": None, "status": "unknown",
+        },
+        seniority=strategy.get("seniority") or {
+            "job_seniority": None, "profile_seniority": None, "status": "unknown",
+        },
+        education=strategy.get("education") or {
+            "required": None, "profile": None, "status": "unknown",
+        },
+        llm=(
+            {
+                "summary": strategy.get("llm_summary"),
+                "strengths": m.recommendations_json or [],
+                "gaps": strategy.get("llm_gaps") or [],
+            }
+            if strategy.get("llm_summary") or m.recommendations_json or strategy.get("llm_gaps")
+            else None
+        ),
+        confidence_score=None,
+        created_at=m.created_at,
+        updated_at=m.created_at,  # JobMatch has no updated_at column yet
+    )
+
+
+def _persist_match(
+    db: Session, job_id: str, profile_id: str, result: MatchResult, llm: dict | None,
+) -> JobMatch:
+    """Upsert the match into job_matches."""
+    now = _utcnow()
+    existing = db.execute(
+        select(JobMatch).where(
+            JobMatch.job_id == job_id, JobMatch.profile_id == profile_id,
+        )
+    ).scalar_one_or_none()
+
+    breakdown = {
+        "skill": result.skill_score,
+        "experience": result.experience_score,
+        "seniority": result.seniority_score,
+        "education": result.education_score,
+    }
+    matched_payload = [
+        {
+            "required_skill": m.required_skill,
+            "required_keyword": m.required_keyword,
+            "matched_keyword": m.matched_keyword,
+            "strength": m.strength,
+        }
+        for m in result.matched
+    ]
+    missing_payload = [
+        {
+            "required_skill": m.required_skill,
+            "required_keyword": m.required_keyword,
+            "matched_keyword": None,
+            "strength": m.strength,
+        }
+        for m in result.missing
+    ]
+    strategy = {
+        "experience": (
+            {
+                "required_years": result.experience.required_years,
+                "profile_years": result.experience.profile_years,
+                "status": result.experience.status,
+            }
+            if result.experience else None
+        ),
+        "seniority": (
+            {
+                "job_seniority": result.seniority.job_seniority,
+                "profile_seniority": result.seniority.profile_seniority,
+                "status": result.seniority.status,
+            }
+            if result.seniority else None
+        ),
+        "education": (
+            {
+                "required": result.education.required,
+                "profile": result.education.profile,
+                "status": result.education.status,
+            }
+            if result.education else None
+        ),
+        "llm_summary": llm.get("summary") if llm else None,
+        "llm_gaps": llm.get("gaps") if llm else [],
+    }
+    recs = llm.get("strengths") if llm else []
+
+    if existing is None:
+        row = JobMatch(
+            job_id=job_id,
+            profile_id=profile_id,
+            match_score=result.score,
+            risk_level=result.recommendation,
+            score_breakdown_json=breakdown,
+            matched_items_json=matched_payload,
+            missing_items_json=missing_payload,
+            strategy_json=strategy,
+            recommendations_json=recs,
+            created_at=now,
+        )
+        db.add(row)
+    else:
+        existing.match_score = result.score
+        existing.risk_level = result.recommendation
+        existing.score_breakdown_json = breakdown
+        existing.matched_items_json = matched_payload
+        existing.missing_items_json = missing_payload
+        existing.strategy_json = strategy
+        existing.recommendations_json = recs
+        # NOTE: no updated_at column on the JobMatch model yet — we rely on
+        # created_at as the canonical timestamp for "latest match" queries.
+        row = existing
+
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ── Routes ───────────────────────────────────────────────────────────
+
+
+@router.post("/jobs/{job_id}/match", response_model=JobMatchOut, status_code=200)
+async def compute_or_refresh_match(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Compute (or refresh) the match for this job.
+
+    - 404 if the job doesn't exist or is soft-deleted
+    - 400 if the job hasn't been parsed yet (need the LLM analysis first)
+    - 400 if the user has no profile yet
+    - 200 with the match payload (LLM narrative runs sync; may be None
+      if the provider fails — the deterministic score is still returned)
+    """
+    job = db.get(Job, job_id)
+    if job is None or job.user_id != user.id or job.deleted_at is not None:
+        raise HTTPException(404, "job not found")
+    if job.status != "parsed" or not job.job_analysis_json:
+        raise HTTPException(
+            400,
+            f"job is not yet parsed (status={job.status!r}) — analyze first",
+        )
+
+    profile_dict, profile_id = _load_profile(db, user.id)
+
+    # 1) Deterministic engine — pure Python, instant.
+    result = compute_match(profile_dict, job.job_analysis_json)
+
+    # 2) LLM narrator — runs inline because POST is synchronous. Latency
+    # is typically 2–10s; if it fails we still return the deterministic
+    # result with llm=null. We don't 5xx on LLM failure.
+    try:
+        llm = await narrate_match(result, db)
+    except Exception as e:  # noqa: BLE001
+        log.warning("narrate_match_unexpected", error=str(e)[:200])
+        llm = None
+
+    row = _persist_match(db, job_id, profile_id, result, llm)
+    return _match_to_out(row)
+
+
+@router.get("/jobs/{job_id}/match", response_model=JobMatchOut)
+def get_match(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Return the latest match for this job, or 404 if none computed."""
+    job = db.get(Job, job_id)
+    if job is None or job.user_id != user.id or job.deleted_at is not None:
+        raise HTTPException(404, "job not found")
+
+    match = db.execute(
+        select(JobMatch).where(JobMatch.job_id == job_id)
+    ).scalar_one_or_none()
+    if match is None:
+        raise HTTPException(404, "no match computed yet")
+    return _match_to_out(match)
+
+
+@router.delete("/jobs/{job_id}/match", status_code=204)
+def delete_match(
+    job_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Remove the match record for this job."""
+    job = db.get(Job, job_id)
+    if job is None or job.user_id != user.id or job.deleted_at is not None:
+        raise HTTPException(404, "job not found")
+
+    match = db.execute(
+        select(JobMatch).where(JobMatch.job_id == job_id)
+    ).scalar_one_or_none()
+    if match is None:
+        raise HTTPException(404, "no match to delete")
+
+    db.delete(match)
+    db.commit()
+    return None
