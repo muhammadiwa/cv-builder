@@ -37,3 +37,9 @@ yarn-debug.log*
 *.egg-info/
 .mypy_cache/
 .ruff_cache/
+
+# Hermes internal
+.hermes/
+
+# Auto-generated test artifacts
+docs/screenshots/phase4-fe-tests/

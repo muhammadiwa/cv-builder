@@ -3,6 +3,7 @@ import App from '../App';
 import DashboardPage from '../pages/DashboardPage';
 import ProfilePage from '../pages/ProfilePage';
 import JobsPage from '../pages/JobsPage';
+import JobDetailPage from '../pages/JobDetailPage';
 import CvDraftsPage from '../pages/CvDraftsPage';
 import CoverLettersPage from '../pages/CoverLettersPage';
 import ApplicationsPage from '../pages/ApplicationsPage';
@@ -18,6 +19,7 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'profile', element: <ProfilePage /> },
       { path: 'jobs', element: <JobsPage /> },
+      { path: 'jobs/:id', element: <JobDetailPage /> },
       { path: 'cv-drafts', element: <CvDraftsPage /> },
       { path: 'cover-letters', element: <CoverLettersPage /> },
       { path: 'applications', element: <ApplicationsPage /> },
