@@ -132,10 +132,20 @@ class Job(Base):
     ats_keywords_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
     status: Mapped[str] = mapped_column(String(20), default="pending")
+    # parse_status is the public field name (per plan); keep status as the
+    # underlying column to avoid a schema migration. New code reads/writes
+    # status, older callers (if any) can alias to parse_status in the API.
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    # Timestamp set when the analyzer flips the row to status='parsed'.
+    # Latent gap: jd_analyzer.py was assigning this attribute pre-Phase-4-FE
+    # but no column existed, so it never persisted. Adding it now so the
+    # parsed_at assertion in tests + the API response actually round-trip.
+    parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Soft-delete: list endpoint filters where deleted_at IS NULL.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="jobs")
     matches: Mapped[list["JobMatch"]] = relationship(back_populates="job", cascade="all, delete-orphan")

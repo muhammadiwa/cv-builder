@@ -162,6 +162,7 @@ class JobOut(JobIn):
     id: str
     status: str
     error_message: str | None = None
+    parsed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
