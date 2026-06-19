@@ -24,7 +24,9 @@ return clear 4xx errors instead of a generic 500.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -53,6 +55,57 @@ ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
 # page and may trigger anti-bot heuristics. Order doesn't matter.
 _TRACKING_PREFIXES = ("utm_", "mc_")
 _TRACKING_EXACT = {"fbclid", "gclid", "ref", "ref_src", "ref_url", "yclid"}
+
+
+# ── SSRF guard ────────────────────────────────────────────────────────
+#
+# We block DNS names and IPs that point at private/loopback/link-local
+# networks. This stops the scraper from being tricked into fetching
+# internal services (127.0.0.1, 192.168.x, AWS metadata at
+# 169.254.169.254, etc.). Resolves host → all IPs → reject if ANY IP
+# is private. Catches both direct IP literals and DNS-poisoning attacks.
+
+
+class SSRFBlockedError(ValueError):
+    """Raised when the URL resolves to a blocked (private/loopback) address."""
+
+
+def _is_private_ip(ip_str: str) -> bool:
+    """True if the IP is loopback, private, link-local, multicast, or reserved."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        # Not a valid IP literal (e.g. a hostname). Caller should have
+        # resolved this already; if it slips through, treat as unsafe.
+        return True
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _assert_public_address(host: str) -> None:
+    """Resolve ``host`` and reject if ANY resolved IP is private/loopback."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        raise SSRFBlockedError(f"could not resolve host {host!r}: {e}") from e
+    seen: set[str] = set()
+    for fam, _type, _proto, _canon, sockaddr in infos:
+        ip_str = sockaddr[0]
+        # Strip IPv6 scope id if present (e.g. "::1%lo0")
+        ip_str = ip_str.split("%", 1)[0]
+        if ip_str in seen:
+            continue
+        seen.add(ip_str)
+        if _is_private_ip(ip_str):
+            raise SSRFBlockedError(
+                f"refusing to fetch {host!r}: resolves to private IP {ip_str}"
+            )
 
 
 # ── Custom exceptions ─────────────────────────────────────────────
@@ -116,7 +169,7 @@ def _strip_tracking_params(url: str) -> str:
 
 
 def _normalize_url(url: str) -> str:
-    """Validate + strip tracking params. Raises InvalidURLError."""
+    """Validate + strip tracking params + SSRF guard. Raises InvalidURLError / SSRFBlockedError."""
     if not isinstance(url, str) or not url.strip():
         raise InvalidURLError("url is empty")
     cleaned = url.strip()
@@ -127,6 +180,11 @@ def _normalize_url(url: str) -> str:
         )
     if not parsed.netloc:
         raise InvalidURLError("url is missing host")
+    host = parsed.hostname  # strips userinfo + port
+    if host is None:
+        raise InvalidURLError("url is missing host")
+    # SSRF defense: refuse private/loopback/link-local/metadata IPs.
+    _assert_public_address(host)
     return _strip_tracking_params(cleaned)
 
 

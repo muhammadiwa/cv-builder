@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -146,6 +146,18 @@ class Job(Base):
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Soft-delete: list endpoint filters where deleted_at IS NULL.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Dedup: a (user, source_url) pair is unique while not soft-deleted.
+    # We index it so the API layer can do a fast pre-check before insert
+    # (cheaper than catching IntegrityError post-hoc).
+    __table_args__ = (
+        Index(
+            "ix_jobs_user_source_url_active",
+            "user_id", "source_url",
+            unique=True,
+            sqlite_where=text("deleted_at IS NULL AND source_url IS NOT NULL"),
+        ),
+    )
 
     user: Mapped["User"] = relationship(back_populates="jobs")
     matches: Mapped[list["JobMatch"]] = relationship(back_populates="job", cascade="all, delete-orphan")

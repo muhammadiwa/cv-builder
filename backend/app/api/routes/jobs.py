@@ -19,12 +19,13 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.models import Job
-from app.schemas.schemas import JobIn, JobOut
+from app.schemas.schemas import JobIn, JobListItem, JobOut
 from app.services.job_scraper import (
     ContentTooLargeError,
     EmptyContentError,
     FetchError,
     InvalidURLError,
+    SSRFBlockedError,
     scrape_job,
 )
 from app.services.jd_analyzer import analyze_jd
@@ -75,7 +76,7 @@ def _safe_scrape_and_analyze(job_id: str) -> None:
                 job.scraped_at = _utcnow()
                 job.status = "parsing"
                 db.commit()
-            except (InvalidURLError, FetchError, ContentTooLargeError, EmptyContentError) as e:
+            except (InvalidURLError, SSRFBlockedError, FetchError, ContentTooLargeError, EmptyContentError) as e:
                 job.status = "failed"
                 job.error_message = f"scrape_failed: {e}"[:1000]
                 db.commit()
@@ -119,6 +120,25 @@ async def create_job(
     if payload.source_type == "url":
         if not payload.source_url:
             raise HTTPException(status_code=400, detail="source_url required for source_type='url'")
+        # Dedup: reject if the same URL was already submitted (and not soft-deleted).
+        # The DB unique index is the source of truth — this is just a friendly
+        # 409 that returns the existing job_id so the client can navigate to it.
+        existing = db.execute(
+            select(Job).where(
+                Job.user_id == user.id,
+                Job.source_url == payload.source_url,
+                Job.deleted_at.is_(None),
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "duplicate_job",
+                    "message": f"This URL was already submitted on {existing.created_at.isoformat()}",
+                    "existing_job_id": existing.id,
+                },
+            )
     elif payload.source_type == "manual":
         if not payload.raw_description or not payload.raw_description.strip():
             raise HTTPException(status_code=400, detail="raw_description required for source_type='manual'")
@@ -152,7 +172,7 @@ async def create_job(
     return _job_to_out(job)
 
 
-@router.get("", response_model=list[JobOut])
+@router.get("", response_model=list[JobListItem])
 def list_jobs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),

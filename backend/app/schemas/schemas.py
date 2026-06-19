@@ -143,7 +143,10 @@ class ResumeUploadOut(BaseModel):
 class JobIn(BaseModel):
     source_type: Literal["url", "manual"]
     source_url: str | None = None
-    raw_description: str
+    # Optional: only required for 'manual' intake. The 'url' path scrapes
+    # the JD and writes raw_description after the POST returns, so it
+    # starts empty here. The API layer enforces the per-source_type rule.
+    raw_description: str | None = None
     title: str | None = None
     company: str | None = None
     location: str | None = None
@@ -160,6 +163,34 @@ class JobIn(BaseModel):
 class JobOut(JobIn):
     model_config = ConfigDict(from_attributes=True)
     id: str
+    status: str
+    error_message: str | None = None
+    parsed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JobListItem(BaseModel):
+    """Slim shape returned by list_jobs — excludes raw_description.
+
+    raw_description can be up to 50K characters per job, so shipping it
+    in every list response bloats the payload (50 jobs × 50K = 2.5MB).
+    Card-level rendering on the FE only needs the title/company/status
+    fields, so we strip everything heavy from this view.
+    """
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    source_type: Literal["url", "manual"]
+    source_url: str | None = None
+    title: str | None = None
+    company: str | None = None
+    location: str | None = None
+    remote: bool = False
+    employment_type: str | None = None
+    seniority: str | None = None
+    salary_min: int | None = None
+    salary_max: int | None = None
+    salary_currency: str | None = None
     status: str
     error_message: str | None = None
     parsed_at: datetime | None = None
