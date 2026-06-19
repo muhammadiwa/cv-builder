@@ -9,6 +9,15 @@ import ProfileEditForm, { ProfileData } from '../components/ProfileEditForm';
 
 type UploadStatusState = 'idle' | 'uploading' | 'parsing' | 'parsed' | 'failed';
 
+// Module-level so HMR + Strict Mode double-invoke can't double-schedule
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+function clearPollTimer() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 export default function ProfilePage() {
   const qc = useQueryClient();
   const [uploadState, setUploadState] = useState<UploadStatusState>('idle');
@@ -17,7 +26,10 @@ export default function ProfilePage() {
   const [confidenceScore, setConfidenceScore] = useState<number>();
   const [saving, setSaving] = useState(false);
   const [saveBanner, setSaveBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // local guard to prevent overlapping save requests (UI debounce)
+  const saveInFlightRef = useRef(false);
+  // monotonic counter — only the latest poll request's result can update UI
+  const uploadTokenRef = useRef(0);
 
   // Load profile (404 = no profile yet, normal)
   const profileQuery = useQuery({
@@ -42,10 +54,7 @@ export default function ProfilePage() {
   });
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
+    clearPollTimer();
   }, []);
 
   // Cleanup on unmount
@@ -54,9 +63,12 @@ export default function ProfilePage() {
   const startPolling = useCallback(
     (uploadId: string) => {
       stopPolling();
-      pollRef.current = setInterval(async () => {
+      const myToken = ++uploadTokenRef.current;
+      pollTimer = setInterval(async () => {
         try {
           const status: UploadStatus = await profileApi.getUploadStatus(uploadId);
+          // If a newer upload started, ignore this poll's result
+          if (myToken !== uploadTokenRef.current) return;
           if (status.status === 'parsed') {
             setUploadState('parsed');
             setConfidenceScore(status.confidence_score);
@@ -78,10 +90,14 @@ export default function ProfilePage() {
 
   const handleUpload = useCallback(
     async (file: File) => {
+      // Reset upload-related state immediately so a new upload starts clean
       setUploadState('uploading');
       setUploadFileName(file.name);
       setUploadError(undefined);
       setConfidenceScore(undefined);
+      // bump token — cancels any in-flight poll for prior upload
+      uploadTokenRef.current += 1;
+      stopPolling();
       try {
         const resp = await profileApi.uploadResume(file);
         setUploadState('parsing');
@@ -92,11 +108,14 @@ export default function ProfilePage() {
         setUploadError(typeof detail === 'string' ? detail : JSON.stringify(detail));
       }
     },
-    [startPolling],
+    [startPolling, stopPolling],
   );
 
   const handleSave = useCallback(
     async (patch: Partial<ProfileData>) => {
+      // Guard against double-clicks and overlapping saves
+      if (saveInFlightRef.current) return;
+      saveInFlightRef.current = true;
       setSaving(true);
       setSaveBanner(null);
       try {
@@ -110,6 +129,7 @@ export default function ProfilePage() {
         setSaveBanner({ kind: 'err', text: typeof detail === 'string' ? detail : 'Save failed' });
       } finally {
         setSaving(false);
+        saveInFlightRef.current = false;
       }
     },
     [qc],

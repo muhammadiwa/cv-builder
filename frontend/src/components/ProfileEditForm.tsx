@@ -1,6 +1,32 @@
 import { useState } from 'react';
 import clsx from 'clsx';
-import { Save, X, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Save, X, ChevronDown, ChevronRight, Loader2, AlertTriangle, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
+
+function ConfidenceBadge({ score }: { score: number }) {
+  // Color-code the parser confidence so users notice low-confidence parses
+  const pct = Math.round(score * 100);
+  const tone =
+    score >= 0.75 ? { icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' } :
+    score >= 0.5  ? { icon: AlertCircle,   color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' } :
+                    { icon: AlertTriangle, color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200' };
+  const Icon = tone.icon;
+  const label =
+    score >= 0.75 ? 'High confidence' :
+    score >= 0.5  ? 'Medium confidence' :
+                    'Low confidence — review carefully';
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium',
+        tone.color, tone.bg, tone.border,
+      )}
+      title={label}
+    >
+      <Icon size={11} />
+      {pct}% confidence
+    </span>
+  );
+}
 
 export interface ProfileData {
   id: string;
@@ -133,12 +159,14 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
     <div className="space-y-6">
       {/* Save bar (sticky-feeling, top of form) */}
       <div className="flex items-center justify-between">
-        <div className="text-xs text-slate-500">
-          Last updated:{' '}
-          {profile.updated_at
-            ? new Date(profile.updated_at).toLocaleString()
-            : 'unknown'}
-          {' · '}confidence {(profile.confidence_score * 100).toFixed(0)}%
+        <div className="flex items-center gap-3 text-xs text-slate-500">
+          <span>
+            Last updated:{' '}
+            {profile.updated_at
+              ? new Date(profile.updated_at).toLocaleString()
+              : 'unknown'}
+          </span>
+          <ConfidenceBadge score={profile.confidence_score} />
         </div>
         <div className="flex items-center gap-2">
           {dirty && (
@@ -199,8 +227,17 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
               className="input"
               value={linkedin}
               onChange={(e) => setLinkedin(e.target.value)}
-              placeholder="https://linkedin.com/in/…"
+              placeholder="https://linkedin.com/in/your-handle"
             />
+            {!linkedin && (
+              <button
+                type="button"
+                onClick={() => setLinkedin('https://linkedin.com/in/')}
+                className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
+              >
+                <Plus size={11} /> Add LinkedIn
+              </button>
+            )}
           </div>
           <div>
             <label className="label">GitHub URL</label>
@@ -208,8 +245,17 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
               className="input"
               value={github}
               onChange={(e) => setGithub(e.target.value)}
-              placeholder="https://github.com/…"
+              placeholder="https://github.com/your-handle"
             />
+            {!github && (
+              <button
+                type="button"
+                onClick={() => setGithub('https://github.com/')}
+                className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
+              >
+                <Plus size={11} /> Add GitHub
+              </button>
+            )}
           </div>
         </div>
         <div>
@@ -264,7 +310,9 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
 
       {/* Skills (read-only) */}
       <Section
-        title={`Skills (${skills.reduce((acc, s) => acc + s.keywords.length, 0)})`}
+        title={`Skills (${skills.length} ${skills.length === 1 ? 'category' : 'categories'}, ${
+          skills.reduce((acc, s) => acc + s.keywords.length, 0)
+        } ${skills.reduce((acc, s) => acc + s.keywords.length, 0) === 1 ? 'keyword' : 'keywords'})`}
         open={skillsOpen}
         onToggle={() => setSkillsOpen(!skillsOpen)}
       >

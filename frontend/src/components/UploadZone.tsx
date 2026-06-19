@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, DragEvent, ChangeEvent } from 'react';
 import clsx from 'clsx';
-import { UploadCloud, FileText, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { UploadCloud, FileText, Loader2, CheckCircle2, XCircle, X } from 'lucide-react';
 
 type Status = 'idle' | 'uploading' | 'parsing' | 'parsed' | 'failed';
 
@@ -26,7 +26,10 @@ export default function UploadZone({
 }: UploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
 
+  // Pre-flight validation in the UI gives instant feedback before hitting
+  // the API. The server still re-validates — defense in depth.
   const validate = (file: File): string | null => {
     const ext = file.name.toLowerCase().split('.').pop();
     if (ext !== 'pdf' && ext !== 'docx') {
@@ -42,10 +45,11 @@ export default function UploadZone({
     (file: File) => {
       const err = validate(file);
       if (err) {
-        // surface via parent by calling onUpload with a synthetic rejection
-        onUpload(file); // parent will receive and handle validation in API call
+        // Surface the client-side error in the zone itself (no upload attempt)
+        setClientError(err);
         return;
       }
+      setClientError(null);
       onUpload(file);
     },
     [onUpload],
@@ -160,6 +164,22 @@ export default function UploadZone({
           </>
         )}
       </div>
+
+      {/* Surface client-side validation errors inline (file too big / wrong type) */}
+      {clientError && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+          <XCircle size={13} className="shrink-0 mt-0.5" />
+          <span>{clientError}</span>
+          <button
+            type="button"
+            onClick={() => setClientError(null)}
+            className="ml-auto text-red-500 hover:text-red-700"
+            aria-label="Dismiss"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {(status === 'parsed' || status === 'failed') && fileName && (
         <div className="flex items-center gap-2 text-xs text-slate-500">
