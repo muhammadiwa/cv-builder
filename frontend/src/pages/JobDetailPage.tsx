@@ -24,6 +24,16 @@ import {
 import clsx from 'clsx';
 import { jobsApi, type JobOut, type JobAnalysis, type JobSkillCategory } from '../lib/api';
 
+// Module-level so HMR + Strict Mode double-invoke can't double-schedule.
+// Mirrors the Phase 2 ProfilePage pattern.
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+function clearPollTimer() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -100,15 +110,25 @@ export default function JobDetailPage() {
     fetchJob();
   }, [fetchJob]);
 
-  // Poll while still analyzing
+  // Poll while still analyzing.
+  // Pattern: only re-arm when transitioning into "is analyzing" state.
+  // Avoids clearInterval/setInterval churn on every job state update.
   useEffect(() => {
-    if (!job) return;
+    if (!job) {
+      clearPollTimer();
+      return clearPollTimer;
+    }
     const isAnalyzing =
       job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
-    if (!isAnalyzing) return;
+    if (!isAnalyzing) {
+      clearPollTimer();
+      return clearPollTimer;
+    }
 
-    const t = setInterval(() => fetchJob(true), 3000);
-    return () => clearInterval(t);
+    if (pollTimer === null) {
+      pollTimer = setInterval(() => fetchJob(true), 3000);
+    }
+    return clearPollTimer;
   }, [job, fetchJob]);
 
   const handleDelete = async () => {
@@ -168,7 +188,11 @@ export default function JobDetailPage() {
   // Safe salary display
   const salaryMin = analysis?.salary?.min ?? job.salary_min;
   const salaryMax = analysis?.salary?.max ?? job.salary_max;
-  const salaryCurrency = analysis?.salary?.currency ?? job.salary_currency ?? 'USD';
+  // Only show salary if we have a currency — never fake "USD" defaults.
+  // Without this, IDR jobs would render as "USD 25,000,000+" which is
+  // wrong and confusing. Show "Not stated" if the JD didn't say.
+  const salaryCurrency = analysis?.salary?.currency ?? job.salary_currency;
+  const hasSalary = Boolean(salaryCurrency && (salaryMin || salaryMax));
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -262,9 +286,9 @@ export default function JobDetailPage() {
         </div>
 
         {/* Quick facts row */}
-        {(salaryMin || salaryMax || analysis?.employment_type || analysis?.required_experience_years || analysis?.required_education) && (
+        {(hasSalary || analysis?.employment_type || analysis?.required_experience_years || analysis?.required_education) && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-slate-100">
-            {(salaryMin || salaryMax) && (
+            {hasSalary && (
               <div>
                 <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
                   <DollarSign className="w-3 h-3" />
@@ -277,6 +301,11 @@ export default function JobDetailPage() {
                     ? `${salaryCurrency} ${salaryMin.toLocaleString()}+`
                     : `${salaryCurrency} ${salaryMax?.toLocaleString()}`}
                 </div>
+              </div>
+            )}
+            {!hasSalary && analysis?.employment_type && (
+              <div className="col-span-2 text-[12px] text-slate-500 italic">
+                Salary not stated in JD
               </div>
             )}
             {analysis?.employment_type && (

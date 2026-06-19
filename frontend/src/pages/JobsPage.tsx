@@ -1,8 +1,18 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X } from 'lucide-react';
 import { jobsApi, type JobOut } from '../lib/api';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
+
+// Module-level so HMR + Strict Mode double-invoke can't double-schedule.
+// Mirrors the Phase 2 ProfilePage pattern.
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+function clearPollTimer() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<JobOut[]>([]);
@@ -11,8 +21,6 @@ export default function JobsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-
-  const pollTimer = useRef<number | null>(null);
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -37,29 +45,27 @@ export default function JobsPage() {
     fetchJobs();
   }, [fetchJobs]);
 
-  // Poll if any job is still analyzing
+  // Poll if any job is still analyzing.
+  // Pattern: clear + only re-arm when transitioning into "has pending".
+  // Avoids the clearInterval/setInterval churn from depending on `jobs`.
   useEffect(() => {
     const hasPending = jobs.some(
       (j) => j.status === 'scraping' || j.status === 'parsing' || j.status === 'pending'
     );
 
-    if (pollTimer.current) {
-      clearInterval(pollTimer.current);
-      pollTimer.current = null;
+    if (!hasPending) {
+      clearPollTimer();
+      return clearPollTimer;
     }
 
-    if (hasPending) {
-      pollTimer.current = window.setInterval(() => {
+    // Only arm if not already running
+    if (pollTimer === null) {
+      pollTimer = setInterval(() => {
         fetchJobs(true);
       }, 3000);
     }
 
-    return () => {
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
-    };
+    return clearPollTimer;
   }, [jobs, fetchJobs]);
 
   // Auto-dismiss toast

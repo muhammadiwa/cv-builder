@@ -34,7 +34,9 @@ export default function PasteZone({ onCreated, onError }: PasteZoneProps) {
     if (!isValid || submitting) return;
 
     setSubmitting(true);
-    onError('');
+    // Note: do NOT pre-call onError('') — JobsPage maps that to an
+    // empty-error toast that flashes for 4 seconds. Only fire onError
+    // when we have an actual message to display.
 
     try {
       const payload =
