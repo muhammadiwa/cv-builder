@@ -166,6 +166,87 @@ class JobOut(JobIn):
     updated_at: datetime
 
 
+# ── JSON Resume Job Description v1.0.0 (Phase 4) ─────────────────
+#
+# Industry-standard schema (https://jsonresume.org/job-description-schema/).
+# The LLM analyzer is told to populate ONLY fields that are explicitly
+# present in the JD — never invent. To keep the analyzer lenient, almost
+# every field is optional, but ``title`` is required so a parsed job
+# always has something meaningful to show. Enums gate ``remote_type``,
+# ``employment_type``, and ``seniority`` so bad LLM output fails fast
+# at validation time instead of poisoning downstream matching.
+
+_REMOTE_TYPES = ("remote", "hybrid", "onsite")
+_EMPLOYMENT_TYPES = ("full_time", "part_time", "contract", "internship")
+_SENIORITIES = ("junior", "mid", "senior", "staff", "principal", "lead")
+
+
+class SkillGroup(BaseModel):
+    """One skill category with a list of keywords.
+
+    Mirrors the JSON Resume ``skills[].keywords`` shape but flattens
+    the surrounding object so the LLM has fewer places to slip up.
+    """
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class SalaryRange(BaseModel):
+    """Numeric salary band. Currency is the 3-letter ISO code."""
+    min: int | None = None
+    max: int | None = None
+    currency: str | None = None
+
+
+class JobAnalysisIn(BaseModel):
+    """LLM output contract for ``analyze_jd``.
+
+    Every section is optional; ``title`` is the only field we require
+    because without it the UI has nothing to label the job by. Enum
+    validators reject obviously-bad LLM guesses (e.g. ``seniority="guru"``).
+    """
+    model_config = ConfigDict(extra="allow")
+
+    title: str
+    company: str | None = None
+    location: str | None = None
+    remote_type: Literal["remote", "hybrid", "onsite"] | None = None
+    employment_type: (
+        Literal["full_time", "part_time", "contract", "internship"] | None
+    ) = None
+    seniority: (
+        Literal["junior", "mid", "senior", "staff", "principal", "lead"] | None
+    ) = None
+
+    salary: SalaryRange | None = None
+
+    summary: str | None = None
+    responsibilities: list[str] = Field(default_factory=list)
+    required_skills: list[SkillGroup] = Field(default_factory=list)
+    preferred_skills: list[SkillGroup] = Field(default_factory=list)
+    required_experience_years: int | None = None
+    required_education: str | None = None
+
+    # Flat list of ATS-relevant keywords (tech names, methodologies,
+    # domain terms). Phase 5 matcher uses this for keyword overlap.
+    ats_keywords: list[str] = Field(default_factory=list)
+
+
+class JobAnalysisOut(JobAnalysisIn):
+    """Persisted view: adds metadata fields populated by the analyzer.
+
+    ``confidence_score`` is computed by the analyzer (fraction of
+    expected sections that are non-empty). ``parsed_at`` is the UTC
+    timestamp written when the Job row was finalized.
+    """
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    job_id: str
+    confidence_score: float = 0.0
+    parsed_at: datetime | None = None
+
+
 # ── Job Match ───────────────────────────────────────────────────────
 
 class JobMatchIn(BaseModel):
