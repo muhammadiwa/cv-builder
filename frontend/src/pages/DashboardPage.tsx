@@ -1,17 +1,54 @@
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  Search,
-  CheckCircle2,
   Upload,
   FileText,
   Briefcase,
   Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 
-type HealthResp = { status: string; service: string; version: string; environment: string };
+// ── Sample data (Phase 2+ will wire to real API) ───────────────
+
+const SAMPLE_MATCHES = [
+  { title: 'Senior Backend Engineer', company: 'Bukalapak', location: 'Jakarta', match: 87, tier: 'hot', days: 1 },
+  { title: 'Full Stack Developer', company: 'Shopee', location: 'Remote', match: 72, tier: 'warm', days: 2 },
+  { title: 'Backend Engineer (Fintech)', company: 'Dana', location: 'Jakarta', match: 65, tier: 'warm', days: 3 },
+  { title: 'Senior Python Developer', company: 'Tiket.com', location: 'Bandung', match: 58, tier: 'cold', days: 5 },
+  { title: 'Backend Engineer (Intern)', company: 'StartupABC', location: 'Jakarta', match: 47, tier: 'cold', days: 6 },
+];
+
+const TIER_STYLES: Record<string, string> = {
+  hot: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  warm: 'bg-amber-50 text-amber-700 border-amber-200',
+  cold: 'bg-blue-50 text-blue-700 border-blue-200',
+};
+
+const TIER_TEXT: Record<string, string> = {
+  hot: 'text-emerald-600',
+  warm: 'text-amber-600',
+  cold: 'text-blue-600',
+};
+
+const TIER_BAR: Record<string, string> = {
+  hot: 'bg-emerald-500',
+  warm: 'bg-amber-500',
+  cold: 'bg-blue-400',
+};
+
+const SAMPLE_ACTIVITY = [
+  { text: 'Applied to Senior Backend Engineer at Bukalapak', time: '2h ago', icon: Briefcase },
+  { text: 'CV draft v3 generated for Xendit', time: '4h ago', icon: FileText },
+  { text: 'Resume parsed and Base Profile created', time: '1d ago', icon: Sparkles },
+];
+
+const SAMPLE_TOP_SKILLS = [
+  { skill: 'Python', count: 4, pct: 80 },
+  { skill: 'FastAPI', count: 3, pct: 60 },
+  { skill: 'PostgreSQL', count: 3, pct: 60 },
+  { skill: 'AWS', count: 2, pct: 40 },
+  { skill: 'Docker', count: 2, pct: 40 },
+];
 
 // ── Sub-components ──────────────────────────────────────────────
 
@@ -32,63 +69,23 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
   );
 }
 
-function StatusDot({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs">
-      <span
-        className={clsx(
-          'w-1.5 h-1.5 rounded-full',
-          ok ? 'bg-emerald-500' : 'bg-slate-300',
-        )}
-      />
-      <span className="text-slate-600">{label}</span>
-    </span>
-  );
-}
-
 // ── Main page ──────────────────────────────────────────────────
 
-const SAMPLE_MATCHES = [
-  { title: 'Senior Backend Engineer', company: 'Bukalapak', location: 'Jakarta', match: 87, tier: 'hot', days: 1 },
-  { title: 'Full Stack Developer', company: 'Shopee', location: 'Remote', match: 72, tier: 'warm', days: 2 },
-  { title: 'Backend Engineer (Fintech)', company: 'Dana', location: 'Jakarta', match: 65, tier: 'warm', days: 3 },
-  { title: 'Senior Python Developer', company: 'Tiket.com', location: 'Bandung', match: 58, tier: 'cold', days: 5 },
-  { title: 'Backend Engineer (Intern)', company: 'StartupABC', location: 'Jakarta', match: 47, tier: 'cold', days: 6 },
-];
-
-const TIER_STYLES: Record<string, string> = {
-  hot: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  warm: 'bg-amber-50 text-amber-700 border-amber-200',
-  cold: 'bg-slate-100 text-slate-600 border-slate-200',
-};
-
-const SAMPLE_ACTIVITY = [
-  { text: 'Applied to Senior Backend Engineer at Bukalapak', time: '2h ago', icon: Briefcase },
-  { text: 'CV draft v3 generated for Xendit', time: '4h ago', icon: FileText },
-  { text: 'Resume parsed and Base Profile created', time: '1d ago', icon: Sparkles },
-];
-
 export default function DashboardPage() {
-  const health = useQuery({
-    queryKey: ['health'],
-    queryFn: async () => (await api.get<HealthResp>('/health')).data,
-    refetchInterval: 30_000,
-  });
-
-  const online = health.data?.status === 'healthy';
-
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* ── Header (compact, NOT a hero) ──────────────────────── */}
-      <div className="flex items-center justify-between gap-6 flex-wrap pt-2">
+      {/* ── Header (greeting + date) ───────────────────── */}
+      <div className="flex items-baseline justify-between gap-6 flex-wrap pt-2">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Dashboard</h1>
+          <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
+            Welcome back, Mohammad
+          </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Build a tailored CV for each job in minutes, not hours.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <StatusDot ok={online} label={online ? 'Backend online' : 'Offline'} />
+        <div className="text-xs text-slate-400">
+          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
@@ -107,13 +104,13 @@ export default function DashboardPage() {
             <span>6 years experience</span>
             <span>·</span>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-              <span>⚠</span> Base Profile not uploaded
+              <AlertCircle size={11} /> Base Profile not uploaded
             </span>
           </div>
         </div>
-        <a href="/profile" className="text-xs text-brand-600 hover:text-brand-700 font-medium shrink-0">
-          Set up →
-        </a>
+        <Link to="/profile" className="btn btn-secondary text-xs shrink-0">
+          Upload resume
+        </Link>
       </div>
 
       {/* ── Two-column: jobs (left, 8/12) + sidebar (right, 4/12) ── */}
@@ -153,8 +150,8 @@ export default function DashboardPage() {
                 <div className="text-right shrink-0">
                   <div
                     className={clsx(
-                      'text-2xl font-bold tabular-nums leading-none',
-                      m.tier === 'hot' ? 'text-emerald-600' : m.tier === 'warm' ? 'text-amber-600' : 'text-slate-500',
+                      'text-3xl font-bold tabular-nums leading-none tracking-tight',
+                      TIER_TEXT[m.tier],
                     )}
                   >
                     {m.match}
@@ -172,10 +169,7 @@ export default function DashboardPage() {
               {/* mini match bar */}
               <div className="mt-3 h-1 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className={clsx(
-                    'h-full rounded-full',
-                    m.tier === 'hot' ? 'bg-emerald-500' : m.tier === 'warm' ? 'bg-amber-500' : 'bg-slate-400',
-                  )}
+                  className={clsx('h-full rounded-full', TIER_BAR[m.tier])}
                   style={{ width: `${m.match}%` }}
                 />
               </div>
@@ -183,7 +177,7 @@ export default function DashboardPage() {
           ))}
         </section>
 
-        {/* RIGHT — onboarding + activity */}
+        {/* RIGHT — onboarding + activity + skills */}
         <aside className="lg:col-span-4 space-y-6">
           {/* Onboarding card */}
           <section className="card card-pad">
@@ -222,7 +216,33 @@ export default function DashboardPage() {
             </button>
           </section>
 
-          {/* Activity feed */}
+          {/* Top matching skills (product-specific, replaces generic Pro tip) */}
+          <section className="card card-pad">
+            <h3 className="text-sm font-semibold text-slate-900 mb-1">Top matching skills</h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Your skills that appear across matched jobs.
+            </p>
+            <div className="space-y-2">
+              {SAMPLE_TOP_SKILLS.map((s) => (
+                <div key={s.skill} className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-700 w-24 truncate">
+                    {s.skill}
+                  </span>
+                  <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-brand-500 to-indigo-500 rounded-full"
+                      style={{ width: `${s.pct}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-slate-500 tabular-nums w-6 text-right">
+                    {s.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Recent activity */}
           <section className="card card-pad">
             <h3 className="text-sm font-semibold text-slate-900 mb-3">Recent activity</h3>
             <div className="space-y-2.5">
@@ -238,16 +258,6 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
-          </section>
-
-          {/* Tips card to balance height */}
-          <section className="card card-pad bg-gradient-to-br from-brand-50 to-indigo-50 border-brand-100">
-            <h3 className="text-sm font-semibold text-slate-900 mb-2">💡 Pro tip</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Tailoring your CV to each job's keywords increases ATS pass rate by
-              <span className="font-semibold text-brand-700"> ~60%</span>. Use the
-              match score as a starting point, then refine with the improvement suggestions.
-            </p>
           </section>
         </aside>
       </div>

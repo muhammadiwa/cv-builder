@@ -67,13 +67,10 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="px-4 py-3 border-t border-slate-800 text-[10px] text-slate-600">
-          v0.1.0
-        </div>
-      </aside>
+        </aside>
 
       <main className="flex-1 bg-slate-50 overflow-y-auto">
-        <div className="px-8 py-6">
+        <div className="max-w-screen-2xl mx-auto px-8 py-6">
           <Outlet />
         </div>
       </main>
