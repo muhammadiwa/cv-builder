@@ -161,3 +161,66 @@ def test_list_versions_returns_history(_mock_llm_parse):
     assert "version_number" in body[0]
     assert "change_summary" in body[0]
     assert "created_at" in body[0]
+
+# ── Schema validation edge cases ─────────────────────────────────
+
+def test_profile_in_accepts_empty_url_strings():
+    """Empty string for URL fields must coerce to None (handles both input + output)."""
+    from app.schemas.schemas import ProfileIn
+
+    p = ProfileIn(
+        name="Test User",
+        email="test@example.com",
+        linkedin="",
+        github="   ",
+        portfolio=None,
+    )
+    assert p.linkedin is None
+    assert p.github is None
+    assert p.portfolio is None
+
+    # Also: ProfileOut (which extends ProfileIn) must accept empty strings
+    # when reading from ORM (defense against bad DB data).
+    from app.schemas.schemas import ProfileOut
+
+    class FakeORM:
+        id = "test-id"
+        name = "Test"
+        email = "test@example.com"
+        linkedin = ""  # bad data already in DB
+        github = ""
+        portfolio = None
+        summary = None
+        title = None
+        phone = None
+        location = None
+        confidence_score = 0.0
+        ai_analysis_json = {}
+        created_at = "2026-01-01T00:00:00"
+        updated_at = "2026-01-01T00:00:00"
+        base_profile_json = {}
+        skills = []
+        experiences = []
+        education = []
+        projects = []
+        certifications = []
+        languages = []
+        preferences = {}
+
+    out = ProfileOut.model_validate(FakeORM())
+    assert out.linkedin is None
+    assert out.github is None
+
+
+def test_profile_in_accepts_valid_urls():
+    """Real URLs still validate normally."""
+    from app.schemas.schemas import ProfileIn
+
+    p = ProfileIn(
+        name="Test User",
+        email="test@example.com",
+        linkedin="https://linkedin.com/in/test",
+        github="https://github.com/test",
+    )
+    assert str(p.linkedin) == "https://linkedin.com/in/test"
+    assert str(p.github) == "https://github.com/test"

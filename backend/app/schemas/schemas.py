@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, field_validator, model_validator
 
 
 # ── Common sub-models ────────────────────────────────────────────────
@@ -70,6 +70,21 @@ class ProfileIn(BaseModel):
     linkedin: HttpUrl | None = None
     github: HttpUrl | None = None
     portfolio: HttpUrl | None = None
+
+    @field_validator("linkedin", "github", "portfolio", mode="before")
+    @classmethod
+    def _empty_str_url_to_none(cls, v: Any) -> Any:
+        """Coerce empty/whitespace strings to None for URL fields.
+
+        Empty inputs from optional form fields used to crash HttpUrl
+        validation on BOTH the request and response paths. Coercing at
+        field level (mode='before') runs before HttpUrl type-coercion so
+        this fixes both directions.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
     summary: str | None = None
     skills: list[Skill] = Field(default_factory=list)
     experiences: list[Experience] = Field(default_factory=list)
