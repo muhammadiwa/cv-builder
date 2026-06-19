@@ -396,6 +396,25 @@ class CVDraftOut(CVDraftIn):
     updated_at: datetime
 
 
+class CVRenderOut(BaseModel):
+    """Rendered CV output (HTML or Markdown)."""
+
+    cv_draft_id: str
+    format: Literal["html", "markdown"]
+    content: str
+    sections: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CVEnhanceIn(BaseModel):
+    """Request body for LLM-enhanced section edit."""
+
+    section: Literal["summary", "experience", "bullets", "skills"]
+    # Index within experience list when section == "experience" or "bullets"
+    experience_index: int | None = None
+    # Optional job_id to pull target ATS keywords from
+    target_job_id: str | None = None
+
+
 # ── Cover Letter ────────────────────────────────────────────────────
 
 class CoverLetterIn(BaseModel):

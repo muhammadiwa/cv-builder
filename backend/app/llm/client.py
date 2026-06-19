@@ -53,7 +53,9 @@ def _safe_parse_json(text: str) -> Any:
         return None
     s = text.strip()
     # Strip leading <think>...</think> block (case-insensitive, allow newlines).
-    s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
+    # If the close tag is missing (truncated output), strip to end-of-text so
+    # the brace-matcher below finds the actual JSON.
+    s = re.sub(r"<think>.*?(</think>|$)", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
     if s.startswith("```"):
         s = s.strip("`")
         if s.startswith("json"):

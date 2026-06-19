@@ -1,87 +1,91 @@
 {
-  "version": "1.0.0",
-  "updated_at": "2026-06-18T00:00:00Z",
-  "owner": "tech-lead",
-  "providers": [
-    {
-      "id": "tokenrouter",
-      "name": "TokenRouter (MiniMax-M3)",
-      "enabled": true,
-      "priority": 1,
-      "kind": "openai_compat",
-      "base_url": "https://api.tokenrouter.com/v1",
-      "api_key_env": "TOKENROUTER_API_KEY",
-      "models": {
-        "resume_parse": "MiniMax-M3",
-        "job_analyze": "MiniMax-M3",
-        "match": "MiniMax-M3",
-        "cv_generate": "MiniMax-M3",
-        "cv_score": "MiniMax-M3",
-        "cv_improve": "MiniMax-M3",
-        "cover_letter": "MiniMax-M3"
-      },
-      "max_tokens_default": 8000,
-      "temperature_default": 0.3
-    },
-    {
-      "id": "openai",
-      "name": "OpenAI",
-      "enabled": false,
-      "priority": 2,
-      "kind": "openai_compat",
-      "base_url": "https://api.openai.com/v1",
-      "api_key_env": "OPENAI_API_KEY",
-      "models": {
-        "resume_parse": "gpt-4o-mini",
-        "job_analyze": "gpt-4o-mini",
-        "match": "gpt-4o-mini",
-        "cv_generate": "gpt-4o",
-        "cv_score": "gpt-4o-mini",
-        "cv_improve": "gpt-4o",
-        "cover_letter": "gpt-4o"
-      },
-      "max_tokens_default": 4000,
-      "temperature_default": 0.3
-    },
-    {
-      "id": "anthropic",
-      "name": "Anthropic",
-      "enabled": false,
-      "priority": 3,
-      "kind": "anthropic",
-      "base_url": "https://api.anthropic.com",
-      "api_key_env": "ANTHROPIC_API_KEY",
-      "models": {
-        "resume_parse": "claude-haiku-4-5",
-        "job_analyze": "claude-haiku-4-5",
-        "match": "claude-haiku-4-5",
-        "cv_generate": "claude-sonnet-4-5",
-        "cv_score": "claude-haiku-4-5",
-        "cv_improve": "claude-sonnet-4-5",
-        "cover_letter": "claude-sonnet-4-5"
-      },
-      "max_tokens_default": 8000,
-      "temperature_default": 0.3
-    },
-    {
-      "id": "ollama",
-      "name": "Ollama (local)",
-      "enabled": false,
-      "priority": 4,
-      "kind": "openai_compat",
-      "base_url": "http://localhost:11434/v1",
-      "api_key_env": "OLLAMA_API_KEY",
-      "models": {
-        "resume_parse": "llama3.1:8b",
-        "job_analyze": "llama3.1:8b",
-        "match": "llama3.1:8b",
-        "cv_generate": "qwen2.5:14b",
-        "cv_score": "llama3.1:8b",
-        "cv_improve": "qwen2.5:14b",
-        "cover_letter": "qwen2.5:14b"
-      },
-      "max_tokens_default": 4000,
-      "temperature_default": 0.3
-    }
-  ]
+    "version": "1.0.0",
+    "updated_at": "2026-06-18T00:00:00Z",
+    "owner": "tech-lead",
+    "providers": [
+        {
+            "id": "tokenrouter",
+            "name": "TokenRouter (MiniMax-M3)",
+            "enabled": true,
+            "priority": 1,
+            "kind": "openai_compat",
+            "base_url": "https://api.tokenrouter.com/v1",
+            "api_key_env": "TOKENROUTER_API_KEY",
+            "models": {
+                "resume_parse": "MiniMax-M3",
+                "job_analyze": "MiniMax-M3",
+                "match": "MiniMax-M3",
+                "cv_generate": "MiniMax-M3",
+                "cv_score": "MiniMax-M3",
+                "cv_improve": "MiniMax-M3",
+                "cv_enhance": "MiniMax-M3",
+                "cover_letter": "MiniMax-M3"
+            },
+            "max_tokens_default": 8000,
+            "temperature_default": 0.3
+        },
+        {
+            "id": "openai",
+            "name": "OpenAI",
+            "enabled": false,
+            "priority": 2,
+            "kind": "openai_compat",
+            "base_url": "https://api.openai.com/v1",
+            "api_key_env": "OPENAI_API_KEY",
+            "models": {
+                "resume_parse": "gpt-4o-mini",
+                "job_analyze": "gpt-4o-mini",
+                "match": "gpt-4o-mini",
+                "cv_generate": "gpt-4o",
+                "cv_score": "gpt-4o-mini",
+                "cv_improve": "gpt-4o",
+                "cover_letter": "gpt-4o",
+                "cv_enhance": "gpt-4o"
+            },
+            "max_tokens_default": 4000,
+            "temperature_default": 0.3
+        },
+        {
+            "id": "anthropic",
+            "name": "Anthropic",
+            "enabled": false,
+            "priority": 3,
+            "kind": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "api_key_env": "ANTHROPIC_API_KEY",
+            "models": {
+                "resume_parse": "claude-haiku-4-5",
+                "job_analyze": "claude-haiku-4-5",
+                "match": "claude-haiku-4-5",
+                "cv_generate": "claude-sonnet-4-5",
+                "cv_score": "claude-haiku-4-5",
+                "cv_improve": "claude-sonnet-4-5",
+                "cover_letter": "claude-sonnet-4-5",
+                "cv_enhance": "claude-sonnet-4-5"
+            },
+            "max_tokens_default": 8000,
+            "temperature_default": 0.3
+        },
+        {
+            "id": "ollama",
+            "name": "Ollama (local)",
+            "enabled": false,
+            "priority": 4,
+            "kind": "openai_compat",
+            "base_url": "http://localhost:11434/v1",
+            "api_key_env": "OLLAMA_API_KEY",
+            "models": {
+                "resume_parse": "llama3.1:8b",
+                "job_analyze": "llama3.1:8b",
+                "match": "llama3.1:8b",
+                "cv_generate": "qwen2.5:14b",
+                "cv_score": "llama3.1:8b",
+                "cv_improve": "qwen2.5:14b",
+                "cover_letter": "qwen2.5:14b",
+                "cv_enhance": "qwen2.5:14b"
+            },
+            "max_tokens_default": 4000,
+            "temperature_default": 0.3
+        }
+    ]
 }

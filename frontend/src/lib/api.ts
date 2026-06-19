@@ -228,3 +228,122 @@ export const matchesApi = {
     await api.delete(`/jobs/${jobId}/match`);
   },
 };
+
+// ── CV Drafts ────────────────────────────────────────────────────
+
+export interface CVBasics {
+  name?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  linkedin?: string | null;
+  github?: string | null;
+  portfolio?: string | null;
+  url?: string | null;
+}
+
+export interface CVExperienceEntry {
+  title?: string;
+  company?: string;
+  location?: string;
+  start?: string;
+  end?: string | null;
+  bullets?: string[];
+}
+
+export interface CVEducationEntry {
+  institution?: string;
+  degree?: string;
+  field?: string;
+  start?: string;
+  end?: string;
+  gpa?: string;
+}
+
+export interface CVProjectEntry {
+  name?: string;
+  description?: string;
+  tech?: string[];
+  url?: string;
+}
+
+export interface CVJson {
+  basics?: CVBasics;
+  summary?: string;
+  experience?: CVExperienceEntry[];
+  education?: CVEducationEntry[];
+  skills?: string[];
+  projects?: CVProjectEntry[];
+}
+
+export interface CVDraft {
+  id: string;
+  job_id: string;
+  profile_id: string;
+  template_id: string;
+  title: string;
+  cv_json: CVJson;
+  rendered_html: string | null;
+  score: number;
+  score_breakdown_json: Record<string, unknown>;
+  status: 'draft' | 'ready' | 'exported';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CVRenderResponse {
+  cv_draft_id: string;
+  format: 'html' | 'markdown';
+  content: string;
+  sections: { kind: string; title: string; body_md: string }[];
+}
+
+export type CVSectionKind = 'summary' | 'bullets' | 'experience' | 'skills';
+
+export const cvsApi = {
+  list: async (): Promise<CVDraft[]> => {
+    const resp = await api.get<CVDraft[]>('/cvs');
+    return resp.data;
+  },
+  get: async (cvId: string): Promise<CVDraft> => {
+    const resp = await api.get<CVDraft>(`/cvs/${cvId}`);
+    return resp.data;
+  },
+  create: async (payload: {
+    job_id: string;
+    profile_id: string;
+    title: string;
+    template_id?: string;
+  }): Promise<CVDraft> => {
+    const resp = await api.post<CVDraft>('/cvs', payload);
+    return resp.data;
+  },
+  patch: async (
+    cvId: string,
+    payload: { title?: string; cv_json?: CVJson; status?: string; template_id?: string }
+  ): Promise<CVDraft> => {
+    const resp = await api.patch<CVDraft>(`/cvs/${cvId}`, payload);
+    return resp.data;
+  },
+  delete: async (cvId: string): Promise<void> => {
+    await api.delete(`/cvs/${cvId}`);
+  },
+  render: async (cvId: string, format: 'html' | 'markdown' = 'html'): Promise<CVRenderResponse> => {
+    const resp = await api.get<CVRenderResponse>(`/cvs/${cvId}/render`, {
+      params: { format },
+    });
+    return resp.data;
+  },
+  enhance: async (
+    cvId: string,
+    payload: {
+      section: CVSectionKind;
+      experience_index?: number;
+      target_job_id?: string;
+    }
+  ): Promise<CVDraft> => {
+    const resp = await api.post<CVDraft>(`/cvs/${cvId}/enhance`, payload);
+    return resp.data;
+  },
+};
