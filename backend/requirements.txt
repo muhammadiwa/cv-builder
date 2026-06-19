@@ -29,6 +29,7 @@ weasyprint==63.1
 # Web scraping
 selectolax==0.13.1
 beautifulsoup4==4.12.3
+trafilatura==1.6.3
 
 # Validation
 email-validator==2.2.0
