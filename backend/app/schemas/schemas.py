@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl, model_validator
 
 
 # ── Common sub-models ────────────────────────────────────────────────
@@ -401,3 +401,195 @@ class ProjectBrief(BaseModel):
     name: str
     description: str | None = None
     tech: list[str] = Field(default_factory=list)
+
+
+# ── JSON Resume v1.0.0 — BaseProfile (Phase 2) ─────────────────────
+#
+# Industry-standard schema (https://jsonresume.org/schema/). The LLM
+# parser is told to populate ONLY fields that are explicitly present in
+# the resume text — never invent. To keep the parser lenient, every
+# section is optional, but ``basics.email`` must validate as an email
+# when ``basics`` is present. Models here are used both as the LLM
+# output contract AND as the response shape for /api/profile.
+
+
+class BasicsLocation(BaseModel):
+    """Nested location object inside ``basics``."""
+    model_config = ConfigDict(extra="allow")
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    countryCode: str | None = None
+    address: str | None = None
+
+
+class BasicsProfile(BaseModel):
+    """One social/portfolio profile entry inside ``basics.profiles``."""
+    model_config = ConfigDict(extra="allow")
+    network: str | None = None
+    username: str | None = None
+    url: str | None = None
+
+
+class BasicsSchema(BaseModel):
+    """Top-level contact info block — required to have a valid email
+    when present at all (downstream matcher relies on it)."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    label: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    url: str | None = None
+    summary: str | None = None
+    location: BasicsLocation | None = None
+    profiles: list[BasicsProfile] = Field(default_factory=list)
+
+
+class WorkEntry(BaseModel):
+    """One work-experience row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None           # company
+    position: str | None = None
+    location: str | None = None
+    description: str | None = None
+    startDate: str | None = None      # YYYY-MM or YYYY-MM-DD
+    endDate: str | None = None        # YYYY-MM, YYYY-MM-DD, or null for current
+    highlights: list[str] = Field(default_factory=list)
+    url: str | None = None
+
+
+class EducationEntry(BaseModel):
+    """One education row."""
+    model_config = ConfigDict(extra="allow")
+    institution: str | None = None
+    url: str | None = None
+    area: str | None = None           # field of study
+    studyType: str | None = None      # "Bachelor", "Master", etc.
+    startDate: str | None = None
+    endDate: str | None = None
+    score: str | None = None
+    courses: list[str] = Field(default_factory=list)
+
+
+class SkillEntry(BaseModel):
+    """One skill row — typically a category (e.g. "Backend") with keywords."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    level: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class ProjectEntry(BaseModel):
+    """One project row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    description: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    startDate: str | None = None
+    endDate: str | None = None
+    url: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    entity: str | None = None
+    type: str | None = None
+
+
+class CertificateEntry(BaseModel):
+    """One certificate row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    date: str | None = None
+    issuer: str | None = None
+    url: str | None = None
+
+
+class LanguageEntry(BaseModel):
+    """One language row."""
+    model_config = ConfigDict(extra="allow")
+    language: str | None = None
+    fluency: str | None = None
+
+
+class InterestEntry(BaseModel):
+    """One interest/hobby row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+class ReferenceEntry(BaseModel):
+    """One reference row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    reference: str | None = None
+
+
+class AwardEntry(BaseModel):
+    """One award row."""
+    model_config = ConfigDict(extra="allow")
+    title: str | None = None
+    date: str | None = None
+    awarder: str | None = None
+    summary: str | None = None
+
+
+class PublicationEntry(BaseModel):
+    """One publication row."""
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    publisher: str | None = None
+    releaseDate: str | None = None
+    url: str | None = None
+    summary: str | None = None
+
+
+class VolunteerEntry(BaseModel):
+    """One volunteer row."""
+    model_config = ConfigDict(extra="allow")
+    organization: str | None = None
+    position: str | None = None
+    url: str | None = None
+    startDate: str | None = None
+    endDate: str | None = None
+    summary: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+
+
+class BaseProfileSchema(BaseModel):
+    """Top-level JSON Resume v1.0.0 schema.
+
+    Every section is optional — a sparse resume (e.g. only basics + email)
+    must still validate. When ``basics`` is provided, ``basics.email`` is
+    required and must look like an email. This is the LLM's output
+    contract; downstream code should treat any unexpected field as
+    best-effort metadata.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    basics: BasicsSchema | None = None
+    work: list[WorkEntry] = Field(default_factory=list)
+    education: list[EducationEntry] = Field(default_factory=list)
+    skills: list[SkillEntry] = Field(default_factory=list)
+    projects: list[ProjectEntry] = Field(default_factory=list)
+    certificates: list[CertificateEntry] = Field(default_factory=list)
+    languages: list[LanguageEntry] = Field(default_factory=list)
+    interests: list[InterestEntry] = Field(default_factory=list)
+    references: list[ReferenceEntry] = Field(default_factory=list)
+    awards: list[AwardEntry] = Field(default_factory=list)
+    publications: list[PublicationEntry] = Field(default_factory=list)
+    volunteer: list[VolunteerEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _require_basics_email_when_basics_present(self) -> "BaseProfileSchema":
+        """If basics was extracted, it must have a valid email."""
+        if self.basics is not None and not self.basics.email:
+            raise ValueError("basics.email is required when basics is present")
+        return self
+
+
+# Convenience: how many "expected sections" exist for confidence scoring.
+# Used by resume_parser.compute_confidence().
+BASE_PROFILE_SECTIONS: tuple[str, ...] = (
+    "basics", "work", "education", "skills", "projects",
+    "certificates", "languages",
+)
