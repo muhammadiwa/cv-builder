@@ -215,6 +215,11 @@ def _extract_selectolax(html: str) -> str:
         except Exception:  # noqa: BLE001 — bad CSS shouldn't crash us
             node = None
         if node is not None:
+            # Strip noise tags BEFORE extracting text. Jobstreet/SEEK-style
+            # career sites embed inline <style>/<script> blocks inside
+            # semantic containers; without this they'd leak CSS into the JD.
+            for tag in node.css("script, style, noscript, template, iframe"):
+                tag.decompose()
             text = node.text(separator="\n", strip=True)
             if text and len(text.strip()) >= MIN_EXTRACTED_CHARS:
                 return text
@@ -348,10 +353,19 @@ def scrape_job(url: str, *, client: httpx.Client | None = None) -> ScrapeResult:
                         f"response exceeded {MAX_RESPONSE_BYTES} bytes"
                     )
             # Re-wrap the buffered bytes so the caller's downstream code
-            # can still call .text / .headers normally.
+            # can still call .text / .headers normally. NB: httpx's
+            # iter_bytes() returns ALREADY-DECOMPRESSED bytes, but the
+            # original headers still advertise Content-Encoding: gzip/br.
+            # Passing those headers through causes a second, garbled
+            # decompression attempt → "incorrect header check". Strip
+            # encoding headers so .text treats buf as plaintext.
+            sanitized_headers = [
+                (k, v) for k, v in resp.headers.raw
+                if k.lower() not in (b"content-encoding", b"content-length")
+            ]
             return httpx.Response(
                 status_code=resp.status_code,
-                headers=resp.headers,
+                headers=sanitized_headers,
                 content=bytes(buf),
                 request=resp.request,
             )
