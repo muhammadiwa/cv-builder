@@ -407,6 +407,15 @@ export interface CVRecommendationItem {
   missing_skills: string[];
 }
 
+// ── Phase 8: PDF export ──────────────────────────────────────────────
+export interface CVExport {
+  id: string;
+  entity_type: 'cv' | 'cover_letter';
+  file_type: 'pdf' | 'docx';
+  file_size: number;
+  created_at: string;
+}
+
 // F4 fix: unified threshold set used across the FE for "is this
 // score good?". Matches the BE composite-recommendation cutoffs
 // (apply ≥ 0.7, stretch ≥ 0.5) so the chip on the CV editor tab and
@@ -489,6 +498,43 @@ export const cvsApi = {
     const resp = await api.get<CVRecommendationItem[]>(
       `/cvs/recommendations?limit=${limit}`,
     );
+    return resp.data;
+  },
+  // Phase 8: trigger an ATS-safe PDF export. Returns the file name
+  // suggested by the server (Content-Disposition) and triggers a
+  // browser download. Throws on non-2xx so the caller can surface
+  // a toast.
+  exportPdf: async (cvId: string): Promise<{ fileName: string; exportId: string; size: number }> => {
+    const resp = await api.post<Blob>(
+      `/cvs/${cvId}/export?format=pdf`,
+      {},
+      { responseType: 'blob' },
+    );
+    // Read the suggested file name + export id from custom headers
+    // (set by the route). Fall back to a sensible default if missing.
+    const cd = resp.headers['content-disposition'] as string | undefined;
+    const match = cd?.match(/filename="?([^"]+)"?/);
+    const fileName = match?.[1] ?? `cv_${cvId.slice(0, 8)}.pdf`;
+    const exportId = (resp.headers['x-cv-export-id'] as string | undefined) ?? '';
+    const sizeHeader = resp.headers['x-cv-export-size'] as string | undefined;
+    const size = sizeHeader ? Number(sizeHeader) : resp.data.size;
+
+    // Trigger download via a hidden anchor + Object URL.
+    const url = URL.createObjectURL(resp.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Defer revoke so the browser has time to start the download.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    return { fileName, exportId, size };
+  },
+  // Phase 8: history of past PDF generations for this CV.
+  listExports: async (cvId: string, limit = 10): Promise<CVExport[]> => {
+    const resp = await api.get<CVExport[]>(`/cvs/${cvId}/exports?limit=${limit}`);
     return resp.data;
   },
 };

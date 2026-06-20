@@ -40,6 +40,7 @@ from app.schemas.schemas import (
     CVScoreOut,
     CVScoreRecommendation,
     CVVersionOut,
+    ExportOut,
 )
 from app.services.cv_enhancer import enhance_cv_summary, enhance_job_bullets
 from app.services.cv_scorer import score_cv
@@ -519,6 +520,135 @@ def cv_recommendations(
 
     items.sort(key=lambda x: x.composite, reverse=True)
     return items[:limit]
+
+
+# ── Export (Phase 8) ────────────────────────────────────────────────
+# Routes here MUST also be declared before @router.get("/{cv_id}")
+# below — same FastAPI ordering rule that bit us with /recommendations.
+from app.services.cv_exporter import export_cv_to_pdf, pdf_metadata  # noqa: E402
+
+
+@router.post("/{cv_id}/export", response_class=Response)
+def export_cv(
+    cv_id: str,
+    format: str = Query("pdf", pattern="^(pdf)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stream the CV as an ATS-safe PDF.
+
+    Generates a fresh PDF from the draft's currently-rendered HTML
+    (which already has scoped CSS from the renderer), wraps it with
+    a print stylesheet that enforces ATS-safe layout (single column,
+    selectable text, no body images, sane page breaks), and streams
+    the bytes as ``application/pdf``.
+
+    The Export row is persisted with ``file_path`` set to a synthetic
+    identifier (the live PDF is regenerated on every request, so we
+    don't write to disk by default — saves space + guarantees
+    freshness).
+    """
+    from app.models.models import Export
+    from app.core.config import get_settings
+
+    settings = get_settings()
+
+    draft = db.get(CVDraft, cv_id)
+    if draft is None:
+        raise HTTPException(404, f"cv {cv_id} not found")
+    profile = db.get(Profile, draft.profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(403, "not your cv")
+
+    if not draft.rendered_html:
+        # Edge case: a draft was created but never had HTML rendered.
+        # Re-render on the fly so the export still works.
+        draft.rendered_html = _render_draft_to_html(draft)
+        db.commit()
+
+    pdf_bytes = export_cv_to_pdf(draft.rendered_html)
+    meta = pdf_metadata(pdf_bytes)
+
+    if not meta["is_valid"]:
+        log.error(
+            "cv_export_invalid_pdf",
+            cv_id=cv_id,
+            pdf_size=meta["size"],
+            magic=meta["magic"],
+        )
+        raise HTTPException(500, "generated PDF failed validation")
+
+    # Persist an export row so the audit trail + history sidebar work.
+    safe_title = "".join(
+        c if c.isalnum() or c in "-_ " else "_" for c in (draft.title or "cv")
+    ).strip().replace(" ", "_")[:60] or "cv"
+    file_name = f"{safe_title}_v{draft.id[:8]}.pdf"
+    export_row = Export(
+        user_id=user.id,
+        entity_type="cv",
+        entity_id=cv_id,
+        cv_draft_id=cv_id,
+        file_type="pdf",
+        file_path=str(settings.cv_export_dir / file_name),
+        file_size=meta["size"],
+    )
+    db.add(export_row)
+    db.commit()
+
+    log.info(
+        "cv_exported",
+        cv_id=cv_id,
+        export_id=export_row.id,
+        pdf_size=meta["size"],
+        pages=meta["page_count"],
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file_name}"',
+            "X-Cv-Export-Id": export_row.id,
+            "X-Cv-Export-Size": str(meta["size"]),
+        },
+    )
+
+
+@router.get("/{cv_id}/exports", response_model=list[ExportOut])
+def list_cv_exports(
+    cv_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ExportOut]:
+    """Return the user's export history for this CV, newest first.
+
+    Each row is one PDF generation event. The actual file isn't
+    stored on disk (PDFs are regenerated on demand to keep exports
+    fresh with the current CV state) — the row exists for audit
+    and to power the "Export history" sidebar in the FE.
+    """
+    from app.models.models import Export
+
+    draft = db.get(CVDraft, cv_id)
+    if draft is None:
+        raise HTTPException(404, f"cv {cv_id} not found")
+    profile = db.get(Profile, draft.profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(403, "not your cv")
+
+    rows = (
+        db.query(Export)
+        .filter(
+            Export.cv_draft_id == cv_id,
+            Export.user_id == user.id,
+            Export.entity_type == "cv",
+        )
+        .order_by(Export.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [ExportOut.model_validate(r) for r in rows]
 
 
 # ── Get one ────────────────────────────────────────────────────────

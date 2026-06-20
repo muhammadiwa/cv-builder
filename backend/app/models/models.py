@@ -296,7 +296,12 @@ class CoverLetter(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     job: Mapped["Job"] = relationship(back_populates="cover_letters")
-    exports: Mapped[list["Export"]] = relationship(back_populates="cover_letter", cascade="all, delete-orphan")
+    # ``exports`` relationship intentionally not declared here — the
+    # ``exports.cover_letter_id`` column is a plain string (not an FK)
+    # because the cover_letters table doesn't ship until a future
+    # Phase. When cover letters ship, declare the relationship here
+    # with an explicit ``primaryjoin`` + ``foreign()`` annotation so
+    # SQLAlchemy doesn't need an FK column to wire up the join.
 
 
 # ── Exports (PDF / DOCX) ────────────────────────────────────────────
@@ -309,7 +314,7 @@ class Export(Base):
     entity_type: Mapped[str] = mapped_column(String(20))  # cv | cover_letter
     entity_id: Mapped[str] = mapped_column(String(36))
     cv_draft_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cv_drafts.id", ondelete="SET NULL"), nullable=True)
-    cover_letter_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cover_letters.id", ondelete="SET NULL"), nullable=True)
+    cover_letter_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     file_type: Mapped[str] = mapped_column(String(10))  # pdf | docx
     file_path: Mapped[str] = mapped_column(String(1000))
@@ -318,7 +323,9 @@ class Export(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     cv_draft: Mapped["CVDraft | None"] = relationship(back_populates="exports", foreign_keys=[cv_draft_id])
-    cover_letter: Mapped["CoverLetter | None"] = relationship(back_populates="exports", foreign_keys=[cover_letter_id])
+    # ``cover_letter`` relationship intentionally not declared — see
+    # comment on CoverLetter.exports for why (no FK on the column
+    # because cover_letters table doesn't ship until a future Phase).
 
 
 # ── Templates ────────────────────────────────────────────────────────
@@ -356,7 +363,7 @@ class Application(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
     job_id: Mapped[str] = mapped_column(String(36), ForeignKey("jobs.id", ondelete="CASCADE"))
     cv_draft_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cv_drafts.id", ondelete="SET NULL"), nullable=True)
-    cover_letter_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("cover_letters.id", ondelete="SET NULL"), nullable=True)
+    cover_letter_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="draft")  # draft | ready | applied | interview | rejected | offer
     applied_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

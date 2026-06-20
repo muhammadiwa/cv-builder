@@ -1,7 +1,7 @@
 """Manual migration — apply ALTER TABLE statements to bring the dev DB
 in sync with the current ORM models.
 
-Two things are pending:
+Three things are pending:
 
 1. Phase 4 retro fix: ``Job.extractor_used`` column was added to
    models.Job but never had a corresponding ALTER TABLE applied to
@@ -13,6 +13,15 @@ Two things are pending:
    for new installs; this migration backfills the constraint onto the
    existing dev DB so the defense-in-depth catches bad writes there
    too.
+
+3. Phase 8 fix: SQLAlchemy's ``use_alter=True`` / deferred-FK
+   machinery for the ``exports.cover_letter_id`` column produced an
+   ``exports`` table with a literal FK to ``cover_letters_tmp(id)``.
+   SQLite's "deferred FK via shadow table" hack needs that table to
+   exist for inserts to succeed. The cover_letters table is a future-
+   Phase model so we don't have real cover letter rows yet — create
+   an empty shadow table so the constraint trivially passes for CV
+   exports (where ``cover_letter_id`` is always NULL anyway).
 
 Run with::
 
@@ -65,6 +74,13 @@ def main() -> int:
          "FOR EACH ROW WHEN NEW.score < 0 OR NEW.score > 1 "
          "BEGIN SELECT RAISE(ABORT, 'cv_versions.score out of range'); END;",
          "cv_versions score UPDATE CHECK trigger"),
+        # Phase 8: shadow table SQLAlchemy uses for the deferred FK
+        # from exports.cover_letter_id. Real CoverLetter table doesn't
+        # exist yet (Phase 9+); the shadow makes inserts work for CV
+        # exports where cover_letter_id is always NULL.
+        ("CREATE TABLE IF NOT EXISTS cover_letters_tmp ("
+         "id VARCHAR(36) PRIMARY KEY)",
+         "cover_letters_tmp shadow table"),
     ]
 
     for sql, label in statements:
