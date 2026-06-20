@@ -737,4 +737,113 @@ export const coverLettersApi = {
     const resp = await api.get<CVExport[]>(`/cover-letters/${id}/exports?limit=${limit}`);
     return resp.data;
   },
+};// ── Phase 10A: Templates ──────────────────────────────────────────
+export type FontFamily = 'serif' | 'sans' | 'mono';
+export type Density = 'compact' | 'normal' | 'spacious';
+export type BulletStyle = 'dash' | 'bullet' | 'arrow';
+export type DateFormat = 'Mon YYYY' | 'MM/YYYY' | 'YYYY';
+export type PageSize = 'A4' | 'Letter';
+
+export interface TemplateConfigJson {
+  id: string;
+  name: string;
+  type: 'cv' | 'cover_letter';
+  sections: string[];
+  font_family: FontFamily;
+  accent_color: string;
+  density: Density;
+  bullet_style: BulletStyle;
+  date_format: DateFormat;
+  page_size: PageSize;
+  ats_friendly: boolean;
+  description: string;
+}
+
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  type: 'cv' | 'cover_letter';
+  description: string;
+  is_ats_friendly: boolean;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface Template extends TemplateSummary {
+  template_config_json: TemplateConfigJson;
+}
+
+export interface TemplatePreviewResponse {
+  rendered_html: string;
+  config_used: TemplateConfigJson;
+}
+
+export const templatesApi = {
+  list: async (type?: 'cv' | 'cover_letter'): Promise<TemplateSummary[]> => {
+    const resp = await api.get<TemplateSummary[]>('/templates', {
+      params: type ? { type } : undefined,
+    });
+    return resp.data;
+  },
+  get: async (id: string): Promise<Template> => {
+    const resp = await api.get<Template>(`/templates/${id}`);
+    return resp.data;
+  },
+  create: async (payload: {
+    id: string;
+    name: string;
+    description?: string;
+    type?: 'cv' | 'cover_letter';
+    sections?: string[];
+    font_family?: FontFamily;
+    accent_color?: string;
+    density?: Density;
+    bullet_style?: BulletStyle;
+    date_format?: DateFormat;
+    page_size?: PageSize;
+    is_ats_friendly?: boolean;
+  }): Promise<Template> => {
+    const resp = await api.post<Template>('/templates', payload);
+    return resp.data;
+  },
+  patch: async (
+    id: string,
+    payload: Partial<{
+      name: string;
+      description: string;
+      sections: string[];
+      font_family: FontFamily;
+      accent_color: string;
+      density: Density;
+      bullet_style: BulletStyle;
+      date_format: DateFormat;
+      page_size: PageSize;
+      is_ats_friendly: boolean;
+    }>,
+  ): Promise<Template> => {
+    const resp = await api.patch<Template>(`/templates/${id}`, payload);
+    return resp.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/templates/${id}`);
+  },
+  duplicate: async (id: string, newId: string): Promise<Template> => {
+    const resp = await api.post<Template>(
+      `/templates/${id}/duplicate`,
+      {},
+      { params: { new_id: newId } },
+    );
+    return resp.data;
+  },
+  preview: async (payload: {
+    profile_id?: string;
+    cv_json?: CVJson;
+    template_config_json: Partial<TemplateConfigJson>;
+  }): Promise<TemplatePreviewResponse> => {
+    const resp = await api.post<TemplatePreviewResponse>(
+      '/templates/preview',
+      payload,
+    );
+    return resp.data;
+  },
 };

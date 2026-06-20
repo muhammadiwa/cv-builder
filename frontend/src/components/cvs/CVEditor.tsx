@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sparkles, Loader2, Download, History } from 'lucide-react';
 import clsx from 'clsx';
 import { cvsApi, jobsApi, scoreBucket, type CVDraft, type CVExport, type CVSectionKind, type CVVersion, type JobOut } from '../../lib/api';
+import TemplatePicker from '../templates/TemplatePicker';
 import CVScorePanel from './CVScorePanel';
 
 interface Props {
@@ -217,6 +218,29 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
         >
           {draft.status}
         </span>
+        {/* Phase 10A: change template → re-render via PATCH */}
+        <div className="w-48">
+          <TemplatePicker
+            value={draft.template_id}
+            onChange={async (id) => {
+              try {
+                const updated = await cvsApi.patch(draft.id, {
+                  template_id: id,
+                });
+                onUpdate(updated);
+                onSuccess(`Template changed to "${id}"`);
+              } catch (e: unknown) {
+                const detail =
+                  (e as { response?: { data?: { detail?: string } } })
+                    ?.response?.data?.detail ||
+                  (e as Error).message ||
+                  'Failed to change template';
+                onError(detail);
+              }
+            }}
+            testId={`cv-template-picker-${draft.id}`}
+          />
+        </div>
         {/* Phase 8: one-click PDF export. Triggers download + records an
             export row that shows up in the history sidebar. */}
         <button

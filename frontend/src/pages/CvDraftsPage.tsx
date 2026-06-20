@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { FileText, Plus, Trash2, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { cvsApi, jobsApi, type CVDraft, type JobOut } from '../lib/api';
+import TemplatePicker from '../components/templates/TemplatePicker';
 import CVEditor from '../components/cvs/CVEditor';
 import CVRecommendationsPanel from '../components/cvs/CVRecommendationsPanel';
 
@@ -244,6 +245,7 @@ function CreateCVModal({
   const [creating, setCreating] = useState(false);
   const [jobId, setJobId] = useState('');
   const [title, setTitle] = useState('');
+  const [templateId, setTemplateId] = useState('ats_classic');
 
   useEffect(() => {
     let alive = true;
@@ -285,6 +287,7 @@ function CreateCVModal({
         job_id: jobId,
         profile_id: profile.id,
         title: title.trim(),
+        template_id: templateId,
       });
       onCreated(cv);
     } catch (e: unknown) {
@@ -355,6 +358,17 @@ function CreateCVModal({
               placeholder="e.g. Senior Backend CV for Quik Hire"
               className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
               data-testid="create-cv-title-input"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Template <span className="text-slate-400 font-normal">(Phase 10A)</span>
+            </label>
+            <TemplatePicker
+              value={templateId}
+              onChange={setTemplateId}
+              testId="create-cv-template-picker"
             />
           </div>
         </div>

@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
+import Toast from './components/Toast';
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -74,6 +75,8 @@ export default function App() {
           <Outlet />
         </div>
       </main>
+
+      <Toast />
     </div>
   );
 }
