@@ -22,6 +22,24 @@ from app.db.session import Base  # noqa: E402
 get_settings.cache_clear()  # fresh Settings per test session
 
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limiter(request, monkeypatch):
+    """Disable the per-IP rate limiter during tests so a tight test
+    suite doesn't get blocked by the burst cap. Skipped for the
+    dedicated middleware test module (``test_phase9c_polish.py``)
+    which exercises the real dispatch path."""
+    if request.module.__name__.endswith("test_phase9c_polish"):
+        yield
+        return
+    from app.api.middleware import RateLimitMiddleware
+
+    async def _passthrough(self, request, call_next):
+        return await call_next(request)
+
+    monkeypatch.setattr(RateLimitMiddleware, "dispatch", _passthrough)
+    yield
+
+
 @pytest.fixture
 def engine():
     """In-memory SQLite engine per test, isolated."""

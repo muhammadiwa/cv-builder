@@ -18,12 +18,63 @@ writes happen here — the route layer persists the Export row.
 from __future__ import annotations
 
 import re
+import signal
+from contextlib import contextmanager
 from io import BytesIO
 from typing import Any
 
 from weasyprint import HTML
 
 from app.core.logging import get_logger
+
+
+class WeasyPrintTimeoutError(RuntimeError):
+    """Raised when WeasyPrint rendering exceeds the configured timeout."""
+
+    def __init__(self, seconds: float):
+        super().__init__(f"weasyprint render exceeded {seconds:.0f}s timeout")
+        self.seconds = seconds
+
+
+@contextmanager
+def _weasyprint_timeout(seconds: float):
+    """Signal-based timeout for the synchronous WeasyPrint render call.
+
+    WeasyPrint's ``HTML.write_pdf`` is fully synchronous and runs in the
+    main thread; the only portable way to bound its runtime from inside
+    a sync function is SIGALRM. On non-POSIX platforms (Windows), this
+    is a no-op and WeasyPrint will run unbounded. Likewise when called
+    from a non-main thread (e.g. FastAPI TestClient runs requests in a
+    worker thread), SIGALRM is unavailable — we fall back to no-op.
+
+    Trade-off: a hard SIGALRM kills the call mid-stream. Some WeasyPrint
+    state may leak (font caches, log handlers). Acceptable for our
+    single-process dev server; for prod, prefer running renders in a
+    subprocess with multiprocessing timeout.
+    """
+    import threading
+
+    if not seconds or seconds <= 0:
+        yield
+        return
+    # SIGALRM only works on the main thread of the main interpreter.
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    try:
+        # Only POSIX supports signal.SIGALRM. Windows: no-op.
+        signal.signal(signal.SIGALRM, _raise_timeout)
+        signal.alarm(int(seconds))
+        yield
+    finally:
+        try:
+            signal.alarm(0)
+        except (AttributeError, ValueError):
+            pass
+
+
+def _raise_timeout(signum, frame):  # noqa: ARG001
+    raise WeasyPrintTimeoutError(seconds=signal.alarm(0))
 
 log = get_logger(__name__)
 
@@ -108,6 +159,7 @@ def export_cv_to_pdf(
     margin_right: str = "16mm",
     margin_bottom: str = "18mm",
     margin_left: str = "16mm",
+    timeout_seconds: float = 30.0,
 ) -> bytes:
     """Render an ATS-safe PDF from already-rendered CV HTML.
 
@@ -117,6 +169,10 @@ def export_cv_to_pdf(
             ``<style>`` block from the renderer (scoped CSS).
         page_size: ``"A4"`` (default) or ``"Letter"``.
         margin_*: Page margins in mm.
+        timeout_seconds: Hard timeout for the WeasyPrint render call.
+            0 or negative disables. Default 30s — generous for a
+            normal CV, kills pathological runs. Raises
+            ``WeasyPrintTimeoutError`` on expiry.
 
     Returns:
         PDF as ``bytes`` — ready to stream via FastAPI ``Response``.
@@ -174,8 +230,10 @@ def export_cv_to_pdf(
         "cv_export_to_pdf_start",
         page_size=page_size,
         html_length=len(html_with_print),
+        timeout_seconds=timeout_seconds,
     )
-    pdf_bytes = HTML(string=html_with_print, base_url=".").write_pdf()
+    with _weasyprint_timeout(timeout_seconds):
+        pdf_bytes = HTML(string=html_with_print, base_url=".").write_pdf()
     log.info("cv_export_to_pdf_done", pdf_size=len(pdf_bytes))
     return pdf_bytes
 

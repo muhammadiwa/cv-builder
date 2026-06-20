@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     port: int = 8765
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
+    # ── Rate limiting (Phase 9C) ─────────────────────────────────
+    # Per-IP requests/minute cap. In-memory, single-process. For multi-worker
+    # prod deployments, swap RateLimitMiddleware for a Redis-backed limiter.
+    rate_limit_rpm: int = 60
+
     # ── Storage ────────────────────────────────────────────────────
     storage_dir: Path = Path("./storage")
     database_url: str = "sqlite:///./storage/cv_builder.db"

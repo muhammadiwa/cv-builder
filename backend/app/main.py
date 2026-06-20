@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.middleware import RateLimitMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -53,6 +54,14 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Phase 9C: per-IP rate limiting (in-memory, single-process).
+    # Exempt /api/health (probes) and the docs routes.
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=settings.rate_limit_rpm,
+        exempt_paths=("/api/health", "/docs", "/openapi.json"),
     )
 
     app.include_router(api_router)
