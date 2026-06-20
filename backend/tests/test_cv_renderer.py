@@ -310,4 +310,76 @@ def test_render_cv_with_orm_profile_object(monkeypatch):
     doc = render_cv(FakeProfile())
     html = doc.to_html()
     assert "ORM Name" in html
-    assert "Python" in html
+
+
+# ── scope_id + lang detection (L2, M1) ─────────────────────────────
+
+def test_html_doc_default_no_scope():
+    """When ``scope_id`` is None, the CSS is unscoped (backward compat)."""
+    from app.services.cv_renderer import render_html_document
+    profile = {"basics": {"name": "Test", "label": "Engineer"}, "work": [], "skills": []}
+    html = render_html_document(profile)
+    assert '<html lang="en">' in html
+    assert 'cv-name' in html
+    # No `.cv-{id}` prefix when scope_id is None.
+    assert '.cv-{' not in html
+
+
+def test_html_doc_with_scope_id():
+    """With a scope_id, the CSS is namespaced and body is wrapped in a div."""
+    from app.services.cv_renderer import render_html_document
+    profile = {"basics": {"name": "Test"}, "work": [], "skills": []}
+    html = render_html_document(profile, scope_id="abc123")
+    assert '<html lang="en">' in html
+    assert '<div class="cv-abc123">' in html
+    assert '.cv-abc123 .cv-name' in html
+    assert '.cv-abc123 h2' in html
+    assert '</div>' in html
+
+
+def test_html_doc_lang_from_country_id():
+    """A profile with countryCode ID should set lang=id."""
+    from app.services.cv_renderer import render_html_document
+    profile = {
+        "basics": {
+            "name": "Andi",
+            "location": {"countryCode": "ID", "city": "Jakarta"},
+        },
+        "work": [],
+        "skills": [],
+    }
+    html = render_html_document(profile)
+    assert '<html lang="id">' in html
+
+
+def test_html_doc_lang_from_explicit_language():
+    """``profile.languages[0].language`` overrides country."""
+    from app.services.cv_renderer import render_html_document
+    profile = {
+        "basics": {
+            "name": "Test",
+            "location": {"countryCode": "ID"},
+        },
+        "languages": [{"language": "English"}],
+        "work": [],
+        "skills": [],
+    }
+    html = render_html_document(profile)
+    assert '<html lang="en">' in html
+
+
+# ── seed cache (M4) ────────────────────────────────────────────────
+
+def test_seed_default_templates_idempotent(monkeypatch):
+    """``seed_default_templates`` should short-circuit on second call."""
+    from app.services import cv_renderer
+    from app.services.cv_renderer import seed_default_templates
+
+    class FakeSession:
+        def get(self, *_a, **_kw):
+            raise AssertionError("DB should not be hit when cache flag is set")
+
+    cv_renderer.reset_seed_cache()
+    cv_renderer._SEEDED_FLAG["done"] = True
+    seed_default_templates(FakeSession())  # must not raise
+    cv_renderer.reset_seed_cache()

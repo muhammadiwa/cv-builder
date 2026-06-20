@@ -193,7 +193,11 @@ class CVDraft(Base):
     __tablename__ = "cv_drafts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
-    job_id: Mapped[str] = mapped_column(String(36), ForeignKey("jobs.id", ondelete="CASCADE"))
+    # Nullable: CV drafts can exist without being targeted at a job
+    # (generic resume) and the FE can detach via PATCH {job_id: null}.
+    job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
+    )
     profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("profiles.id", ondelete="CASCADE"))
 
     template_id: Mapped[str] = mapped_column(String(40), default="ats_classic")

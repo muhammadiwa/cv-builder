@@ -30,12 +30,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.models import CVDraft, Job, Profile, Template, User
+from app.models.models import CVDraft, CVVersion, Job, Profile, Template, User
 from app.schemas.schemas import (
     CVDraftIn,
     CVDraftOut,
     CVEnhanceIn,
     CVRenderOut,
+    CVVersionOut,
 )
 from app.services.cv_enhancer import enhance_cv_summary, enhance_job_bullets
 from app.services.cv_renderer import (
@@ -81,33 +82,102 @@ def _load_template(db: Session, template_id: str) -> Template:
     return t
 
 
+def _save_version(
+    db: Session,
+    draft: CVDraft,
+    change_summary: str,
+) -> CVVersion:
+    """Persist a snapshot of ``draft.cv_json`` to ``cv_versions``.
+
+    Called from ``create_cv``, ``patch_cv``, and ``enhance_cv_section``
+    so the user can later browse or restore earlier states via
+    ``GET /api/cvs/{id}/versions`` and
+    ``POST /api/cvs/{id}/versions/{vid}/restore``.
+
+    The version number is monotonic per draft (1, 2, 3, …) — the latest
+    snapshot corresponds to the live ``cv_json``. ``change_summary`` is a
+    free-form human label (e.g. "LLM-enhanced summary").
+    """
+    last = (
+        db.query(CVVersion)
+        .filter(CVVersion.cv_draft_id == draft.id)
+        .order_by(CVVersion.version_number.desc())
+        .first()
+    )
+    next_num = (last.version_number + 1) if last else 1
+    ver = CVVersion(
+        cv_draft_id=draft.id,
+        version_number=next_num,
+        cv_json=draft.cv_json or {},
+        score=draft.score or 0.0,
+        change_summary=change_summary[:500],  # bounded
+    )
+    db.add(ver)
+    db.flush()
+    return ver
+
+
 def _render_draft_to_html(draft: CVDraft) -> str:
-    """Render a draft's cv_json → full HTML document."""
-    doc = build_cv_doc_from_json(draft.cv_json or {})
-    body = doc.to_html()
+    """Render a draft's cv_json → full HTML document.
+
+    Delegates to the shared ``render_html_document`` and uses the draft's
+    id as the CSS scope prefix so multiple drafts can coexist on one page
+    (FE compares two CVs side-by-side without style collisions).
+    """
+    from app.services.cv_renderer import render_html_document
+    profile_like = draft.cv_json or {}
+    return render_html_document(profile_like, scope_id=draft.id)
+
+
+def _with_front_matter(md: str, draft: CVDraft) -> str:
+    """Wrap a rendered Markdown CV with YAML front-matter metadata.
+
+    The front-matter includes identifiers (cv_id, profile_id, job_id)
+    and provenance (status, updated_at). Useful for traceability when
+    the MD is exported, archived, or version-controlled.
+
+    Format:
+
+        ---
+        cv_id: ...
+        profile_id: ...
+        job_id: ...|null
+        title: ...
+        status: draft|ready|exported
+        generated_at: 2026-06-19T21:30:00Z
+        ---
+
+    Existing front-matter in the input is detected and replaced (only
+    when the input starts with ``---\\n``).
+    """
+    from datetime import datetime, timezone
     basics = (draft.cv_json or {}).get("basics") or {}
     name = basics.get("name") or "CV"
-    return (
-        '<!DOCTYPE html>\n<html lang="en">\n<head>\n'
-        '<meta charset="utf-8">\n'
-        f"<title>{name}</title>\n"
-        "<style>\n"
-        "  body { font-family: Arial, Helvetica, sans-serif; color: #111; "
-        "max-width: 780px; margin: 24px auto; padding: 0 16px; line-height: 1.45; }\n"
-        "  .cv-name { font-size: 28px; margin: 0 0 4px; }\n"
-        "  .cv-title { margin: 0 0 8px; color: #333; font-weight: 600; }\n"
-        "  .cv-contact { margin: 0 0 16px; color: #444; font-size: 14px; }\n"
-        "  h2 { font-size: 16px; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }\n"
-        "  .cv-role, .cv-degree, .cv-proj-name { font-size: 15px; margin: 8px 0 2px; }\n"
-        "  .cv-meta { margin: 0 0 4px; color: #555; font-size: 13px; }\n"
-        "  .cv-bullets { margin: 4px 0 8px; padding-left: 20px; }\n"
-        "  .cv-bullets li { margin: 2px 0; }\n"
-        "  .cv-summary { margin: 0 0 8px; }\n"
-        "  .cv-skills { margin: 4px 0 8px; padding-left: 20px; }\n"
-        "  .cv-score { margin: 0 0 6px; font-size: 13px; color: #555; }\n"
-        "</style>\n</head>\n<body>\n"
-        f"{body}\n</body>\n</html>\n"
+    generated_at = (
+        draft.updated_at.astimezone(timezone.utc).isoformat()
+        if draft.updated_at
+        else datetime.now(timezone.utc).isoformat()
     )
+    lines = [
+        "---",
+        f"cv_id: {draft.id}",
+        f"profile_id: {draft.profile_id}",
+        f"job_id: {draft.job_id or 'null'}",
+        f"title: \"{(draft.title or '').replace(chr(34), chr(92) + chr(34))}\"",
+        f"status: {draft.status}",
+        f"name: \"{name.replace(chr(34), chr(92) + chr(34))}\"",
+        f"generated_at: {generated_at}",
+        "---",
+        "",
+    ]
+    fm = "\n".join(lines)
+    body = md.lstrip("\n")
+    # Strip any pre-existing front-matter so we don't double up.
+    if body.startswith("---\n"):
+        end = body.find("\n---", 4)
+        if end != -1:
+            body = body[end + 4 :].lstrip("\n")
+    return f"{fm}{body}"
 
 
 def _serialize_draft(d: CVDraft) -> dict[str, Any]:
@@ -286,6 +356,7 @@ def create_cv(
     db.add(draft)
     db.flush()
     draft.rendered_html = _render_draft_to_html(draft)
+    _save_version(db, draft, "initial draft from profile")
     db.commit()
     db.refresh(draft)
     log.info(
@@ -324,7 +395,8 @@ def patch_cv(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Update one CV draft. Allowed keys: ``title``, ``cv_json``,
-    ``template_id``, ``status``. Re-renders HTML after cv_json change.
+    ``template_id``, ``status``, ``job_id`` (re-target ATS). Re-renders
+    HTML after cv_json change.
     """
     draft = db.get(CVDraft, cv_id)
     if draft is None:
@@ -333,7 +405,7 @@ def patch_cv(
     if profile is None or profile.user_id != user.id:
         raise HTTPException(403, "not your cv")
 
-    allowed = {"title", "cv_json", "template_id", "status"}
+    allowed = {"title", "cv_json", "template_id", "status", "job_id"}
     unknown = set(payload.keys()) - allowed
     if unknown:
         raise HTTPException(400, f"unknown keys: {sorted(unknown)}")
@@ -357,6 +429,20 @@ def patch_cv(
             raise HTTPException(400, f"invalid status: {st}")
         draft.status = st
 
+    if "job_id" in payload:
+        new_job_id = payload["job_id"]
+        if new_job_id is None or new_job_id == "":
+            draft.job_id = None
+        else:
+            if not isinstance(new_job_id, str):
+                raise HTTPException(400, "job_id must be a string or null")
+            job = db.get(Job, new_job_id)
+            if job is None:
+                raise HTTPException(404, f"job {new_job_id} not found")
+            if job.user_id != user.id:
+                raise HTTPException(403, "job does not belong to current user")
+            draft.job_id = new_job_id
+
     if "cv_json" in payload:
         cj = payload["cv_json"]
         if not isinstance(cj, dict):
@@ -364,6 +450,18 @@ def patch_cv(
         draft.cv_json = cj
         # Re-render
         draft.rendered_html = _render_draft_to_html(draft)
+        _save_version(db, draft, "manual patch (cv_json)")
+
+    # Track metadata-only edits as versions too so the history is complete.
+    if not (set(payload.keys()) - {"cv_json"}):
+        # Pure cv_json patch — already saved above.
+        pass
+    elif any(k in payload for k in ("title", "template_id", "status", "job_id")):
+        _save_version(
+            db,
+            draft,
+            f"metadata update: {', '.join(sorted(set(payload.keys()) - {'cv_json'}))}",
+        )
 
     draft.updated_at = _utcnow()
     db.commit()
@@ -412,7 +510,7 @@ def render_cv_endpoint(
         # see fresh output after a patch.
         content = _render_draft_to_html(draft)
     else:
-        content = doc.to_markdown()
+        content = _with_front_matter(doc.to_markdown(), draft)
 
     sections = [
         {"kind": s.kind, "title": s.title, "body_md": s.body_md}
@@ -531,8 +629,81 @@ async def enhance_cv_section(
 
     draft.cv_json = cv_json
     draft.rendered_html = _render_draft_to_html(draft)
+    _save_version(db, draft, f"LLM-enhanced {payload.section}")
     draft.updated_at = _utcnow()
     db.commit()
     db.refresh(draft)
     log.info("cv_enhanced", cv_id=draft.id, section=payload.section)
+    return _serialize_draft(draft)
+
+
+# ── Version history ─────────────────────────────────────────────────
+@router.get("/{cv_id}/versions", response_model=list[CVVersionOut])
+def list_cv_versions(
+    cv_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CVVersionOut]:
+    """Return all saved versions for a CV draft, newest first.
+
+    Each row is a snapshot of ``cv_json`` at the moment it was saved
+    (create, patch, or enhance). The user can restore any of them
+    via the ``/restore`` endpoint below.
+    """
+    draft = db.get(CVDraft, cv_id)
+    if draft is None:
+        raise HTTPException(404, f"cv {cv_id} not found")
+    profile = db.get(Profile, draft.profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(403, "not your cv")
+
+    rows = (
+        db.query(CVVersion)
+        .filter(CVVersion.cv_draft_id == cv_id)
+        .order_by(CVVersion.version_number.desc())
+        .all()
+    )
+    return [CVVersionOut.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/{cv_id}/versions/{version_id}/restore",
+    response_model=CVDraftOut,
+)
+def restore_cv_version(
+    cv_id: str,
+    version_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Restore a previously-saved version into the live draft.
+
+    After restore the draft's ``cv_json`` equals the snapshot's, the
+    HTML is re-rendered, and a new version row is recorded with the
+    label ``"restored from v<N>"`` so the audit trail is preserved.
+    """
+    draft = db.get(CVDraft, cv_id)
+    if draft is None:
+        raise HTTPException(404, f"cv {cv_id} not found")
+    profile = db.get(Profile, draft.profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(403, "not your cv")
+
+    ver = db.get(CVVersion, version_id)
+    if ver is None or ver.cv_draft_id != cv_id:
+        raise HTTPException(404, f"version {version_id} not found for this cv")
+
+    snapshot = ver.cv_json or {}
+    draft.cv_json = snapshot
+    draft.rendered_html = _render_draft_to_html(draft)
+    _save_version(db, draft, f"restored from v{ver.version_number}")
+    draft.updated_at = _utcnow()
+    db.commit()
+    db.refresh(draft)
+    log.info(
+        "cv_restored",
+        cv_id=draft.id,
+        from_version=ver.version_number,
+        new_version=None,  # filled by save_version side-effect
+    )
     return _serialize_draft(draft)

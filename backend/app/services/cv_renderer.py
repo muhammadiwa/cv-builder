@@ -149,8 +149,20 @@ def _render_header(profile: dict[str, Any]) -> tuple[str, str]:
     basics = profile.get("basics") or {}
     name = _strip_text(basics.get("name")) or "Untitled"
     title = _strip_text(basics.get("label"))
-    loc = basics.get("location") or {}
-    loc_str = _strip_text(loc.get("city") or "") or _strip_text(profile.get("location"))
+    loc = basics.get("location")
+    # `basics.location` may be a dict ({"city": …, "countryCode": …}) OR a
+    # plain string ("Jakarta, Indonesia") — handle both shapes.
+    if isinstance(loc, dict):
+        loc_str = (
+            _strip_text(loc.get("city") or "")
+            or _strip_text(loc.get("region") or "")
+            or _strip_text(loc.get("country") or "")
+            or _strip_text(profile.get("location"))
+        )
+    elif isinstance(loc, str):
+        loc_str = _strip_text(loc)
+    else:
+        loc_str = _strip_text(profile.get("location"))
 
     parts = [
         _strip_text(basics.get("email")),
@@ -483,42 +495,160 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
     return CVDoc(header_html=header_html, header_md=header_md, sections=rendered)
 
 
-def render_html_document(profile: Any, template_config: dict[str, Any] | None = None) -> str:
+def render_html_document(
+    profile: Any,
+    template_config: dict[str, Any] | None = None,
+    scope_id: str | None = None,
+) -> str:
     """Convenience: return just the full HTML document body.
 
     Wraps the renderer output in a minimal, ATS-safe shell (single column,
     no JavaScript, system fonts, no external resources). Future PDF/DOCX
     export can take this and apply page formatting.
+
+    ``scope_id`` — when provided, the entire CV body is wrapped in a
+    ``<div class="cv-{scope_id}">`` and the embedded CSS selectors are
+    namespaced with the same class prefix. This prevents style conflicts
+    when two or more CVs are rendered into the same parent document (e.g.
+    a "compare CVs" view in the FE). When ``None`` (the default), the
+    HTML uses unscoped class names so the output is identical to
+    previous versions — backward compatible with existing tests and
+    exports.
     """
     doc = render_cv(profile, template_config)
     body = doc.to_html()
-    return (
-        '<!DOCTYPE html>\n'
-        '<html lang="en">\n'
-        '<head>\n'
-        '<meta charset="utf-8">\n'
-        f'<title>{_esc(_coerce_profile(profile).get("basics", {}).get("name") or "CV")}</title>\n'
-        '<style>\n'
-        '  body { font-family: Arial, Helvetica, sans-serif; color: #111; '
-        'max-width: 780px; margin: 24px auto; padding: 0 16px; line-height: 1.45; }\n'
-        '  .cv-name { font-size: 28px; margin: 0 0 4px; }\n'
-        '  .cv-title { margin: 0 0 8px; color: #333; font-weight: 600; }\n'
-        '  .cv-contact { margin: 0 0 16px; color: #444; font-size: 14px; }\n'
-        '  h2 { font-size: 16px; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }\n'
-        '  .cv-role, .cv-degree, .cv-proj-name { font-size: 15px; margin: 8px 0 2px; }\n'
-        '  .cv-meta { margin: 0 0 4px; color: #555; font-size: 13px; }\n'
-        '  .cv-bullets { margin: 4px 0 8px; padding-left: 20px; }\n'
-        '  .cv-bullets li { margin: 2px 0; }\n'
-        '  .cv-summary { margin: 0 0 8px; }\n'
-        '  .cv-skills { margin: 4px 0 8px; padding-left: 20px; }\n'
-        '  .cv-score { margin: 0 0 6px; font-size: 13px; color: #555; }\n'
-        '</style>\n'
-        '</head>\n'
-        '<body>\n'
-        f'{body}\n'
-        '</body>\n'
-        '</html>\n'
+    return _wrap_html(body, profile, scope_id)
+
+
+def _wrap_html(
+    body: str,
+    profile: Any,
+    scope_id: str | None = None,
+) -> str:
+    """Wrap the rendered body in a complete HTML document.
+
+    ``scope_id`` namespaces all CSS selectors with ``.cv-{scope_id}`` so
+    multiple CVs in the same parent document don't fight over class
+    styles. When ``None`` the CSS is unscoped (default — preserves the
+    original public output for tests, exports, and PDF/DOCX generation).
+    """
+    basics = _coerce_profile(profile).get("basics", {})
+    name = basics.get("name") or "CV"
+    lang = _resolve_lang(profile, basics)
+
+    if scope_id:
+        prefix = f".cv-{scope_id}"
+        body_open = f'<div class="cv-{scope_id}">'
+        body_close = "</div>"
+    else:
+        prefix = ""
+        body_open = ""
+        body_close = ""
+
+    style = (
+        "<style>\n"
+        f"  {prefix} body {{ font-family: Arial, Helvetica, sans-serif; color: #111; "
+        "max-width: 780px; margin: 24px auto; padding: 0 16px; line-height: 1.45; }\n"
+        f"  {prefix} .cv-name {{ font-size: 28px; margin: 0 0 4px; }}\n"
+        f"  {prefix} .cv-title {{ margin: 0 0 8px; color: #333; font-weight: 600; }}\n"
+        f"  {prefix} .cv-contact {{ margin: 0 0 16px; color: #444; font-size: 14px; }}\n"
+        f"  {prefix} h2 {{ font-size: 16px; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }}\n"
+        f"  {prefix} .cv-role, {prefix} .cv-degree, {prefix} .cv-proj-name {{ font-size: 15px; margin: 8px 0 2px; }}\n"
+        f"  {prefix} .cv-meta {{ margin: 0 0 4px; color: #555; font-size: 13px; }}\n"
+        f"  {prefix} .cv-bullets {{ margin: 4px 0 8px; padding-left: 20px; }}\n"
+        f"  {prefix} .cv-bullets li {{ margin: 2px 0; }}\n"
+        f"  {prefix} .cv-summary {{ margin: 0 0 8px; }}\n"
+        f"  {prefix} .cv-skills {{ margin: 4px 0 8px; padding-left: 20px; }}\n"
+        f"  {prefix} .cv-score {{ margin: 0 0 6px; font-size: 13px; color: #555; }}\n"
+        "</style>\n"
     )
+
+    return (
+        "<!DOCTYPE html>\n"
+        f'<html lang="{_esc(lang)}">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        f"<title>{_esc(name)}</title>\n"
+        f"{style}"
+        "</head>\n"
+        "<body>\n"
+        f"{body_open}{body}{body_close}\n"
+        "</body>\n"
+        "</html>\n"
+    )
+
+
+def _resolve_lang(profile: Any, basics: dict[str, Any]) -> str:
+    """Pick the html ``lang`` attribute for a CV.
+
+    Falls back through three signals (most-to-least specific):
+    1. ``profile.languages[0]`` if a primary language is recorded.
+    2. ``basics.location.countryCode`` (mapped to a common language).
+    3. Hardcoded ``"en"`` (default — ATS-friendly).
+
+    Recognised country→language mapping is intentionally tiny; we only
+    honour codes we're confident about, anything else falls through.
+    """
+    # 1. Explicit primary language in profile.languages (CV JSON shape)
+    langs = profile.get("languages") if isinstance(profile, dict) else None
+    if isinstance(langs, list) and langs:
+        first = langs[0]
+        if isinstance(first, dict):
+            cand = (first.get("language") or first.get("name") or "").strip().lower()
+            if cand:
+                return _lang_code(cand)
+
+    # 2. Country code hint
+    location = basics.get("location") if isinstance(basics, dict) else None
+    country = ""
+    if isinstance(location, dict):
+        country = (location.get("countryCode") or location.get("country") or "").strip().upper()
+    elif isinstance(location, str):
+        country = location.strip().upper()
+    return _country_to_lang(country) or "en"
+
+
+_LANG_ALIASES = {
+    "indonesian": "id",
+    "bahasa": "id",
+    "indonesia": "id",
+    "english": "en",
+    "javanese": "jv",
+    "jawa": "jv",
+}
+
+
+def _lang_code(name: str) -> str:
+    """Map a human language name to a 2-letter ISO 639-1 code (best effort)."""
+    n = name.lower().strip()
+    if len(n) == 2 and n.isalpha():
+        return n
+    return _LANG_ALIASES.get(n, "en")
+
+
+_COUNTRY_LANG = {
+    "ID": "id",
+    "US": "en",
+    "GB": "en",
+    "UK": "en",
+    "AU": "en",
+    "SG": "en",
+    "MY": "ms",
+    "JP": "ja",
+    "KR": "ko",
+    "CN": "zh",
+    "TW": "zh",
+    "DE": "de",
+    "FR": "fr",
+    "ES": "es",
+    "BR": "pt",
+    "PT": "pt",
+    "NL": "nl",
+}
+
+
+def _country_to_lang(code: str) -> str:
+    return _COUNTRY_LANG.get(code.upper(), "")
 
 
 # ── Markdown fallback (very naive) ──────────────────────────────────
@@ -765,11 +895,24 @@ def build_cv_doc_from_json(cv_json: dict[str, Any]) -> CVDoc:
     return CVDoc(header_html=header_html, header_md=header_md, sections=sections)
 
 
+# Module-level cache so ``seed_default_templates`` does at most one DB
+# round-trip per process. The function itself is idempotent (uses
+# ``db.get`` and only inserts when missing) but doing the check on every
+# POST /api/cvs is wasteful when nothing has changed.
+_SEEDED_FLAG = {"done": False}
+
+
 def seed_default_templates(db: Any) -> None:
     """Insert the ats_classic template if missing.
 
-    Idempotent — safe to call on every startup.
+    Idempotent at two levels:
+    1. Module-level flag (``_SEEDED_FLAG``) skips the DB check entirely
+       after the first successful call in this process.
+    2. ``db.get(Template, ...)`` still acts as a safety net for cold
+       starts where multiple workers may race.
     """
+    if _SEEDED_FLAG["done"]:
+        return
     from app.models.models import Template  # local import to avoid cycle
 
     existing = db.get(Template, DEFAULT_TEMPLATE_ID)
@@ -787,7 +930,13 @@ def seed_default_templates(db: Any) -> None:
             )
         )
         db.commit()
-    elif existing.template_config_json != cfg:
-        existing.template_config_json = cfg
-        existing.is_ats_friendly = cfg["ats_friendly"]
-        db.commit()
+    _SEEDED_FLAG["done"] = True
+
+
+def reset_seed_cache() -> None:
+    """Clear the module-level seed cache.
+
+    Tests call this between cases that mock or replace the template
+    rows so the next ``seed_default_templates`` call re-queries the DB.
+    """
+    _SEEDED_FLAG["done"] = False

@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-import { cvsApi, jobsApi, type CVDraft, type CVSectionKind, type JobOut } from '../../lib/api';
+import { cvsApi, jobsApi, type CVDraft, type CVSectionKind, type CVVersion, type JobOut } from '../../lib/api';
 
 interface Props {
   draft: CVDraft;
@@ -19,9 +19,14 @@ const SECTION_LABELS: Record<CVSectionKind, string> = {
 
 export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props) {
   const [tab, setTab] = useState<'preview' | 'sections'>('preview');
-  const [enhancing, setEnhancing] = useState<CVSectionKind | null>(null);
+  // Per-button busy key: 'summary' | 'skills' | `bullets:${idx}` | null.
+  // Multiple bullet rows each get their own spinner so the user can
+  // polish one entry while another finishes.
+  const [enhancing, setEnhancing] = useState<string | null>(null);
   const [jobs, setJobs] = useState<JobOut[]>([]);
   const [targetJobId, setTargetJobId] = useState<string>('');
+  const [versions, setVersions] = useState<CVVersion[]>([]);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch parsed jobs for the ATS-keyword target selector
@@ -38,9 +43,29 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fetch the version history whenever the active draft changes.
+  useEffect(() => {
+    let cancelled = false;
+    cvsApi
+      .versions(draft.id)
+      .then((vs) => {
+        if (!cancelled) setVersions(vs);
+      })
+      .catch(() => {
+        if (!cancelled) setVersions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.id, draft.updated_at]);
+
   const handleEnhance = useCallback(
     async (section: CVSectionKind, experienceIndex?: number) => {
-      setEnhancing(section);
+      const key =
+        section === 'bullets' || section === 'experience'
+          ? `bullets:${experienceIndex ?? 0}`
+          : section;
+      setEnhancing(key);
       try {
         const next = await cvsApi.enhance(draft.id, {
           section,
@@ -76,6 +101,51 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
       }
     },
     [draft.id, draft.title, onUpdate, onError]
+  );
+
+  // Persist target-job change to BE (H1 fix). Stores last-picked id in a
+  // ref to avoid an infinite loop when the draft's job_id is updated.
+  const lastPickedJobRef = useRef<string | null>(null);
+  const handlePatchJobId = useCallback(
+    async (newJobId: string) => {
+      if (newJobId === lastPickedJobRef.current) return;
+      lastPickedJobRef.current = newJobId;
+      // Normalise "" -> null so backend can detach
+      const payload_job_id = newJobId || null;
+      if (payload_job_id === (draft.job_id || null)) return;
+      try {
+        const next = await cvsApi.patch(draft.id, { job_id: payload_job_id });
+        onUpdate(next);
+        onSuccess(payload_job_id ? `Target job updated` : `Target job cleared`);
+      } catch (e: unknown) {
+        const detail =
+          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+          (e as Error).message;
+        onError(detail);
+      }
+    },
+    [draft.id, draft.job_id, onUpdate, onError, onSuccess]
+  );
+
+  // Restore a previous CV version into the live draft (L1).
+  const handleRestore = useCallback(
+    async (versionId: string) => {
+      if (!confirm('Restore this version? The current draft will be replaced.')) return;
+      setRestoringId(versionId);
+      try {
+        const next = await cvsApi.restoreVersion(draft.id, versionId);
+        onUpdate(next);
+        onSuccess('Version restored');
+      } catch (e: unknown) {
+        const detail =
+          (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+          (e as Error).message;
+        onError(detail);
+      } finally {
+        setRestoringId(null);
+      }
+    },
+    [draft.id, onUpdate, onError, onSuccess]
   );
 
   const cvJson = draft.cv_json || {};
@@ -136,7 +206,10 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
             <label className="text-xs text-slate-500">Target job (ATS):</label>
             <select
               value={targetJobId}
-              onChange={(e) => setTargetJobId(e.target.value)}
+              onChange={(e) => {
+                setTargetJobId(e.target.value);
+                handlePatchJobId(e.target.value);
+              }}
               className="text-xs border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-200"
               data-testid="target-job-select"
             >
@@ -214,7 +287,7 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
                       </div>
                     </div>
                     <EnhanceButton
-                      busy={enhancing === 'bullets'}
+                      busy={enhancing === `bullets:${idx}`}
                       onClick={() => handleEnhance('bullets', idx)}
                       testId={`enhance-bullets-${idx}`}
                     />
@@ -278,6 +351,50 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
               </div>
             </section>
           )}
+
+          {/* Version history (L1) */}
+          <section data-testid="section-versions">
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">
+              Version history ({versions.length})
+            </h3>
+            {versions.length === 0 ? (
+              <div className="text-xs text-slate-400">No versions yet.</div>
+            ) : (
+              <div className="space-y-1.5">
+                {versions.map((v) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between gap-2 border border-slate-200 rounded p-2 bg-white"
+                    data-testid={`version-${v.version_number}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-slate-700">
+                        v{v.version_number}
+                        <span className="ml-2 text-slate-400 font-normal">
+                          {new Date(v.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 truncate">
+                        {v.change_summary || '(no summary)'}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRestore(v.id)}
+                      disabled={restoringId === v.id}
+                      className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      data-testid={`restore-v${v.version_number}`}
+                    >
+                      {restoringId === v.id ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        'Restore'
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       )}
     </div>

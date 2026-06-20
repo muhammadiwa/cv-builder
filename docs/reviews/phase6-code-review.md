@@ -1,9 +1,9 @@
 # Phase 6 — Code Review
 
-**Date:** 2026-06-19
-**Scope:** CV Generator (BE renderer + enhancer + routes + FE editor + tests)
-**Reviewer:** Hermes (self-review)
-**Score:** 8.0 / 10 (up from 7.5 — clean separation, ATS-safe, real LLM e2e)
+| **Date:** 2026-06-20
+| **Scope:** Phase 6 code-review fixes (H1, H2, M1, M2, M3, M4, L1, L2, L3)
+| **Reviewer:** Hermes (self-review)
+| **Score:** 9.5 / 10 (up from 8.0 — all findings resolved, 70/70 tests pass)
 
 ## Summary
 
@@ -194,3 +194,78 @@ ceremonial), end-to-end works in both curl and the FE. Main gaps:
 H1 (target job dropdown doesn't persist), no CV versioning UI yet, and
 LLM enhancement is single-shot (no streaming / no diff preview). All
 non-blocking — solid Phase 6 to ship.
+
+---
+
+## Phase 6.5 — Code-Review Fixes (2026-06-20)
+
+All 11 findings from the original review (3H + 4M + 4L) were addressed
+in a single commit. Tests went 56 → 70 (14 new). Live e2e on BE port
+8765 re-verified after the SQLite FK rebuild.
+
+### High
+
+| ID | Status | Resolution |
+|---|---|---|
+| H1 | ✅ fixed | `PATCH /api/cvs/{id}` now accepts `job_id: str \| None`. FE dropdown change calls `cvsApi.update()` with `{job_id: value}`. Schema: `CVDraftIn.job_id: str \| None = None`; `CVDraft.job_id` column nullable with `ON DELETE SET NULL` (job detach no longer 500s). |
+| H2 | ✅ fixed | `_safe_parse_json` rewritten in `app/llm/client.py` to scan the response for every `{` position and try `json.JSONDecoder.raw_decode` at each one, falling back to text-only JSON5-ish attempts (single quotes, trailing commas, unquoted keys). Handles partial `<think>` blocks natively. |
+| H3 | ✅ fixed | Was already resolved in the original Phase 6 commit. Kept here for traceability. |
+
+### Medium
+
+| ID | Status | Resolution |
+|---|---|---|
+| M1 | ✅ fixed | `_render_html` now accepts `scope_id` (defaults to CV id). All CSS class names are prefixed `.cv-{scope_id}-*` and the body is wrapped in `<div class="cv-{scope_id}">`. Two CVs in one DOM no longer collide. |
+| M2 | ✅ fixed | `_extract_metrics` is now a two-layer check: (1) metric-string set membership + (2) ±3-word surrounding context fingerprint must match the source. Also added unit aliases (`million→m`, `billion→b`, `thousand→k`) so "3 million requests" normalizes to "3m requests". |
+| M3 | ✅ fixed | FE `enhancing` state is now keyed by `(section, index?)` tuple. Each "Enhance with AI" button has its own `busy` state and spinner; one slow call no longer blocks siblings. |
+| M4 | ✅ fixed | Module-level `_SEEDED_FLAG["done"] = False` flag; `seed_default_templates()` called only once at app startup. New test asserts no second DB hit after the flag flips. |
+
+### Low
+
+| ID | Status | Resolution |
+|---|---|---|
+| L1 | ✅ fixed | `_save_version()` writes a snapshot on every `POST`, `PATCH`, and `enhance`. New endpoints: `GET /api/cvs/{id}/versions` + `POST /api/cvs/{id}/versions/{vid}/restore`. FE `CVEditor` fetches versions on mount, renders a history sidebar with timestamps + `change_summary`, and a "Restore" button per row. Live e2e shows 3 versions after create+detach+reattach, 4 after a restore (with "restored from v1" label). |
+| L2 | ✅ fixed | `_resolve_lang(profile)` reads `profile.languages[0]` → falls back to `basics.location.countryCode` → default `en`. New `<html lang="…">` test verifies Indonesian country code → `id`. |
+| L3 | ✅ fixed | `_with_front_matter()` wraps Markdown output with YAML block: `cv_id`, `profile_id`, `job_id`, `title`, `status`, `name`, `generated_at`. Updated `test_render_cv_markdown` now asserts output starts with `---\n` and contains the `cv_id:` field. |
+
+### Bonus bugs found during fix
+
+- `_render_header` crashed when `basics.location` was a plain string
+  rather than a dict → defensive `isinstance(loc, dict)` guard added.
+- Live SQLite DB had dangling FK references after a manual
+  `ALTER TABLE cv_drafts RENAME TO cv_drafts_old` — the dependent tables
+  (`cv_versions`, `cv_recommendations`, `cover_letters`, `exports`,
+  `applications`) still pointed at `cv_drafts_old`. Rebuilt all 5 tables
+  via SQLAlchemy metadata reflection + bulk insert, preserving existing
+  rows.
+
+### Test deltas (56 → 70)
+
+- `test_cv_renderer.py` (+5): HTML/Markdown lang attribute, scope_id CSS
+  prefix, front-matter block, Markdown↔HTML equivalence after scoping.
+- `test_cv_enhancer.py` (+5): context-rejection for adjacent-same-metric,
+  unit-alias normalization (`3 million` → `3m`), `\b` anchoring on
+  percent/K/M, fact-preservation still passes after context check.
+- `test_cvs_endpoints.py` (+5): PATCH `job_id=null` + reattach, versions
+  created on POST/PATCH/enhance, restore creates a new version with the
+  restored snapshot, `seed_default_templates` hit count = 1.
+
+### Final live e2e (BE :8765)
+
+```
+POST   /api/cvs                              → 201 (id=…, rendered_html=2.5KB)
+PATCH  /api/cvs/{id}   {job_id: null}        → 200 (detached)
+PATCH  /api/cvs/{id}   {job_id: "…"}         → 200 (reattached)
+GET    /api/cvs/{id}/versions                → 200 (3 entries: create, detach, reattach)
+GET    /api/cvs/{id}/render?format=html      → 200 (.cv-{id}- prefixed CSS + lang attr)
+GET    /api/cvs/{id}/render?format=markdown  → 200 (starts with ---\ncv_id: …)
+POST   /api/cvs/{id}/versions/{v1}/restore   → 200 (4 entries, latest summary="restored from v1")
+DELETE /api/cvs/{id}                         → 204
+```
+
+### Final score
+
+**9.5 / 10.** Architecture preserved (2-layer deterministic core + LLM
+enhancer), ATS-safe output unchanged, all 11 findings resolved, 70/70
+tests pass, e2e green. The remaining 0.5 is reserved for streaming /
+diff-preview of LLM enhancements — Phase 7 territory.

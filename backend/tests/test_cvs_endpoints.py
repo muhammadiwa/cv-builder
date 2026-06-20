@@ -274,7 +274,13 @@ def test_render_cv_markdown(client: TestClient):
     assert r.status_code == 200
     body = r.json()
     assert body["format"] == "markdown"
-    assert body["content"].startswith("#")
+    # Markdown output is wrapped with YAML front-matter (cv_id, profile_id,
+    # job_id, etc.) for traceability — verify the wrapper plus that the
+    # actual CV body still starts with the `# Mohammad` heading.
+    assert body["content"].startswith("---")
+    # The test fixture seeds a profile with name "CV Test User" — assert on
+    # that rather than the dev-seeded "Mohammad" profile.
+    assert "# CV Test User" in body["content"]
 
 
 def test_render_cv_invalid_format_422(client: TestClient):
@@ -305,3 +311,123 @@ def test_delete_cv(client: TestClient):
 def test_delete_cv_unknown_404(client: TestClient):
     r = client.delete("/api/cvs/nonexistent-cv-id")
     assert r.status_code == 404
+
+# ── Versioning endpoints (L1) ──────────────────────────────────────
+
+
+def test_create_creates_initial_version(client: TestClient):
+    profile_id, job_id = _seed_profile_and_job(client)
+    create = client.post(
+        "/api/cvs",
+        json={"job_id": job_id, "profile_id": profile_id, "title": "V test"},
+    )
+    cv_id = create.json()["id"]
+    r = client.get(f"/api/cvs/{cv_id}/versions")
+    assert r.status_code == 200
+    vs = r.json()
+    assert len(vs) == 1
+    assert vs[0]["version_number"] == 1
+    assert "initial" in vs[0]["change_summary"].lower()
+
+
+def test_patch_creates_version(client: TestClient):
+    profile_id, job_id = _seed_profile_and_job(client)
+    create = client.post(
+        "/api/cvs",
+        json={"job_id": job_id, "profile_id": profile_id, "title": "V test patch"},
+    )
+    cv_id = create.json()["id"]
+    # Patch cv_json
+    patch_r = client.patch(
+        f"/api/cvs/{cv_id}",
+        json={"cv_json": {"basics": {"name": "New Name"}, "summary": "New"}},
+    )
+    assert patch_r.status_code == 200
+    vs = client.get(f"/api/cvs/{cv_id}/versions").json()
+    assert len(vs) >= 2
+    # Newest version is the patch.
+    assert vs[0]["version_number"] >= 2
+
+
+def test_enhance_creates_version(client: TestClient):
+    """Enhance is mocked so the test stays deterministic + fast."""
+    from app.services import cv_enhancer
+
+    async def fake_summary(cv_json, target_kw, db=None):
+        cv_json = dict(cv_json or {})
+        cv_json["summary"] = "polished summary"
+        return cv_json, []
+
+    cv_enhancer.enhance_cv_summary = fake_summary  # type: ignore
+
+    profile_id, job_id = _seed_profile_and_job(client)
+    create = client.post(
+        "/api/cvs",
+        json={"job_id": job_id, "profile_id": profile_id, "title": "Enhance V"},
+    )
+    cv_id = create.json()["id"]
+    en = client.post(
+        f"/api/cvs/{cv_id}/enhance",
+        json={"section": "summary"},
+    )
+    assert en.status_code == 200
+    vs = client.get(f"/api/cvs/{cv_id}/versions").json()
+    # At least 2 versions: initial + enhance.
+    assert len(vs) >= 2
+    summaries = [v["change_summary"] for v in vs]
+    assert any("LLM-enhanced summary" in s for s in summaries)
+
+
+def test_restore_version_roundtrip(client: TestClient):
+    profile_id, job_id = _seed_profile_and_job(client)
+    create = client.post(
+        "/api/cvs",
+        json={"job_id": job_id, "profile_id": profile_id, "title": "Restore test"},
+    )
+    cv_id = create.json()["id"]
+    # v1 = initial
+    vs = client.get(f"/api/cvs/{cv_id}/versions").json()
+    v1_id = vs[0]["id"]
+
+    # Patch to create v2
+    client.patch(
+        f"/api/cvs/{cv_id}",
+        json={"cv_json": {"basics": {"name": "Modified"}, "summary": "modified"}},
+    )
+
+    # Restore v1
+    r = client.post(f"/api/cvs/{cv_id}/versions/{v1_id}/restore")
+    assert r.status_code == 200
+    restored = r.json()
+    assert restored["cv_json"]["basics"]["name"] != "Modified"
+
+    # A new "restored from v1" version should now exist.
+    vs_after = client.get(f"/api/cvs/{cv_id}/versions").json()
+    summaries = [v["change_summary"] for v in vs_after]
+    assert any("restored from v1" in s for s in summaries)
+
+
+# ── job_id PATCH (H1) ──────────────────────────────────────────────
+
+
+def test_patch_job_id_persists(client: TestClient):
+    profile_id, job_id = _seed_profile_and_job(client)
+    create = client.post(
+        "/api/cvs",
+        json={"job_id": job_id, "profile_id": profile_id, "title": "Re-target"},
+    )
+    cv_id = create.json()["id"]
+
+    # Detach
+    r1 = client.patch(f"/api/cvs/{cv_id}", json={"job_id": None})
+    assert r1.status_code == 200
+    assert r1.json()["job_id"] is None
+
+    # Re-attach to same job
+    r2 = client.patch(f"/api/cvs/{cv_id}", json={"job_id": job_id})
+    assert r2.status_code == 200
+    assert r2.json()["job_id"] == job_id
+
+    # Bad job id -> 404
+    r3 = client.patch(f"/api/cvs/{cv_id}", json={"job_id": "does-not-exist"})
+    assert r3.status_code == 404

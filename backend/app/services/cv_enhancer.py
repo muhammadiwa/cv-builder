@@ -145,6 +145,9 @@ async def enhance_section(
 
 
 # ── Fact-preservation guard ────────────────────────────────────────
+# Numeric pattern: number + optional unit. Anchored with word-boundary
+# lookarounds so we don't false-match the digit inside "v1.2" or
+# "2024-06-19" unless a unit follows.
 _NUMERIC_PATTERN = re.compile(
     r"(?<!\w)(?P<num>\d+(?:\.\d+)?)\s*"
     r"(?P<unit>%|x|ms|s|sec|secs?|seconds?|minutes?|mins?|hours?|hrs?|"
@@ -153,28 +156,105 @@ _NUMERIC_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Stopwords filtered out of context so they don't inflate the signature.
+_CONTEXT_STOP = frozenset(
+    "a an the and or to of in on for by with from at as is are was were be been being".split()
+)
+
 
 def _extract_metrics(text: str) -> set[str]:
-    """Extract numeric claims (40%, 3M, 10K req/s, etc.) for a fact-preservation check."""
-    return {m.group(0).lower() for m in _NUMERIC_PATTERN.finditer(text or "")}
+    """Extract numeric claims (40%, 3M, 10K req/s, etc.) for a fact-preservation check.
+
+    Returns normalised metric strings (``"<num> <unit>"``). Used by the
+    grounding guard to detect invented numbers.
+    """
+    out: set[str] = set()
+    for m in _NUMERIC_PATTERN.finditer(text or ""):
+        num = m.group("num")
+        unit = m.group("unit").lower()
+        # Normalise unit aliases so "10K" and "10K req/s" round-trip.
+        unit_aliases = {
+            "k": "k", "m": "m", "mm": "m", "b": "b", "bb": "b",
+            "sec": "s", "secs": "s", "second": "s", "seconds": "s",
+            "min": "m", "mins": "m", "minute": "m", "minutes": "m",
+            "hr": "h", "hrs": "h", "hour": "h", "hours": "h",
+            "yr": "y", "yrs": "y", "year": "y", "years": "y",
+            "req/s": "rps", "qps": "qps", "rps": "rps",
+            "million": "m", "billion": "b", "thousand": "k",
+        }
+        unit = unit_aliases.get(unit, unit)
+        out.add(f"{num} {unit}")
+    return out
+
+
+def _metric_context(text: str, metric: str) -> str:
+    """Return a short normalised signature of the words around ``metric`` in ``text``.
+
+    Used by :func:`_claim_is_grounded` to verify that a metric in the
+    enhanced text isn't just a numeric string match but is actually used
+    in the same context as the original. This prevents the case where
+    "100 services" gets rewritten to "500 services" — both share the
+    digit "100" loosely but the meaning changed.
+    """
+    num = metric.split()[0]
+    for m in _NUMERIC_PATTERN.finditer(text or ""):
+        if m.group("num") == num:
+            start = max(0, m.start() - 30)
+            end = min(len(text), m.end() + 30)
+            window = text[start:end].lower()
+            words = [
+                w.strip(".,;:()[]\"'") for w in window.split()
+                if w.strip(".,;:()[]\"'") and w.strip(".,;:()[]\"'") not in _CONTEXT_STOP
+            ]
+            return " ".join(words[:6])
+    return ""
 
 
 def _claim_is_grounded(enhanced: str, original: str) -> bool:
     """Reject enhanced text that introduces numeric claims not in the original.
 
+    Two-layer check:
+
+    1. **Set membership** — every metric in ``enhanced`` must also appear
+       in ``original``. Catches "500%" invented where original said nothing.
+    2. **Context match** — each metric must appear in the original with
+       similar surrounding words (3-word fingerprint). Catches "100
+       services" → "100 microservices" being accepted by set check alone.
+
     Conservative: if the enhanced text has a metric the original didn't,
-    it's flagged. Text-only edits are always allowed.
+    or whose context differs substantially, it's flagged. Text-only edits
+    are always allowed.
     """
     orig_metrics = _extract_metrics(original)
     enh_metrics = _extract_metrics(enhanced)
+
+    # Layer 1: set membership.
     new_metrics = enh_metrics - orig_metrics
     if new_metrics:
         log.info(
             "cv_enhance_metric_grounding_reject",
+            reason="new_metric",
             original=list(orig_metrics),
             new=list(new_metrics),
         )
         return False
+
+    # Layer 2: context match for overlapping metrics.
+    for m in enh_metrics:
+        enh_ctx = _metric_context(enhanced, m)
+        orig_ctx = _metric_context(original, m)
+        # Require ≥ 1 content-word overlap (besides digits and stopwords).
+        enh_words = set(w for w in enh_ctx.split() if not w.isdigit())
+        orig_words = set(w for w in orig_ctx.split() if not w.isdigit())
+        if not (enh_words & orig_words):
+            log.info(
+                "cv_enhance_metric_grounding_reject",
+                reason="context_mismatch",
+                metric=m,
+                enhanced_ctx=enh_ctx,
+                original_ctx=orig_ctx,
+            )
+            return False
     return True
 
 

@@ -299,6 +299,15 @@ export interface CVRenderResponse {
   sections: { kind: string; title: string; body_md: string }[];
 }
 
+export interface CVVersion {
+  id: string;
+  cv_draft_id: string;
+  version_number: number;
+  change_summary: string;
+  score: number;
+  created_at: string;
+}
+
 export type CVSectionKind = 'summary' | 'bullets' | 'experience' | 'skills';
 
 export const cvsApi = {
@@ -321,7 +330,7 @@ export const cvsApi = {
   },
   patch: async (
     cvId: string,
-    payload: { title?: string; cv_json?: CVJson; status?: string; template_id?: string }
+    payload: { title?: string; cv_json?: CVJson; status?: string; template_id?: string; job_id?: string | null }
   ): Promise<CVDraft> => {
     const resp = await api.patch<CVDraft>(`/cvs/${cvId}`, payload);
     return resp.data;
@@ -344,6 +353,16 @@ export const cvsApi = {
     }
   ): Promise<CVDraft> => {
     const resp = await api.post<CVDraft>(`/cvs/${cvId}/enhance`, payload);
+    return resp.data;
+  },
+  versions: async (cvId: string): Promise<CVVersion[]> => {
+    const resp = await api.get<CVVersion[]>(`/cvs/${cvId}/versions`);
+    return resp.data;
+  },
+  restoreVersion: async (cvId: string, versionId: string): Promise<CVDraft> => {
+    const resp = await api.post<CVDraft>(
+      `/cvs/${cvId}/versions/${versionId}/restore`,
+    );
     return resp.data;
   },
 };

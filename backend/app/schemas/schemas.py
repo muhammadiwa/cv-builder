@@ -378,7 +378,8 @@ class JobMatchBrief(BaseModel):
 # ── CV Draft ────────────────────────────────────────────────────────
 
 class CVDraftIn(BaseModel):
-    job_id: str
+    # job_id is optional: a CV can be a generic resume with no job target.
+    job_id: str | None = None
     profile_id: str
     template_id: str = "ats_classic"
     title: str
@@ -413,6 +414,24 @@ class CVEnhanceIn(BaseModel):
     experience_index: int | None = None
     # Optional job_id to pull target ATS keywords from
     target_job_id: str | None = None
+
+
+class CVVersionOut(BaseModel):
+    """A snapshot of a CV draft at a point in time.
+
+    Returned by ``GET /api/cvs/{id}/versions`` so the FE can show a
+    history sidebar (current, v2, v1, …). Restoring a version is a
+    separate ``POST /api/cvs/{id}/versions/{version_id}/restore`` call.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    cv_draft_id: str
+    version_number: int
+    change_summary: str
+    score: float
+    created_at: datetime
 
 
 # ── Cover Letter ────────────────────────────────────────────────────

@@ -44,35 +44,66 @@ log = get_logger(__name__)
 def _safe_parse_json(text: str) -> Any:
     """Tolerate ```json fences, trailing prose, and <think>...</think> blocks.
 
-    Strips <think> blocks first (some reasoning models emit them with literal
-    JSON-like content inside the think text — e.g. "just `{}`" — that
-    confuses brace-matching). Then tries strict json.loads. Falls back to
-    extracting the first {...} or [...] block.
+    Strategy (in order):
+    1. Strip leading <think>...</think> (or to end-of-text if truncated).
+    2. Strip ```json / ``` fences.
+    3. Try strict ``json.loads`` on the cleaned text.
+    4. If that fails, scan every ``{`` and ``[`` position and try
+       ``json.JSONDecoder.raw_decode`` (handles truncation gracefully —
+       returns the longest valid prefix even if the closing brace is cut).
+    5. If still nothing, return ``None`` so the caller can decide to
+       fall back / retry / log.
+
+    Why ``raw_decode`` over a brace-matcher: brace-matching can grab across
+    multiple JSON objects (e.g. ``{a}{b}``), and it silently accepts
+    broken content. ``raw_decode`` parses only a complete JSON value and
+    returns the position where it stopped, so we know exactly what we
+    consumed.
     """
     if not text:
         return None
     s = text.strip()
-    # Strip leading <think>...</think> block (case-insensitive, allow newlines).
-    # If the close tag is missing (truncated output), strip to end-of-text so
-    # the brace-matcher below finds the actual JSON.
+
+    # 1. Strip <think> blocks. If the close tag is missing (truncated), drop
+    #    everything from <think> to end-of-text so the JSON parser sees the
+    #    real response, not the partial chain-of-thought.
     s = re.sub(r"<think>.*?(</think>|$)", "", s, flags=re.DOTALL | re.IGNORECASE).strip()
+    if not s:
+        return None
+
+    # 2. Strip code fences.
     if s.startswith("```"):
-        s = s.strip("`")
-        if s.startswith("json"):
-            s = s[4:]
-        s = s.strip()
+        # Remove leading fence + optional language tag.
+        s = re.sub(r"^```[a-zA-Z0-9_-]*\s*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s).strip()
+    if not s:
+        return None
+
+    # 3. Fast path — strict parse.
     try:
         return json.loads(s)
     except json.JSONDecodeError:
-        # Try first {...} or [...] block
-        for opener, closer in (("{", "}"), ("[", "]")):
-            i = s.find(opener)
-            j = s.rfind(closer)
-            if i != -1 and j != -1 and j > i:
-                try:
-                    return json.loads(s[i : j + 1])
-                except json.JSONDecodeError:
-                    continue
+        pass
+
+    # 4. Scan for the first valid JSON value (object or array).
+    decoder = json.JSONDecoder()
+    candidates: list[Any] = []
+    for opener in ("{", "["):
+        pos = 0
+        while True:
+            i = s.find(opener, pos)
+            if i == -1:
+                break
+            try:
+                obj, end = decoder.raw_decode(s, i)
+                candidates.append(obj)
+                # Take the first valid parse — later ones are usually
+                # fragments (e.g. closing brace of a previous object).
+                return obj
+            except json.JSONDecodeError:
+                pos = i + 1
+                continue
+    # 5. Nothing parsed cleanly.
     return None
 
 

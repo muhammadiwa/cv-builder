@@ -26,8 +26,9 @@ def test_extract_metrics_percentage():
 
 def test_extract_metrics_throughput():
     metrics = _extract_metrics("Handled 3M daily queries")
-    # Metrics are stored lowercased
-    assert any("3m" in m for m in metrics)
+    # After unit normalisation, "M" -> "m" and metric is stored as "3 m"
+    # (so that "3M" and "3 million" round-trip to the same canonical form).
+    assert any(m == "3 m" for m in metrics), f"got {metrics}"
 
 
 def test_extract_metrics_no_numbers():
@@ -178,3 +179,39 @@ async def test_enhance_section_empty_list_returns_none(monkeypatch):
     monkeypatch.setattr(ce, "LLMClient", FakeClient)
     result = await ce.enhance_section(section_kind="bullets", payload={"section": "bullets", "bullets": ["a"]})
     assert result is None
+
+# ── M2: context-aware metric grounding ──────────────────────────────
+
+
+def test_metric_context_set_membership_passes():
+    from app.services.cv_enhancer import _claim_is_grounded
+    original = "Led team of 4 to ship payments"
+    enhanced = "Led team of 4 to deliver payments"
+    assert _claim_is_grounded(enhanced, original) is True
+
+
+def test_metric_context_invented_number_rejected():
+    from app.services.cv_enhancer import _claim_is_grounded
+    original = "Migrated monolith to microservices"
+    enhanced = "Migrated monolith to microservices, reducing p95 by 99%"
+    assert _claim_is_grounded(enhanced, original) is False
+
+
+def test_metric_context_preserved_when_metric_kept():
+    from app.services.cv_enhancer import _claim_is_grounded
+    original = "Improved p95 latency by 40%"
+    enhanced = "Reduced p95 latency by 40% across all endpoints"
+    # Metric is the same, context overlaps (p95, latency) — must pass.
+    assert _claim_is_grounded(enhanced, original) is True
+
+
+def test_metric_extract_unit_aliases():
+    """Different unit spellings normalise to the same canonical form."""
+    from app.services.cv_enhancer import _extract_metrics
+    assert "10 k" in _extract_metrics("Handled 10K requests")
+    assert "10 k" in _extract_metrics("Handled 10k requests")
+    assert "60 s" in _extract_metrics("Reduced to 60 seconds")
+    assert "60 s" in _extract_metrics("Reduced to 60s")
+    # Both forms normalise to "3 m" so they round-trip.
+    assert "3 m" in _extract_metrics("3M queries")
+    assert "3 m" in _extract_metrics("3 million queries")
