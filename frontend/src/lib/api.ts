@@ -847,3 +847,118 @@ export const templatesApi = {
     return resp.data;
   },
 };
+
+// ── LLM Providers (Phase 10B) ──────────────────────────────────────
+export type LLMProviderKind = 'openai_compat' | 'anthropic';
+
+export type LLMTaskType =
+  | 'resume_parse'
+  | 'job_analyze'
+  | 'match'
+  | 'cv_generate'
+  | 'cv_score'
+  | 'cv_improve'
+  | 'cv_enhance'
+  | 'cover_letter';
+
+export const LLM_TASK_TYPES: readonly LLMTaskType[] = [
+  'resume_parse',
+  'job_analyze',
+  'match',
+  'cv_generate',
+  'cv_score',
+  'cv_improve',
+  'cv_enhance',
+  'cover_letter',
+] as const;
+
+export interface LLMProvider {
+  id: string;
+  display_name: string;
+  kind: LLMProviderKind;
+  base_url: string;
+  api_key_set: boolean;
+  enabled: boolean;
+  priority: number;
+  models_json: Partial<Record<LLMTaskType, string>>;
+  max_tokens_default: number;
+  temperature_default: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LLMProviderCreatePayload {
+  id: string;
+  display_name: string;
+  kind: LLMProviderKind;
+  base_url?: string;
+  api_key?: string;
+  enabled?: boolean;
+  priority?: number;
+  models_json?: Partial<Record<LLMTaskType, string>>;
+  max_tokens_default?: number;
+  temperature_default?: number;
+}
+
+export interface LLMProviderPatchPayload {
+  display_name?: string;
+  kind?: LLMProviderKind;
+  base_url?: string | null;
+  api_key?: string;  // empty string clears the key
+  enabled?: boolean;
+  priority?: number;
+  models_json?: Partial<Record<LLMTaskType, string>>;
+  max_tokens_default?: number;
+  temperature_default?: number;
+}
+
+export interface LLMProviderTestPayload {
+  model?: string;
+  prompt?: string;
+}
+
+export interface LLMProviderTestResult {
+  ok: boolean;
+  message: string;
+  latency_ms?: number | null;
+  model?: string | null;
+  response_preview?: string | null;
+}
+
+export const llmProvidersApi = {
+  list: async (): Promise<LLMProvider[]> => {
+    const resp = await api.get<LLMProvider[]>('/llm-providers');
+    return resp.data;
+  },
+  get: async (id: string): Promise<LLMProvider> => {
+    const resp = await api.get<LLMProvider>(`/llm-providers/${id}`);
+    return resp.data;
+  },
+  create: async (payload: LLMProviderCreatePayload): Promise<LLMProvider> => {
+    const resp = await api.post<LLMProvider>('/llm-providers', payload);
+    return resp.data;
+  },
+  patch: async (
+    id: string,
+    payload: LLMProviderPatchPayload,
+  ): Promise<LLMProvider> => {
+    const resp = await api.patch<LLMProvider>(
+      `/llm-providers/${id}`,
+      payload,
+    );
+    return resp.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/llm-providers/${id}`);
+  },
+  test: async (
+    id: string,
+    payload: LLMProviderTestPayload = {},
+  ): Promise<LLMProviderTestResult> => {
+    const resp = await api.post<LLMProviderTestResult>(
+      `/llm-providers/${id}/test`,
+      payload,
+    );
+    return resp.data;
+  },
+};
