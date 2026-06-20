@@ -36,9 +36,12 @@ from app.schemas.schemas import (
     CVDraftOut,
     CVEnhanceIn,
     CVRenderOut,
+    CVScoreOut,
+    CVScoreRecommendation,
     CVVersionOut,
 )
 from app.services.cv_enhancer import enhance_cv_summary, enhance_job_bullets
+from app.services.cv_scorer import score_cv
 from app.services.cv_renderer import (
     DEFAULT_TEMPLATE_ID,
     SECTION_SKILLS,
@@ -115,6 +118,43 @@ def _save_version(
     db.add(ver)
     db.flush()
     return ver
+
+
+def _score_and_persist(draft: CVDraft) -> None:
+    """Recompute the CV score and persist it on the draft row.
+
+    Phase 7 fix: every mutating endpoint (create / patch / enhance /
+    restore) calls this so the FE always sees a fresh score. The
+    scorer takes a snapshot of ``cv_json`` + optional target-job
+    analysis and writes both the headline number and the per-axis
+    breakdown into the existing ``CVDraft.score`` and
+    ``CVDraft.score_breakdown_json`` columns.
+
+    Side-effect free with respect to LLM calls — the scorer is
+    deterministic.
+    """
+    target_analysis: dict | None = None
+    if draft.job_id:
+        from app.models.models import Job
+        job = draft.job  # relationship proxy (already loaded in callers)
+        if job is not None and job.job_analysis_json:
+            target_analysis = job.job_analysis_json
+
+    # Inject the rendered HTML into a synthetic key so the format-safety
+    # axis can grade it without re-rendering.
+    cv_json_with_html = dict(draft.cv_json or {})
+    if draft.rendered_html:
+        cv_json_with_html["_rendered_html"] = draft.rendered_html
+
+    result = score_cv(cv_json_with_html, target_analysis)
+    draft.score = result.overall
+    draft.score_breakdown_json = result.to_breakdown()
+    log.debug(
+        "cv_score_updated",
+        cv_id=draft.id,
+        overall=result.overall,
+        recs=len(result.recommendations),
+    )
 
 
 def _render_draft_to_html(draft: CVDraft) -> str:
@@ -356,6 +396,7 @@ def create_cv(
     db.add(draft)
     db.flush()
     draft.rendered_html = _render_draft_to_html(draft)
+    _score_and_persist(draft)  # Phase 7: auto-score on create
     _save_version(db, draft, "initial draft from profile")
     db.commit()
     db.refresh(draft)
@@ -450,6 +491,7 @@ def patch_cv(
         draft.cv_json = cj
         # Re-render
         draft.rendered_html = _render_draft_to_html(draft)
+        _score_and_persist(draft)  # Phase 7: re-score on cv_json change
         _save_version(db, draft, "manual patch (cv_json)")
 
     # Track metadata-only edits as versions too so the history is complete.
@@ -462,6 +504,10 @@ def patch_cv(
             draft,
             f"metadata update: {', '.join(sorted(set(payload.keys()) - {'cv_json'}))}",
         )
+        # Phase 7: re-score when job_id changes — the target-job
+        # axes (ats_coverage / skill_gap) shift accordingly.
+        if "job_id" in payload:
+            _score_and_persist(draft)
 
     draft.updated_at = _utcnow()
     db.commit()
@@ -629,6 +675,7 @@ async def enhance_cv_section(
 
     draft.cv_json = cv_json
     draft.rendered_html = _render_draft_to_html(draft)
+    _score_and_persist(draft)  # Phase 7: re-score after LLM enhancement
     _save_version(db, draft, f"LLM-enhanced {payload.section}")
     draft.updated_at = _utcnow()
     db.commit()
@@ -696,6 +743,7 @@ def restore_cv_version(
     snapshot = ver.cv_json or {}
     draft.cv_json = snapshot
     draft.rendered_html = _render_draft_to_html(draft)
+    _score_and_persist(draft)  # Phase 7: re-score after restore
     _save_version(db, draft, f"restored from v{ver.version_number}")
     draft.updated_at = _utcnow()
     db.commit()
@@ -707,3 +755,141 @@ def restore_cv_version(
         new_version=None,  # filled by save_version side-effect
     )
     return _serialize_draft(draft)
+
+# ── Score (Phase 7) ─────────────────────────────────────────────────
+
+
+@router.post("/{cv_id}/score", response_model=CVScoreOut)
+def score_cv_draft(
+    cv_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CVScoreOut:
+    """Force-recompute the CV score and return the full breakdown.
+
+    The same computation runs automatically on create/patch/enhance/
+    restore. This endpoint exists so the FE can trigger a refresh
+    (e.g. after editing ``cv_json`` via a future bulk editor) without
+    going through the enhance round-trip.
+    """
+    draft = db.get(CVDraft, cv_id)
+    if draft is None:
+        raise HTTPException(404, f"cv {cv_id} not found")
+    profile = db.get(Profile, draft.profile_id)
+    if profile is None or profile.user_id != user.id:
+        raise HTTPException(403, "not your cv")
+
+    target_analysis: dict | None = None
+    if draft.job_id:
+        job = db.get(Job, draft.job_id)
+        if job is not None and job.job_analysis_json:
+            target_analysis = job.job_analysis_json
+
+    cv_json_with_html = dict(draft.cv_json or {})
+    if draft.rendered_html:
+        cv_json_with_html["_rendered_html"] = draft.rendered_html
+
+    result = score_cv(cv_json_with_html, target_analysis)
+    draft.score = result.overall
+    draft.score_breakdown_json = result.to_breakdown()
+    draft.updated_at = _utcnow()
+    db.commit()
+    db.refresh(draft)
+
+    return CVScoreOut(
+        cv_id=draft.id,
+        overall=result.overall,
+        axes=result.to_breakdown()["axes"],
+        matched_keywords=result.matched_keywords,
+        missing_keywords=result.missing_keywords,
+        matched_skills=result.matched_skills,
+        missing_skills=result.missing_skills,
+        recommendations=[CVScoreRecommendation(**r) for r in result.recommendations],
+        scored_at=_utcnow(),
+    )
+
+
+# ── Recommendation Engine (Phase 7) ────────────────────────────────
+
+
+@router.get("/recommendations", response_model=list[dict[str, Any]])
+def cv_recommendations(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """Best CV×job pairs, sorted by composite score.
+
+    Composite = 0.6 * match_score + 0.4 * cv_score. The 60/40 split
+    favors "is this job right for me?" (match) over "is this CV good
+    for this job?" (cv_score) — but both matter.
+
+    Excludes pairs where the job hasn't been parsed yet, and pairs
+    where the CV hasn't been scored yet (zero-score CVs still rank,
+    just lower).
+    """
+    from app.models.models import Job, JobMatch
+
+    # Pull the user's CVs and scored parsed jobs + matches in two queries
+    # rather than a join — keeps the response flat and the SQL portable.
+    cvs = (
+        db.query(CVDraft)
+        .join(Profile, CVDraft.profile_id == Profile.id)
+        .filter(Profile.user_id == user.id)
+        .all()
+    )
+    if not cvs:
+        return []
+
+    cv_by_id = {c.id: c for c in cvs}
+
+    matches = (
+        db.query(JobMatch)
+        .filter(JobMatch.job_id.in_([j.id for j in db.query(Job).filter(Job.user_id == user.id).all()] or ["__none__"]))
+        .all()
+    )
+    match_by_job = {m.job_id: m for m in matches}
+
+    items: list[dict[str, Any]] = []
+    for cv in cvs:
+        # The CV is "scoreable" only if a job is attached (the scorer
+        # uses ats_keywords). CVs without a target still appear at the
+        # bottom of the list with a 0 cv_score so the user sees them.
+        if not cv.job_id:
+            continue
+        job = db.get(Job, cv.job_id)
+        if job is None or job.user_id != user.id:
+            continue
+        match = match_by_job.get(job.id)
+        if match is None:
+            continue
+
+        # Reconstruct missing skills from the latest score breakdown so
+        # the FE can show "you're missing X, Y" inline.
+        missing_skills: list[str] = []
+        if isinstance(cv.score_breakdown_json, dict):
+            sg = (cv.score_breakdown_json.get("axes") or {}).get("skill_gap") or {}
+            missing_skills = list(sg.get("missing") or [])
+
+        composite = round(0.6 * match.match_score + 0.4 * (cv.score or 0.0), 4)
+        if composite >= 0.7:
+            rec = "apply"
+        elif composite >= 0.5:
+            rec = "stretch"
+        else:
+            rec = "skip"
+        items.append({
+            "cv_id": cv.id,
+            "cv_title": cv.title,
+            "job_id": job.id,
+            "job_title": job.title or "Untitled",
+            "company": job.company,
+            "match_score": match.match_score,
+            "cv_score": cv.score or 0.0,
+            "composite": composite,
+            "recommendation": rec,
+            "missing_skills": missing_skills,
+        })
+
+    items.sort(key=lambda x: x["composite"], reverse=True)
+    return items[:limit]

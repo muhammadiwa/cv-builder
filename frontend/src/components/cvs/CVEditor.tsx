@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { cvsApi, jobsApi, type CVDraft, type CVSectionKind, type CVVersion, type JobOut } from '../../lib/api';
+import CVScorePanel from './CVScorePanel';
 
 interface Props {
   draft: CVDraft;
@@ -18,7 +19,7 @@ const SECTION_LABELS: Record<CVSectionKind, string> = {
 };
 
 export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props) {
-  const [tab, setTab] = useState<'preview' | 'sections'>('preview');
+  const [tab, setTab] = useState<'preview' | 'sections' | 'score'>('preview');
   // Per-button busy key: 'summary' | 'skills' | `bullets:${idx}` | null.
   // Multiple bullet rows each get their own spinner so the user can
   // polish one entry while another finishes.
@@ -200,6 +201,28 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
           >
             Sections
           </button>
+          <button
+            onClick={() => setTab('score')}
+            data-testid="tab-score"
+            className={clsx(
+              'px-3 py-1.5 text-sm font-medium rounded-md inline-flex items-center gap-1.5',
+              tab === 'score' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+            )}
+          >
+            Score
+            {/* Phase 7: live score chip */}
+            <span
+              className={clsx(
+                'text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full',
+                draft.score >= 0.75 ? 'bg-emerald-100 text-emerald-700'
+                : draft.score >= 0.5 ? 'bg-amber-100 text-amber-700'
+                : 'bg-red-100 text-red-700'
+              )}
+              data-testid="cv-score-chip"
+            >
+              {Math.round(draft.score * 100)}
+            </span>
+          </button>
         </div>
         {jobs.length > 0 && (
           <div className="flex items-center gap-2">
@@ -244,6 +267,19 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
         </div>
       )}
 
+      {tab === 'score' && (
+        <div className="p-6 max-w-3xl" data-testid="score-tab-content">
+          {/* Phase 7: live CV score panel — auto-refreshes on save via the
+              embedded score_breakdown_json in the draft prop. */}
+          <CVScorePanel cv={draft} onScoreUpdate={onUpdate} />
+          <p className="mt-3 text-[12px] text-slate-500 leading-relaxed">
+            Score = 0.4 × ATS keyword coverage + 0.3 × skill gap + 0.2 × bullet
+            strength + 0.1 × format safety. Each save recomputes the score
+            automatically. Use the recommendations above to lift it before
+            applying.
+          </p>
+        </div>
+      )}
       {tab === 'sections' && (
         <div className="p-6 space-y-6">
           {/* Summary */}
