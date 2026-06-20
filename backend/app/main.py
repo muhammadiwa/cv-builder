@@ -16,6 +16,7 @@ from app.db.session import Base, engine
 # Import models so they register with Base.metadata before create_all() runs.
 # Without this, Base.metadata.tables is empty and no schema is created.
 from app import models  # noqa: F401
+from app.services.cv_renderer import reset_seed_cache  # Phase 10A
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,11 @@ def create_app() -> FastAPI:
     # Create schema on startup (idempotent — only creates missing tables).
     Base.metadata.create_all(bind=engine)
     log.info("schema_ready", tables=len(Base.metadata.tables))
+
+    # Phase 10A: force seed check on every cold start so newly-added
+    # presets land in the DB even if the previous process had the
+    # module-level cache flag set to ``done``.
+    reset_seed_cache()
 
     app = FastAPI(
         title=settings.app_name,

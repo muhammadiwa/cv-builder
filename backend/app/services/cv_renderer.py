@@ -52,6 +52,47 @@ ALL_SECTIONS: tuple[str, ...] = (
 
 DEFAULT_TEMPLATE_ID = "ats_classic"
 
+# ── Template styling options (Phase 10A) ───────────────────────────
+# Allow templates to tweak visual presentation while staying
+# ATS-friendly. All values have safe defaults so existing drafts
+# (which stored the legacy ats_classic config without these keys)
+# keep rendering identically.
+
+FONT_FAMILY_OPTIONS: tuple[str, ...] = ("serif", "sans", "mono")
+DENSITY_OPTIONS: tuple[str, ...] = ("compact", "normal", "spacious")
+BULLET_STYLE_OPTIONS: tuple[str, ...] = ("dash", "bullet", "arrow")
+DATE_FORMAT_OPTIONS: tuple[str, ...] = ("Mon YYYY", "MM/YYYY", "YYYY")
+PAGE_SIZE_OPTIONS: tuple[str, ...] = ("A4", "Letter")
+
+# ATS-safe color palette. Reject anything outside this set so
+# recruiters/ATS scanners never see a CV in red Comic Sans.
+# Each entry maps a config key to its accepted hex values.
+ATS_SAFE_COLORS: frozenset[str] = frozenset({
+    "#000000",  # black
+    "#111111",  # near-black (default)
+    "#1f2937",  # slate-800 (classic default)
+    "#0f172a",  # slate-900 (modern default)
+    "#111827",  # gray-900 (compact default)
+    "#334155",  # slate-700
+    "#475569",  # slate-600
+    "#1e293b",  # slate-800 variant
+})
+
+DEFAULT_STYLING: dict[str, Any] = {
+    "font_family": "sans",
+    "accent_color": "#111111",
+    "density": "normal",
+    "bullet_style": "dash",
+    "date_format": "Mon YYYY",
+    "page_size": "A4",
+    "margins": {
+        "top": "18mm",
+        "right": "16mm",
+        "bottom": "18mm",
+        "left": "16mm",
+    },
+}
+
 
 # ── Helpers ─────────────────────────────────────────────────────────
 def _esc(text: Any) -> str:
@@ -70,16 +111,31 @@ def _strip_text(text: Any) -> str:
     return s
 
 
-def _format_date_range(start: Any, end: Any) -> str:
+def _format_date_range(
+    start: Any,
+    end: Any,
+    date_format: str = "Mon YYYY",
+) -> str:
     """Format a date range like ``Mar 2021 – Present`` (en dash).
 
     Accepts JSON Resume style ``YYYY-MM`` or full ISO dates. Returns
     empty string if both are missing. ``endDate == None`` (JSON Resume's
     convention for current job) renders as "Present".
+
+    ``date_format`` controls per-token rendering (Phase 10A):
+      - ``"Mon YYYY"`` (default): ``Mar 2021``
+      - ``"MM/YYYY"``: ``03/2021``
+      - ``"YYYY"``: ``2021``
+    Unknown formats silently fall back to ``"Mon YYYY"``.
     """
     s = _strip_text(start)
     e_raw = end
     e = _strip_text(e_raw) if e_raw is not None else ""
+
+    # Defensive: unknown format -> default. Keeps malformed template
+    # configs from producing wildly different output across the CV.
+    if date_format not in DATE_FORMAT_OPTIONS:
+        date_format = "Mon YYYY"
 
     def _fmt(token: str) -> str:
         if not token:
@@ -92,6 +148,11 @@ def _format_date_range(start: Any, end: Any) -> str:
         month_num = m.group(2)
         if not month_num:
             return year
+        if date_format == "YYYY":
+            return year
+        if date_format == "MM/YYYY":
+            return f"{int(month_num):02d}/{year}"
+        # "Mon YYYY" — use abbreviated month names
         try:
             from calendar import month_abbr
 
@@ -209,7 +270,10 @@ def _render_summary(profile: dict[str, Any]) -> CVSection:
     return CVSection(kind=SECTION_SUMMARY, title="Summary", body_html=body_html, body_md=body_md)
 
 
-def _render_experience(work: list[dict[str, Any]]) -> CVSection:
+def _render_experience(
+    work: list[dict[str, Any]],
+    date_format: str = "Mon YYYY",
+) -> CVSection:
     if not work:
         return CVSection(kind=SECTION_EXPERIENCE, title="Experience", body_html="", body_md="")
     items_html: list[str] = []
@@ -220,7 +284,9 @@ def _render_experience(work: list[dict[str, Any]]) -> CVSection:
         company = _strip_text(job.get("name"))
         position = _strip_text(job.get("position"))
         location = _strip_text(job.get("location"))
-        dates = _format_date_range(job.get("startDate"), job.get("endDate"))
+        dates = _format_date_range(
+            job.get("startDate"), job.get("endDate"), date_format
+        )
         highlights = [h for h in (job.get("highlights") or []) if _strip_text(h)]
 
         # Build role line: "Senior Backend Engineer — Bukalapak"
@@ -264,7 +330,10 @@ def _render_experience(work: list[dict[str, Any]]) -> CVSection:
     )
 
 
-def _render_education(education: list[dict[str, Any]]) -> CVSection:
+def _render_education(
+    education: list[dict[str, Any]],
+    date_format: str = "Mon YYYY",
+) -> CVSection:
     if not education:
         return CVSection(kind=SECTION_EDUCATION, title="Education", body_html="", body_md="")
     items_html: list[str] = []
@@ -276,7 +345,9 @@ def _render_education(education: list[dict[str, Any]]) -> CVSection:
         area = _strip_text(ed.get("area"))
         study = _strip_text(ed.get("studyType"))
         score = _strip_text(ed.get("score"))
-        dates = _format_date_range(ed.get("startDate"), ed.get("endDate"))
+        dates = _format_date_range(
+            ed.get("startDate"), ed.get("endDate"), date_format
+        )
 
         # Build degree line: "Bachelor — Computer Science"
         deg_bits: list[str] = []
@@ -469,6 +540,11 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
     if not valid_order:
         valid_order = list(ALL_SECTIONS)
 
+    # Phase 10A: resolve styling options with safe defaults.
+    date_format = (template_config or {}).get("date_format") or "Mon YYYY"
+    if date_format not in DATE_FORMAT_OPTIONS:
+        date_format = "Mon YYYY"
+
     work = p.get("work") or p.get("experiences") or []
     education = p.get("education") or []
     skills = p.get("skills") or []
@@ -476,8 +552,8 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
 
     section_renderers = {
         SECTION_SUMMARY: lambda: _render_summary(p),
-        SECTION_EXPERIENCE: lambda: _render_experience(work),
-        SECTION_EDUCATION: lambda: _render_education(education),
+        SECTION_EXPERIENCE: lambda: _render_experience(work, date_format),
+        SECTION_EDUCATION: lambda: _render_education(education, date_format),
         SECTION_SKILLS: lambda: _render_skills(skills),
         SECTION_PROJECTS: lambda: _render_projects(projects),
     }
@@ -517,13 +593,14 @@ def render_html_document(
     """
     doc = render_cv(profile, template_config)
     body = doc.to_html()
-    return _wrap_html(body, profile, scope_id)
+    return _wrap_html(body, profile, scope_id, template_config)
 
 
 def _wrap_html(
     body: str,
     profile: Any,
     scope_id: str | None = None,
+    template_config: dict[str, Any] | None = None,
 ) -> str:
     """Wrap the rendered body in a complete HTML document.
 
@@ -531,6 +608,13 @@ def _wrap_html(
     multiple CVs in the same parent document don't fight over class
     styles. When ``None`` the CSS is unscoped (default — preserves the
     original public output for tests, exports, and PDF/DOCX generation).
+
+    ``template_config`` (Phase 10A) drives the embedded style block:
+      - ``font_family``: serif | sans | mono
+      - ``accent_color``: hex from ATS_SAFE_COLORS (default #111111)
+      - ``density``: compact | normal | spacious (line-height + margins)
+    Unknown values fall back to safe defaults so a malformed template
+    config never produces broken HTML.
     """
     basics = _coerce_profile(profile).get("basics", {})
     name = basics.get("name") or "CV"
@@ -545,21 +629,46 @@ def _wrap_html(
         body_open = ""
         body_close = ""
 
+    # Resolve styling with safe defaults.
+    font_family = (template_config or {}).get("font_family") or "sans"
+    if font_family not in FONT_FAMILY_OPTIONS:
+        font_family = "sans"
+    accent_color = (template_config or {}).get("accent_color") or "#111111"
+    if accent_color not in ATS_SAFE_COLORS:
+        accent_color = "#111111"
+    density = (template_config or {}).get("density") or "normal"
+    if density not in DENSITY_OPTIONS:
+        density = "normal"
+
+    # Map density -> concrete CSS values.
+    line_height = {"compact": "1.25", "normal": "1.45", "spacious": "1.6"}[density]
+    body_margin = {"compact": "16px auto", "normal": "24px auto", "spacious": "32px auto"}[density]
+    section_margin = {"compact": "12px 0 4px", "normal": "18px 0 6px", "spacious": "24px 0 8px"}[density]
+    bullet_margin = {"compact": "2px 0", "normal": "2px 0", "spacious": "4px 0"}[density]
+
+    # Map font_family -> CSS font stack. System fonts only — no webfonts
+    # (webfonts can break ATS text extraction if they fail to load).
+    font_stack = {
+        "serif": "Georgia, 'Times New Roman', serif",
+        "sans": "Arial, Helvetica, sans-serif",
+        "mono": "'Courier New', Courier, monospace",
+    }[font_family]
+
     style = (
         "<style>\n"
-        f"  {prefix} body {{ font-family: Arial, Helvetica, sans-serif; color: #111; "
-        "max-width: 780px; margin: 24px auto; padding: 0 16px; line-height: 1.45; }\n"
+        f"  {prefix} body {{ font-family: {font_stack}; color: {accent_color}; "
+        f"max-width: 780px; margin: {body_margin}; padding: 0 16px; line-height: {line_height}; }}\n"
         f"  {prefix} .cv-name {{ font-size: 28px; margin: 0 0 4px; }}\n"
-        f"  {prefix} .cv-title {{ margin: 0 0 8px; color: #333; font-weight: 600; }}\n"
-        f"  {prefix} .cv-contact {{ margin: 0 0 16px; color: #444; font-size: 14px; }}\n"
-        f"  {prefix} h2 {{ font-size: 16px; margin: 18px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 2px; }}\n"
+        f"  {prefix} .cv-title {{ margin: 0 0 8px; color: {accent_color}; font-weight: 600; }}\n"
+        f"  {prefix} .cv-contact {{ margin: 0 0 16px; color: {accent_color}; font-size: 14px; opacity: 0.85; }}\n"
+        f"  {prefix} h2 {{ font-size: 16px; margin: {section_margin}; border-bottom: 1px solid {accent_color}; padding-bottom: 2px; opacity: 0.9; }}\n"
         f"  {prefix} .cv-role, {prefix} .cv-degree, {prefix} .cv-proj-name {{ font-size: 15px; margin: 8px 0 2px; }}\n"
-        f"  {prefix} .cv-meta {{ margin: 0 0 4px; color: #555; font-size: 13px; }}\n"
+        f"  {prefix} .cv-meta {{ margin: 0 0 4px; color: {accent_color}; font-size: 13px; opacity: 0.75; }}\n"
         f"  {prefix} .cv-bullets {{ margin: 4px 0 8px; padding-left: 20px; }}\n"
-        f"  {prefix} .cv-bullets li {{ margin: 2px 0; }}\n"
+        f"  {prefix} .cv-bullets li {{ margin: {bullet_margin}; }}\n"
         f"  {prefix} .cv-summary {{ margin: 0 0 8px; }}\n"
         f"  {prefix} .cv-skills {{ margin: 4px 0 8px; padding-left: 20px; }}\n"
-        f"  {prefix} .cv-score {{ margin: 0 0 6px; font-size: 13px; color: #555; }}\n"
+        f"  {prefix} .cv-score {{ margin: 0 0 6px; font-size: 13px; color: {accent_color}; opacity: 0.75; }}\n"
         "</style>\n"
     )
 
@@ -668,20 +777,117 @@ def _html_to_naive_md(html_str: str) -> str:
 
 
 # ── Default template registration ───────────────────────────────────
+def _base_template_config(
+    template_id: str,
+    name: str,
+    sections: list[str],
+    *,
+    font_family: str = "sans",
+    accent_color: str = "#111111",
+    density: str = "normal",
+    bullet_style: str = "dash",
+    date_format: str = "Mon YYYY",
+    page_size: str = "A4",
+    description: str = "",
+) -> dict[str, Any]:
+    """Build a template config dict shared across all presets.
+
+    Centralizes the config shape so adding a new preset only needs
+    overrides, not duplicated key sets. All new fields have safe
+    defaults via :data:`DEFAULT_STYLING`.
+    """
+    return {
+        "id": template_id,
+        "name": name,
+        "type": "cv",
+        "sections": sections,
+        "font_family": font_family,
+        "accent_color": accent_color,
+        "density": density,
+        "bullet_style": bullet_style,
+        "date_format": date_format,
+        "page_size": page_size,
+        "ats_friendly": True,
+        "description": description,
+    }
+
+
 def default_template_config() -> dict[str, Any]:
     """Return the default ``ats_classic`` template config."""
-    return {
-        "id": DEFAULT_TEMPLATE_ID,
-        "name": "ATS Classic",
-        "type": "cv",
-        "sections": list(ALL_SECTIONS),
-        "ats_friendly": True,
-        "description": (
-            "Single-column, semantic HTML with plain bullets. No tables for "
-            "layout, no images in body, system fonts only. Optimized for "
-            "ATS keyword extraction (Workday, Greenhouse, Lever, iCIMS)."
+    return _base_template_config(
+        DEFAULT_TEMPLATE_ID,
+        "ATS Classic",
+        list(ALL_SECTIONS),
+        font_family="serif",
+        accent_color="#1f2937",
+        density="normal",
+        bullet_style="dash",
+        date_format="Mon YYYY",
+        page_size="A4",
+        description=(
+            "Single-column, serif body text, balanced spacing. The safe "
+            "default — works on Workday, Greenhouse, Lever, iCIMS, Taleo. "
+            "Optimized for keyword extraction."
         ),
-    }
+    )
+
+
+def ats_modern_config() -> dict[str, Any]:
+    """``ats_modern`` preset — sans-serif, spacious, deep slate accent.
+
+    Slightly more breathing room for tech / SaaS / startup roles where
+    design polish is appreciated (LinkedIn Easy Apply, Ashby, etc).
+    """
+    return _base_template_config(
+        "ats_modern",
+        "ATS Modern",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#0f172a",
+        density="spacious",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        description=(
+            "Sans-serif, generous spacing, slate-900 accent. Skills moved "
+            "up for faster keyword scanning by technical recruiters. Best "
+            "for engineering / product / SaaS applications."
+        ),
+    )
+
+
+def ats_compact_config() -> dict[str, Any]:
+    """``ats_compact`` preset — dense, mono-ish, US-style MM/YYYY dates.
+
+    Aimed at senior ICs / consultants / academics who need to fit 20+ "
+    "years of experience on 1–2 pages. MM/YYYY dates are the US standard.
+    """
+    return _base_template_config(
+        "ats_compact",
+        "ATS Compact",
+        [SECTION_SUMMARY, SECTION_SKILLS, SECTION_EXPERIENCE,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#111827",
+        density="compact",
+        bullet_style="arrow",
+        date_format="MM/YYYY",
+        page_size="Letter",
+        description=(
+            "Dense layout, US Letter page, MM/YYYY dates, arrow bullets. "
+            "Designed for senior roles where 1-page CV is the goal. Skills "
+            "section up front for fast keyword match."
+        ),
+    )
+
+
+# Preset registry — single source of truth for seeding.
+BUILTIN_PRESETS: tuple[Any, ...] = (
+    default_template_config(),
+    ats_modern_config(),
+    ats_compact_config(),
+)
 
 
 # ── LLM enhancement helpers (Section content for enhancer) ──────────
@@ -897,39 +1103,73 @@ def build_cv_doc_from_json(cv_json: dict[str, Any]) -> CVDoc:
 
 # Module-level cache so ``seed_default_templates`` does at most one DB
 # round-trip per process. The function itself is idempotent (uses
-# ``db.get`` and only inserts when missing) but doing the check on every
-# POST /api/cvs is wasteful when nothing has changed.
+# per-row ``db.get`` and only inserts missing presets) but the cache
+# flag prevents even the cheap ``db.get`` calls on every POST /api/cvs.
+#
+# Phase 10A: ``reset_seed_cache()`` is now called from the app startup
+# hook in main.py so each cold start re-checks for newly-added presets
+# (e.g. when shipping a new BUILTIN_PRESETS in a future release).
 _SEEDED_FLAG = {"done": False}
 
 
-def seed_default_templates(db: Any) -> None:
-    """Insert the ats_classic template if missing.
+def validate_ats_color(color: str) -> str:
+    """Validate a hex color against the ATS-safe palette.
 
+    Returns the color unchanged if it's in :data:`ATS_SAFE_COLORS`,
+    else raises :class:`ValueError` with a helpful message. Use this
+    before persisting a custom template config to keep recruiters and
+    ATS parsers from seeing a CV in red Comic Sans.
+
+    >>> validate_ats_color("#1f2937")
+    '#1f2937'
+    >>> validate_ats_color("#ff0000")
+    Traceback (most recent call last):
+        ...
+    ValueError: accent_color '#ff0000' is not in the ATS-safe palette. Allowed: ...
+    """
+    if not isinstance(color, str):
+        raise ValueError(
+            f"accent_color must be a hex string, got {type(color).__name__}"
+        )
+    if color in ATS_SAFE_COLORS:
+        return color
+    allowed = ", ".join(sorted(ATS_SAFE_COLORS))
+    raise ValueError(
+        f"accent_color '{color}' is not in the ATS-safe palette. "
+        f"Allowed: {allowed}"
+    )
+
+
+def seed_default_templates(db: Any) -> None:
+    """Insert all built-in templates (ats_classic + presets) if missing.
+
+    Phase 10A: now seeds three presets — ``ats_classic`` (legacy default),
+    ``ats_modern`` (sans-serif spacious), and ``ats_compact`` (dense MM/YYYY).
     Idempotent at two levels:
     1. Module-level flag (``_SEEDED_FLAG``) skips the DB check entirely
        after the first successful call in this process.
-    2. ``db.get(Template, ...)`` still acts as a safety net for cold
-       starts where multiple workers may race.
+    2. Per-row ``db.get(Template, ...)`` still acts as a safety net for
+       cold starts where multiple workers may race.
     """
     if _SEEDED_FLAG["done"]:
         return
     from app.models.models import Template  # local import to avoid cycle
 
-    existing = db.get(Template, DEFAULT_TEMPLATE_ID)
-    cfg = default_template_config()
-    if existing is None:
-        db.add(
-            Template(
-                id=cfg["id"],
-                name=cfg["name"],
-                type=cfg["type"],
-                description=cfg["description"],
-                template_config_json=cfg,
-                is_ats_friendly=cfg["ats_friendly"],
-                is_default=True,
+    for cfg in BUILTIN_PRESETS:
+        existing = db.get(Template, cfg["id"])
+        if existing is None:
+            db.add(
+                Template(
+                    id=cfg["id"],
+                    name=cfg["name"],
+                    type=cfg["type"],
+                    description=cfg["description"],
+                    template_config_json=cfg,
+                    is_ats_friendly=cfg["ats_friendly"],
+                    is_default=(cfg["id"] == DEFAULT_TEMPLATE_ID),
+                )
             )
-        )
-        db.commit()
+    db.commit()
     _SEEDED_FLAG["done"] = True
 
 

@@ -10,6 +10,7 @@ from app.api.routes import (
     matches,
     profile,
     settings,
+    templates,  # Phase 10A
 )
 
 api_router = APIRouter(prefix="/api")
@@ -18,6 +19,7 @@ api_router.include_router(settings.router)
 api_router.include_router(profile.router)
 api_router.include_router(jobs.router)
 api_router.include_router(matches.router)
+api_router.include_router(templates.router)  # Phase 10A
 api_router.include_router(cvs.router)
 api_router.include_router(cover_letters.router)  # Phase 9A
 api_router.include_router(applications.router)  # Phase 9B

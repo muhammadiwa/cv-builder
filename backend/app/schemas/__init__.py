@@ -67,6 +67,11 @@ from app.schemas.schemas import (  # noqa: F401
     RecentCallOut,
     # Templates
     TemplateOut,
+    TemplateListItem,
+    TemplateCreateIn,
+    TemplatePatchIn,
+    TemplatePreviewIn,
+    TemplatePreviewOut,
     # AI Prompts
     AIPromptIn,
     AIPromptOut,

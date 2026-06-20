@@ -27,7 +27,7 @@ docxtpl==0.18.0
 weasyprint==63.1
 
 # Web scraping
-selectolax==0.13.1
+selectolax>=0.4.10
 beautifulsoup4==4.12.3
 trafilatura==1.6.3
 

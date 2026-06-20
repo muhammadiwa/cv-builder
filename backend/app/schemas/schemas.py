@@ -665,6 +665,32 @@ class RecentCallOut(BaseModel):
 
 # ── Templates ───────────────────────────────────────────────────────
 
+# Phase 10A: template styling options surfaced as Pydantic Literals
+# so the API rejects bad input before it reaches the renderer.
+# Mirrors the constants in app.services.cv_renderer.
+
+from typing import Literal  # noqa: E402  (kept here for local clarity)
+
+FontFamilyLiteral = Literal["serif", "sans", "mono"]
+DensityLiteral = Literal["compact", "normal", "spacious"]
+BulletStyleLiteral = Literal["dash", "bullet", "arrow"]
+DateFormatLiteral = Literal["Mon YYYY", "MM/YYYY", "YYYY"]
+PageSizeLiteral = Literal["A4", "Letter"]
+
+
+class TemplateListItem(BaseModel):
+    """Slim template summary for list endpoints (no full config)."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    name: str
+    type: str
+    description: str
+    is_ats_friendly: bool
+    is_default: bool
+    created_at: datetime
+
+
 class TemplateOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -675,6 +701,61 @@ class TemplateOut(BaseModel):
     is_ats_friendly: bool
     is_default: bool
     created_at: datetime
+
+
+class TemplateCreateIn(BaseModel):
+    """Create a new custom template. Built-in presets are read-only —
+    POST always creates a new ``user:*`` id. Idempotent on (id) — if
+    a row already exists with that id we return 409."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(..., min_length=3, max_length=40, pattern=r"^[a-z0-9_\-]+$")
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field("", max_length=2000)
+    type: Literal["cv", "cover_letter"] = "cv"
+    sections: list[str] = Field(default_factory=list)
+    font_family: FontFamilyLiteral = "sans"
+    accent_color: str = "#111111"
+    density: DensityLiteral = "normal"
+    bullet_style: BulletStyleLiteral = "dash"
+    date_format: DateFormatLiteral = "Mon YYYY"
+    page_size: PageSizeLiteral = "A4"
+    is_ats_friendly: bool = True
+
+
+class TemplatePatchIn(BaseModel):
+    """Partial template update. All fields optional. ``id`` is NOT
+    patchable — create a new template instead."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    sections: list[str] | None = None
+    font_family: FontFamilyLiteral | None = None
+    accent_color: str | None = None
+    density: DensityLiteral | None = None
+    bullet_style: BulletStyleLiteral | None = None
+    date_format: DateFormatLiteral | None = None
+    page_size: PageSizeLiteral | None = None
+    is_ats_friendly: bool | None = None
+
+
+class TemplatePreviewIn(BaseModel):
+    """Render a template config against a profile (dry run, no DB write).
+
+    Used by the FE ``Create Template`` form to show live preview as
+    the user edits fields.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str | None = None
+    cv_json: dict[str, Any] | None = None
+    template_config_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplatePreviewOut(BaseModel):
+    rendered_html: str
+    config_used: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── AI Prompts ──────────────────────────────────────────────────────
