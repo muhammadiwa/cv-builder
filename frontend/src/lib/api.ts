@@ -548,6 +548,75 @@ export const cvsApi = {
   },
 };
 
+// ── Phase 9B: Applications ───────────────────────────────────────────
+
+export type ApplicationStatus =
+  | 'draft'
+  | 'ready'
+  | 'applied'
+  | 'interview'
+  | 'rejected'
+  | 'offer';
+
+export interface Application {
+  id: string;
+  job_id: string;
+  cv_draft_id: string | null;
+  cover_letter_id: string | null;
+  status: ApplicationStatus;
+  applied_date: string | null;
+  follow_up_date: string | null;
+  contact_person: string | null;
+  contact_email: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const APPLICATION_STATUSES: ApplicationStatus[] = [
+  'draft',
+  'ready',
+  'applied',
+  'interview',
+  'offer',
+  'rejected',
+];
+
+export const applicationsApi = {
+  list: async (params?: { status?: ApplicationStatus; job_id?: string; limit?: number }): Promise<Application[]> => {
+    const resp = await api.get<Application[]>('/applications', { params });
+    return resp.data;
+  },
+  get: async (id: string): Promise<Application> => {
+    const resp = await api.get<Application>(`/applications/${id}`);
+    return resp.data;
+  },
+  create: async (payload: {
+    job_id: string;
+    cv_draft_id?: string | null;
+    cover_letter_id?: string | null;
+    status?: ApplicationStatus;
+    notes?: string | null;
+    contact_person?: string | null;
+    contact_email?: string | null;
+    follow_up_date?: string | null;
+  }): Promise<Application> => {
+    const resp = await api.post<Application>('/applications', payload);
+    return resp.data;
+  },
+  patch: async (id: string, payload: Partial<Application>): Promise<Application> => {
+    const resp = await api.patch<Application>(`/applications/${id}`, payload);
+    return resp.data;
+  },
+  transition: async (id: string, status: ApplicationStatus): Promise<Application> => {
+    const resp = await api.post<Application>(`/applications/${id}/status`, { status });
+    return resp.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/applications/${id}`);
+  },
+};
+
 // ── Phase 9A: Cover Letters ─────────────────────────────────────────
 
 export type CoverLetterTone =

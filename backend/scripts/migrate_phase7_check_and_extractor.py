@@ -154,6 +154,46 @@ def main() -> int:
     else:
         print("  skip: exports FK already points to cover_letters")
 
+    # Phase 9B: re-point applications.cover_letter_id FK from
+    # cover_letters_tmp → cover_letters. Same SQLite shadow-table
+    # workaround that bit Phase 8 (exports) and Phase 9A (still in
+    # applications because cover_letter_id was added later).
+    cur.execute("PRAGMA foreign_key_list(applications)")
+    app_fk_targets = {row[2] for row in cur.fetchall()}
+    if "cover_letters_tmp" in app_fk_targets:
+        try:
+            cur.execute("PRAGMA foreign_keys = OFF")
+            cur.execute(
+                "CREATE TABLE applications_new ("
+                "id VARCHAR(36) PRIMARY KEY,"
+                "job_id VARCHAR(36) NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,"
+                "cv_draft_id VARCHAR(36) REFERENCES cv_drafts(id) ON DELETE SET NULL,"
+                "cover_letter_id VARCHAR(36) REFERENCES cover_letters(id) ON DELETE SET NULL,"
+                "status VARCHAR(20) NOT NULL,"
+                "applied_date DATETIME,"
+                "follow_up_date DATETIME,"
+                "contact_person VARCHAR(200),"
+                "contact_email VARCHAR(200),"
+                "notes TEXT,"
+                "created_at DATETIME NOT NULL,"
+                "updated_at DATETIME NOT NULL"
+                ")"
+            )
+            cur.execute("INSERT INTO applications_new SELECT * FROM applications")
+            cur.execute("DROP TABLE applications")
+            cur.execute("ALTER TABLE applications_new RENAME TO applications")
+            cur.execute("PRAGMA foreign_keys = ON")
+            cur.execute("PRAGMA foreign_key_check")
+            con.commit()
+            print("  OK: applications FK re-pointed to cover_letters")
+        except Exception as exc:
+            con.rollback()
+            print(f"  FAIL: re-point applications FK failed -> {exc}", file=sys.stderr)
+            con.close()
+            return 5
+    else:
+        print("  skip: applications FK already points to cover_letters")
+
     # P10 fix: post-condition smoke test.
     smoke_ok = True
     try:
