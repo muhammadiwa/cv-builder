@@ -544,9 +544,14 @@ class ExportIn(BaseModel):
     entity_id: str
     cv_draft_id: str | None = None
     cover_letter_id: str | None = None
-    file_type: Literal["pdf", "docx"]
+    # B2 fix: 'failed' is a real value (renderer failure path). The
+    # /export endpoint persists a failed row so the history sidebar
+    # shows the failure instead of an invisible 500.
+    file_type: Literal["pdf", "docx", "failed"] = "pdf"
     file_path: str
     file_size: int
+    # B10 fix: content hash of the actual returned bytes.
+    sha256: str | None = None
 
 
 class ExportOut(ExportIn):

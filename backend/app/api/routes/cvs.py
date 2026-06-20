@@ -138,7 +138,7 @@ def _cv_json_for_scoring(draft: CVDraft) -> dict[str, Any]:
     return cv_json
 
 
-def _score_and_persist(draft: CVDraft) -> None:
+def _score_and_persist(draft: CVDraft, target_analysis: dict | None = None) -> None:
     """Recompute the CV score and persist it on the draft row.
 
     Phase 7 fix: every mutating endpoint (create / patch / enhance /
@@ -150,12 +150,25 @@ def _score_and_persist(draft: CVDraft) -> None:
 
     Side-effect free with respect to LLM calls — the scorer is
     deterministic.
+
+    B8 fix: ``target_analysis`` is now an explicit param. Callers
+    pass the already-loaded ``job.job_analysis_json`` so this helper
+    doesn't need to rely on ``draft.job`` being eager-loaded. Calling
+    it after the session closes (e.g. from a Celery task) used to
+    raise ``DetachedInstanceError``; the explicit param avoids the
+    implicit lazy load entirely.
     """
-    target_analysis: dict | None = None
-    if draft.job_id:
-        job = draft.job  # relationship proxy (already loaded in callers)
-        if job is not None and job.job_analysis_json:
-            target_analysis = job.job_analysis_json
+    if target_analysis is None and draft.job_id:
+        # B8 fix: still try the relationship if the caller didn't
+        # pass target_analysis explicitly — but guard the lazy load
+        # so a detached session doesn't crash.
+        try:
+            job = draft.job
+            if job is not None and job.job_analysis_json:
+                target_analysis = job.job_analysis_json
+        except Exception:
+            # DetachedInstanceError or similar — fall back to no target.
+            target_analysis = None
 
     result = score_cv(_cv_json_for_scoring(draft), target_analysis)
     draft.score = result.overall
@@ -422,12 +435,16 @@ def create_cv(
 
 
 # ── Recommendation Engine (Phase 7) ────────────────────────────────
-# MUST be declared before @router.get("/{cv_id}") below — FastAPI
-# matches routes in declaration order, and the {cv_id} path is a
-# catch-all that would shadow the literal /recommendations route.
+# B5 fix: route ordering rule. FastAPI matches in declaration order.
+# The 1-segment catch-all @router.get("/{cv_id}") further down would
+# shadow any 1-segment literal route (e.g. /recommendations would
+# match with cv_id="recommendations"). 2-segment routes like
+# /{cv_id}/export don't conflict — they're a different shape and
+# FastAPI distinguishes by segment count. So this comment is the
+# 1-segment version of the rule.
 @router.get("/recommendations", response_model=list[CVRecommendationItem])
 def cv_recommendations(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=100, description="Max items to return (1-100)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[CVRecommendationItem]:
@@ -523,15 +540,28 @@ def cv_recommendations(
 
 
 # ── Export (Phase 8) ────────────────────────────────────────────────
-# Routes here MUST also be declared before @router.get("/{cv_id}")
-# below — same FastAPI ordering rule that bit us with /recommendations.
+# B5 fix: these are 2-segment routes (/{cv_id}/export,
+# /{cv_id}/exports) so they don't conflict with the 1-segment
+# /{cv_id} catch-all below. They can live here (or anywhere) without
+# being shadowed. Stylistic placement: kept next to /recommendations
+# for grouping.
 from app.services.cv_exporter import export_cv_to_pdf, pdf_metadata  # noqa: E402
 
 
 @router.post("/{cv_id}/export", response_class=Response)
 def export_cv(
     cv_id: str,
-    format: str = Query("pdf", pattern="^(pdf)$"),
+    # B7 fix: renamed from ``format`` to ``fmt`` to stop shadowing
+    # the Python builtin. The URL query string is still
+    # ``?format=pdf|docx`` for backward compat with the FE client
+    # (avoids a coordinated FE rename), but FastAPI binds it via
+    # ``alias``.
+    fmt: str = Query(
+        "pdf",
+        alias="format",
+        pattern="^(pdf|docx)$",
+        description="Output format. Only 'pdf' is implemented; 'docx' is reserved for Phase 8.5.",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -543,13 +573,28 @@ def export_cv(
     selectable text, no body images, sane page breaks), and streams
     the bytes as ``application/pdf``.
 
-    The Export row is persisted with ``file_path`` set to a synthetic
-    identifier (the live PDF is regenerated on every request, so we
-    don't write to disk by default — saves space + guarantees
-    freshness).
+    B2 fix: WeasyPrint failures are caught and surfaced as 500 with
+    a clear message + structlog ERROR. Failure path also persists an
+    Export row with ``file_type="failed"`` so the export-history
+    sidebar shows the failure (not an invisible 500).
+
+    B7 fix: the ``fmt`` param (renamed from ``format`` to stop
+    shadowing the Python builtin) is now used in the function body
+    to dispatch to the right renderer. PDF is the only one
+    implemented today; ``docx`` returns 501 Not Implemented as a
+    placeholder until Phase 8.5 ships.
     """
+    import hashlib
     from app.models.models import Export
     from app.core.config import get_settings
+
+    # B7 fix: dispatch on fmt. Only pdf is wired up; docx is
+    # reserved for Phase 8.5.
+    if fmt != "pdf":
+        raise HTTPException(
+            501,
+            f"export format '{fmt}' not implemented yet (Phase 8.5)",
+        )
 
     settings = get_settings()
 
@@ -560,13 +605,48 @@ def export_cv(
     if profile is None or profile.user_id != user.id:
         raise HTTPException(403, "not your cv")
 
+    auto_rendered = False
     if not draft.rendered_html:
         # Edge case: a draft was created but never had HTML rendered.
         # Re-render on the fly so the export still works.
         draft.rendered_html = _render_draft_to_html(draft)
         db.commit()
+        # B12 fix: mark auto-render so we write a CVVersion snapshot
+        # below — every other mutating endpoint does, this should too.
+        auto_rendered = True
 
-    pdf_bytes = export_cv_to_pdf(draft.rendered_html)
+    # B2 fix: wrap WeasyPrint in try/except so failures surface as
+    # 500 with a clear message instead of an opaque traceback.
+    try:
+        pdf_bytes = export_cv_to_pdf(draft.rendered_html)
+    except Exception as exc:
+        log.error(
+            "cv_export_render_failed",
+            cv_id=cv_id,
+            html_length=len(draft.rendered_html or ""),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        # Persist a failure row so the history sidebar shows it.
+        try:
+            export_row = Export(
+                user_id=user.id,
+                entity_type="cv",
+                entity_id=cv_id,
+                cv_draft_id=cv_id,
+                file_type="failed",
+                file_path=f"on-demand://failed/{cv_id}",
+                file_size=0,
+            )
+            db.add(export_row)
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise HTTPException(
+            500,
+            "PDF generation failed — please retry or contact support",
+        )
+
     meta = pdf_metadata(pdf_bytes)
 
     if not meta["is_valid"]:
@@ -578,9 +658,31 @@ def export_cv(
         )
         raise HTTPException(500, "generated PDF failed validation")
 
+    # B10 fix: hash the actual bytes we're returning so the audit
+    # trail is verifiable.
+    content_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    # B12 fix: write a CVVersion snapshot if we auto-rendered the
+    # HTML, matching what every other mutating endpoint does.
+    if auto_rendered:
+        try:
+            _save_version(draft, db, "auto-render on first export")
+        except Exception:
+            log.warning(
+                "cv_export_save_version_failed",
+                cv_id=cv_id,
+            )
+            db.rollback()
+
     # Persist an export row so the audit trail + history sidebar work.
+    # B1 fix: file_path is a sentinel (NOT a real on-disk path) —
+    # the PDF is regenerated on demand. Format: "on-demand://<id>"
+    # for ephemeral regenerations. file_size + sha256 are real.
     safe_title = "".join(
-        c if c.isalnum() or c in "-_ " else "_" for c in (draft.title or "cv")
+        # P4 fix: ASCII-only letters/digits/hyphens so filenames
+        # survive zip tools + filesystem encoding edge cases.
+        c if (c.isascii() and (c.isalnum() or c in "-_ ")) else "_"
+        for c in (draft.title or "cv")
     ).strip().replace(" ", "_")[:60] or "cv"
     file_name = f"{safe_title}_v{draft.id[:8]}.pdf"
     export_row = Export(
@@ -589,10 +691,14 @@ def export_cv(
         entity_id=cv_id,
         cv_draft_id=cv_id,
         file_type="pdf",
-        file_path=str(settings.cv_export_dir / file_name),
+        file_path=f"on-demand://{cv_id}/{file_name}",  # B1: sentinel, real id set after flush
         file_size=meta["size"],
+        sha256=content_hash,
     )
     db.add(export_row)
+    db.flush()  # need export_row.id before we reference it
+    # Now fix the file_path to include the real export id.
+    export_row.file_path = f"on-demand://{export_row.id}/{file_name}"
     db.commit()
 
     log.info(
@@ -601,6 +707,7 @@ def export_cv(
         export_id=export_row.id,
         pdf_size=meta["size"],
         pages=meta["page_count"],
+        sha256=content_hash[:12],
     )
 
     return Response(
@@ -623,10 +730,11 @@ def list_cv_exports(
 ) -> list[ExportOut]:
     """Return the user's export history for this CV, newest first.
 
-    Each row is one PDF generation event. The actual file isn't
-    stored on disk (PDFs are regenerated on demand to keep exports
-    fresh with the current CV state) — the row exists for audit
-    and to power the "Export history" sidebar in the FE.
+    Each row is one PDF generation event (or a ``file_type='failed'``
+    row from B2). The actual file isn't stored on disk — PDFs are
+    regenerated on demand to keep exports fresh with the current CV
+    state. The row exists for audit and to power the "Export
+    history" sidebar in the FE.
     """
     from app.models.models import Export
 
@@ -732,23 +840,28 @@ def patch_cv(
         draft.cv_json = cj
         # Re-render
         draft.rendered_html = _render_draft_to_html(draft)
-        _score_and_persist(draft)  # Phase 7: re-score on cv_json change
-        _save_version(db, draft, "manual patch (cv_json)")
 
-    # Track metadata-only edits as versions too so the history is complete.
-    if not (set(payload.keys()) - {"cv_json"}):
-        # Pure cv_json patch — already saved above.
-        pass
-    elif any(k in payload for k in ("title", "template_id", "status", "job_id")):
-        _save_version(
-            db,
-            draft,
-            f"metadata update: {', '.join(sorted(set(payload.keys()) - {'cv_json'}))}",
-        )
-        # Phase 7: re-score when job_id changes — the target-job
-        # axes (ats_coverage / skill_gap) shift accordingly.
-        if "job_id" in payload:
-            _score_and_persist(draft)
+    # B11 fix: score + save_version ONCE at the end, regardless of
+    # which fields were patched. Previous version called
+    # ``_score_and_persist`` twice when both ``cv_json`` and
+    # ``job_id`` were in the payload (once in the cv_json branch,
+    # once in the metadata branch), and wrote two CVVersion rows.
+    needs_score = bool(
+        set(payload.keys()) & {"cv_json", "job_id"}
+    )
+    if needs_score:
+        # B8 fix: pass the already-loaded job_analysis_json
+        # explicitly so the scorer doesn't have to do a lazy load.
+        target_analysis = None
+        if draft.job_id:
+            job = db.get(Job, draft.job_id)
+            if job is not None and job.job_analysis_json:
+                target_analysis = job.job_analysis_json
+        _score_and_persist(draft, target_analysis=target_analysis)
+
+    if payload:
+        changed_fields = sorted(payload.keys())
+        _save_version(db, draft, f"patch: {', '.join(changed_fields)}")
 
     draft.updated_at = _utcnow()
     db.commit()

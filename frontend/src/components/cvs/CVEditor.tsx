@@ -515,12 +515,29 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
                 {exports.map((ex) => (
                   <div
                     key={ex.id}
-                    className="flex items-center justify-between gap-2 border border-slate-200 rounded p-2 bg-white"
+                    className={clsx(
+                      "flex items-center justify-between gap-2 border rounded p-2",
+                      // Phase 8.5 B2: failed rows get red styling so
+                      // the user sees the failure instead of a
+                      // silent empty download.
+                      ex.file_type === 'failed'
+                        ? "border-red-200 bg-red-50"
+                        : "border-slate-200 bg-white"
+                    )}
                     data-testid={`export-${ex.id}`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-medium text-slate-700 inline-flex items-center gap-1.5">
-                        <span className="uppercase text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                        <span
+                          className={clsx(
+                            "uppercase text-[10px] font-bold tracking-wide px-1.5 py-0.5 rounded",
+                            ex.file_type === 'failed'
+                              ? "bg-red-100 text-red-700"
+                              : ex.file_type === 'pdf'
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-blue-100 text-blue-700"
+                          )}
+                        >
                           {ex.file_type}
                         </span>
                         <span className="text-slate-400 font-normal">
@@ -528,7 +545,11 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
                         </span>
                       </div>
                       <div className="text-xs text-slate-500">
-                        {(ex.file_size / 1024).toFixed(1)} KB
+                        {ex.file_type === 'failed'
+                          ? 'PDF generation failed'
+                          : `${(ex.file_size / 1024).toFixed(1)} KB${
+                              ex.sha256 ? ` · ${ex.sha256.slice(0, 8)}` : ''
+                            }`}
                       </div>
                     </div>
                     <button

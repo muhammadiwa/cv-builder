@@ -17,6 +17,7 @@ writes happen here — the route layer persists the Export row.
 """
 from __future__ import annotations
 
+import re
 from io import BytesIO
 from typing import Any
 
@@ -140,12 +141,33 @@ def export_cv_to_pdf(
             "</head>", f"<style>{print_css}</style></head>", 1
         )
     else:
-        # Fallback: prepend a synthesized head with just the print CSS.
-        # Shouldn't happen for renderer-produced HTML, but defensive.
+        # B3 fix: strip any leading/trailing <html>/<head>/<body>
+        # wrappers from the input before re-wrapping. The previous
+        # version nested <body> if the input already had one.
+        from lxml import html as lxml_html  # local import — heavy dep
+
+        try:
+            # Parse the input as a fragment and create a body parent so
+            # we can serialize just the children, stripping any
+            # <html>/<head>/<body> wrappers the caller may have left in.
+            parsed = lxml_html.fragment_fromstring(rendered_html, create_parent=True)
+            serialized = lxml_html.tostring(parsed, encoding="unicode")
+            if not isinstance(serialized, str):
+                serialized = serialized.decode("utf-8", errors="replace")
+            # lxml emits the body tag itself; we re-wrap below, so strip it.
+            clean_body_html = re.sub(
+                r"^\s*<body[^>]*>|</body>\s*$",
+                "",
+                serialized,
+                flags=re.IGNORECASE,
+            )
+        except Exception:
+            # If lxml can't parse it, just use the input as-is.
+            clean_body_html = rendered_html
         html_with_print = (
             f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
             f"<style>{print_css}</style></head>"
-            f"<body>{rendered_html}</body></html>"
+            f"<body>{clean_body_html}</body></html>"
         )
 
     log.info(
@@ -185,13 +207,32 @@ def pdf_metadata(pdf_bytes: bytes) -> dict[str, Any]:
     head = pdf_bytes[:8].decode("latin-1", errors="replace")
     magic = head.split("\n", 1)[0]
     page_count = 0
+    # B9 fix: narrow the exception types we swallow so real pypdf
+    # bugs (memory errors, corrupted streams) used to be
+    # indistinguishable from "PDF has zero pages". Now we log WARNING
+    # so the operator sees them in production. PdfStreamError covers
+    # truncated/corrupt PDFs that pass the magic-prefix check.
+    extra_exc: tuple = ()
+    try:
+        from pypdf.errors import PdfStreamError as _PdfStreamError
+        extra_exc = (_PdfStreamError,)
+    except ImportError:
+        pass
     try:
         from pypdf import PdfReader
-        from io import BytesIO
-        reader = PdfReader(BytesIO(pdf_bytes))
-        page_count = len(reader.pages)
-    except Exception:  # pragma: no cover — pypdf import or parse failure
+        # B13 fix: wrap BytesIO in a context manager so it's closed
+        # deterministically even if PdfReader raises mid-read.
+        with BytesIO(pdf_bytes) as buf:
+            reader = PdfReader(buf)
+            page_count = len(reader.pages)
+    except (ImportError, ValueError, RuntimeError, AttributeError, *extra_exc) as exc:
         page_count = 0
+        log.warning(
+            "pdf_metadata_parse_failed",
+            pdf_size=len(pdf_bytes),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
     return {
         "size": len(pdf_bytes),
         "magic": magic,

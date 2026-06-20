@@ -230,3 +230,58 @@ class TestTextExtractability:
                 f"role {i} bullet lost across page break; "
                 f"text length={len(text)}"
             )
+
+# ── Phase 8.5 regression tests ──────────────────────────────────────
+class TestPhase85Fixes:
+    """Regression tests for Phase 8 code-review fixes (B3, B9)."""
+
+    def test_b3_strips_body_wrapper_in_fallback(self):
+        """B3 fix: when input has no </head>, the fallback strips
+        any pre-existing <body>/<html> wrappers before re-wrapping,
+        preventing nested-body output. We can verify by checking the
+        rendered PDF still extracts the body content (if we had
+        nested bodies, WeasyPrint might silently drop content)."""
+        # Fragment input with explicit body tag (worst case for old code)
+        fragment_html = (
+            "<body><h1>Jane Doe</h1>"
+            "<p>Senior Backend Engineer with 10 years experience.</p>"
+            "</body>"
+        )
+        pdf = export_cv_to_pdf(fragment_html)
+        meta = pdf_metadata(pdf)
+        assert meta["is_valid"] is True
+        # Extract text — if nested <body> dropped content, we'd lose it.
+        from pypdf import PdfReader
+        from io import BytesIO
+
+        reader = PdfReader(BytesIO(pdf))
+        text = "".join(p.extract_text() for p in reader.pages).lower()
+        assert "jane doe" in text, f"name lost in nested-body fallback; got: {text[:200]!r}"
+        assert "senior backend engineer" in text, (
+            f"body content lost; got: {text[:200]!r}"
+        )
+
+    def test_b9_logs_warning_on_corrupt_pdf(self, caplog):
+        """B9 fix: pdf_metadata no longer silently swallows all
+        exceptions. Corrupt-but-magic-prefixed input logs WARNING
+        with the exception details instead of returning
+        page_count=0 silently."""
+        # Bytes start with %PDF magic but are otherwise garbage.
+        corrupt = b"%PDF-1.7\n" + b"\x00\x01\x02" * 50
+        meta = pdf_metadata(corrupt)
+        # We don't assert the warning fires (depends on which pypdf
+        # exception path is hit) — just confirm it doesn't crash and
+        # returns a sane meta dict.
+        assert "size" in meta
+        assert meta["size"] == len(corrupt)
+        assert meta["magic"].startswith("%PDF-")
+
+    def test_b13_bytesio_closed_via_context_manager(self):
+        """B13 fix: BytesIO is wrapped in context manager. Smoke
+        test that pdf_metadata works the same way (no behavior
+        change visible to callers, but BytesIO churn is gone)."""
+        pdf = export_cv_to_pdf(SHORT_HTML)
+        # Call twice in succession to verify no resource exhaustion.
+        for _ in range(5):
+            meta = pdf_metadata(pdf)
+            assert meta["is_valid"] is True

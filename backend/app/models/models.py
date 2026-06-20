@@ -228,8 +228,13 @@ class CVDraft(Base):
     # B11 fix: defense-in-depth — the scorer already clamps to [0, 1]
     # in code (see ``score_cv``), but a CHECK constraint stops any
     # future caller from writing a NaN, inf, or out-of-band value
-    # directly. SQLite supports CHECK via the dialect, Postgres enforces
-    # it server-side.
+    # directly.
+    # B14 fix: dialect split. Postgres enforces this server-side via
+    # the real CHECK constraint. SQLite ignores ``__table_args__``
+    # CheckConstraint on existing tables (create_all is no-op if the
+    # table exists), so the Phase 7.5 migration script creates
+    # BEFORE INSERT/UPDATE triggers as a workaround. New tables get
+    # both: the constraint + the trigger.
     __table_args__ = (
         CheckConstraint("score >= 0 AND score <= 1", name="cv_drafts_score_range"),
     )
@@ -317,8 +322,18 @@ class Export(Base):
     cover_letter_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     file_type: Mapped[str] = mapped_column(String(10))  # pdf | docx
+    # B1 fix: this column used to claim a real on-disk path but the
+    # PDF is regenerated on demand (not written to disk). Now stores
+    # either ``"on-demand://<export_id>"`` for ephemeral regenerations
+    # or the suggested download file_name for the audit trail. The
+    # file is NEVER at this path — it's regenerated each request
+    # from the current CV state to keep exports fresh.
     file_path: Mapped[str] = mapped_column(String(1000))
     file_size: Mapped[int] = mapped_column(Integer)
+    # B10 fix: content hash of the bytes actually returned. Lets the
+    # audit trail verify an old export is still byte-identical to the
+    # current CV's render output.
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -326,6 +341,12 @@ class Export(Base):
     # ``cover_letter`` relationship intentionally not declared — see
     # comment on CoverLetter.exports for why (no FK on the column
     # because cover_letters table doesn't ship until a future Phase).
+    # P5 fix: the live dev DB has a ``cover_letters_tmp`` shadow
+    # table created by the Phase 7.5 migration as a SQLite FK
+    # workaround. To drop it: (1) add a real FK on
+    # ``exports.cover_letter_id`` via migration, (2) drop the
+    # ``exports`` table's FK to ``cover_letters_tmp``, (3)
+    # ``DROP TABLE cover_letters_tmp``.
 
 
 # ── Templates ────────────────────────────────────────────────────────

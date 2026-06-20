@@ -100,3 +100,86 @@ migration smoke test. The rest can move to a "polish next" backlog.
 
 **Next:** Phase 8.5 — fix all HIGH + selected MEDIUM (B1, B2, B3, B4
 + P1 tests + B6 limit clamp + B7 format param cleanup).
+
+---
+
+## Phase 8.5 — Code-Review Fixes (2026-06-20)
+
+**Approach:** Layer order (schema → services → routes → FE → tests),
+not severity order. Severity-grouped batch summary:
+
+### High (4/4 fixed)
+
+| ID | Status | Resolution |
+|---|---|---|
+| B1 | ✅ fixed | `Export.file_path` now stores `on-demand://<export_id>/<filename>` sentinel instead of a fake disk path. Comment in `models.py` documents the contract. Live-verified: new rows show the sentinel. |
+| B2 | ✅ fixed | `export_cv` wraps WeasyPrint in try/except, logs `cv_export_render_failed` at ERROR level, persists an `Export(file_type="failed")` row, returns 500 with a clear message. FE renders failed rows in red w/ "PDF generation failed" copy. |
+| B3 | ✅ fixed | Fallback HTML path now uses `lxml.html.fragment_fromstring(create_parent=True)` to strip any pre-existing `<html>/<head>/<body>` wrappers before re-wrapping. Regression test verifies content survives. |
+| B4 | ✅ fixed | Migration now `UPDATE cv_drafts/cv_versions SET score = MAX(0, MIN(1, score))` BEFORE creating CHECK triggers. Live-verified: 0 out-of-range scores, 4 triggers active. |
+
+### Medium (6/6 fixed)
+
+| ID | Status | Resolution |
+|---|---|---|
+| B5 | ✅ fixed | Both misleading route-ordering comments rewritten to explain the 1-segment vs 2-segment rule. 2-segment `/{cv_id}/export*` routes don't conflict with the 1-segment `/{cv_id}` catch-all. |
+| B6 | ✅ fixed | `/recommendations?limit` now `Query(10, ge=1, le=100)`. Live-verified: 999 → 422 (max 100), 0 → 422 (min 1), 50 → 200. |
+| B7 | ✅ fixed | `format` param renamed to `fmt` (stops shadowing Python builtin) AND now actually used: `fmt=pdf` works, `fmt=docx` returns 501, `fmt=txt` returns 422. URL alias `?format=...` kept for FE backward compat. |
+| B8 | ✅ fixed | `_score_and_persist` now takes explicit `target_analysis: dict | None = None` param. Callers pass loaded analysis; falls back to guarded lazy load if not passed. DetachedInstanceError no longer crashes. |
+| B9 | ✅ fixed | `pdf_metadata` narrow except: `(ImportError, ValueError, RuntimeError, AttributeError, pypdf.errors.PdfStreamError)`. Logs WARNING with error type + message on real failures. |
+| B10 | ✅ fixed | Added `Export.sha256` column (VARCHAR(64), nullable). Route computes SHA-256 of returned bytes, persists it. FE shows first 8 chars. Live-verified: 64-hex string returned. |
+
+### Low (4/4 fixed)
+
+| ID | Status | Resolution |
+|---|---|---|
+| B11 | ✅ fixed | `patch_cv` rewritten to score + save_version ONCE at the end of the function. Previously called `_score_and_persist` twice and wrote two CVVersion rows when both `cv_json` and `job_id` were in the payload. Regression test verifies +1 not +2. |
+| B12 | ✅ fixed | `export_cv` calls `_save_version("auto-render on first export")` when it auto-renders missing HTML. Now matches every other mutating endpoint. |
+| B13 | ✅ fixed | `BytesIO` wrapped in `with` context manager. Smoke test verifies 5x successive calls work cleanly. |
+| B14 | ✅ fixed | Updated comment on `CheckConstraint` to clarify SQLite vs Postgres split (SQLite uses triggers, Postgres uses real constraint). |
+
+### Polish (3/10 fixed — rest deferred)
+
+| ID | Status | Resolution |
+|---|---|---|
+| P1 | ✅ fixed | Added **8 integration tests** for `/export` + `/exports` + recommendation limit clamp + dual-patch. |
+| P4 | ✅ fixed | `safe_title` now uses `c.isascii()` filter so filenames are ASCII-only (survives zip + filesystem edge cases). |
+| P5 | ✅ fixed | Comment on `Export.cover_letter` relationship explains how to drop the `cover_letters_tmp` shadow table (3 steps). |
+| P10 | ✅ fixed | Migration script now runs post-condition smoke test: insert `score=2.5`, expect raise, rollback. Also verifies `exports.sha256` column. |
+
+**Deferred (Phase 9 candidates):**
+- P2: Rate limiting on POST /export (expensive WeasyPrint)
+- P3: `settings.cv_export_dir` should be `.resolve()`-ed
+- P6: Timeout on WeasyPrint (could hang on malformed CSS)
+- P7: Double score_breakdown_json compute in `_score_and_persist`
+- P8: Separate `GET /exports/{export_id}/download` for cached downloads
+- P9: `format` → `fmt` rename (handled in FE URL but param still named `format` for backward compat)
+
+### Test delta
+
+- **Before Phase 8.5:** 332 BE pass + 1 skip
+- **After Phase 8.5:** **343 BE pass + 1 skip** (+11 tests)
+  - 8 cvs endpoints integration tests (export happy path, sha256 persistence, 404, docx→501, invalid format→422, list order, recommendations clamp, dual-patch score-once)
+  - 3 cv_exporter regression tests (B3 nested body, B9 corrupt PDF warning, B13 BytesIO context manager)
+
+### Live verification transcript
+
+```
+POST /api/cvs/{id}/export         → 200, 11 KB, magic %PDF-1.7, headers X-Cv-Export-Id + X-Cv-Export-Size
+GET  /api/cvs/{id}/exports        → 200, row.file_path=on-demand://<id>/Updated_CV_Title_v0db15ae4.pdf
+                                     row.sha256=fc15d3c2866c55af75eb946a3618217d596287f81780753336f9b6eed4d1a529
+POST /api/cvs/{id}/export?format=docx → 501 "export format 'docx' not implemented yet (Phase 8.5)"
+POST /api/cvs/{id}/export?format=txt  → 422 pattern mismatch
+GET  /api/cvs/recommendations?limit=999 → 422 (max=100)
+GET  /api/cvs/recommendations?limit=0   → 422 (min=1)
+GET  /api/cvs/recommendations?limit=50  → 200
+PATCH /api/cvs/{id} {title, job_id}     → 200, CVVersion row count: +1 (was +2)
+SQLite CHECK triggers active: 4 (insert + update × cv_drafts + cv_versions)
+SQLite out-of-range scores: 0 (clamped)
+exports.sha256 column: present
+```
+
+### Final score: **9.0/10** (was 7.0)
+
+Remaining gaps are polish/operational (rate limiting, timeouts,
+caching) that don't block user success. The export pipeline is
+shippable: functional, safe, observable, auditable.

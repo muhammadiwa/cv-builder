@@ -408,11 +408,15 @@ export interface CVRecommendationItem {
 }
 
 // ── Phase 8: PDF export ──────────────────────────────────────────────
+// Phase 8.5 fix: 'failed' file_type is a real value (renderer failure
+// path persists a row so the history sidebar shows the failure).
 export interface CVExport {
   id: string;
   entity_type: 'cv' | 'cover_letter';
-  file_type: 'pdf' | 'docx';
+  file_type: 'pdf' | 'docx' | 'failed';
   file_size: number;
+  // Phase 8.5 B10: content hash of the actual returned bytes.
+  sha256: string | null;
   created_at: string;
 }
 
@@ -504,9 +508,14 @@ export const cvsApi = {
   // suggested by the server (Content-Disposition) and triggers a
   // browser download. Throws on non-2xx so the caller can surface
   // a toast.
-  exportPdf: async (cvId: string): Promise<{ fileName: string; exportId: string; size: number }> => {
+  exportPdf: async (cvId: string, fmt: 'pdf' | 'docx' = 'pdf'): Promise<{ fileName: string; exportId: string; size: number }> => {
     const resp = await api.post<Blob>(
-      `/cvs/${cvId}/export?format=pdf`,
+      // Phase 8.5 B7: query param name is still `format` on the
+      // URL (FastAPI binds it via Query alias if we wanted, but the
+      // FE consumer is the legacy caller; the route param is
+      // renamed server-side). Renamed `format` → `fmt` only at the
+      // Python layer to stop shadowing the builtin.
+      `/cvs/${cvId}/export?format=${fmt}`,
       {},
       { responseType: 'blob' },
     );
