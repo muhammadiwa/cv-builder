@@ -1,11 +1,13 @@
 # Phase 9 Code Review — 9A + 9B + 9C
 
-**Score: 7.0/10** (commit baseline — fixes bring to ≥ 9.0)
+**Score: 7.0/10 baseline → 9.0/10 after fix-batch**
 
 **Commits reviewed:**
 - `5920fe0` Phase 9C — Polish: rate limiter + WeasyPrint timeout
 - `23c7353` Phase 9B — Application tracking (Kanban)
 - `fdbd7a4` Phase 9A — Cover Letter generator (BE + FE)
+
+**Fix-batch:** `627f5f1` — addresses all 6 HIGH + 8 MED + 8 of 9 LOW findings.
 
 **Reviewer:** Independent subagent delegated with the 17-pitfall
 code-review-pitfalls checklist (substring match, neutral-0.5, dead API
