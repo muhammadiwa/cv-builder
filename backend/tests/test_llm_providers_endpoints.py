@@ -10,6 +10,8 @@ Covers:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -327,3 +329,123 @@ def test_test_provider_records_model_override(client):
     # Either ok=False (timeout) or ok=True (reachable) — both are valid
     # outcomes in this fake setup. The point: model is recorded.
     assert body["model"] == "override-model"
+
+
+# ── Legacy endpoint consistency (Phase 10B review fix) ────────────
+# The legacy /api/settings/llm* endpoints (kept for backward compat)
+# must now read/write the same DB as the new /api/llm-providers/*
+# endpoints. Without this test, drift between the two would silently
+# reintroduce a dual-source-of-truth bug.
+
+def test_legacy_get_llm_settings_reads_from_db(client):
+    """GET /api/settings/llm returns the same rows as GET /api/llm-providers."""
+    client.post(
+        "/api/llm-providers",
+        json={
+            "id": "legacy-consistency-test",
+            "display_name": "Legacy",
+            "kind": "openai_compat",
+            "base_url": "https://api.example.com/v1",
+            "api_key": "sk-fake",
+        },
+    )
+    new = client.get("/api/llm-providers").json()
+    legacy = client.get("/api/settings/llm").json()
+    new_ids = {p["id"] for p in new}
+    legacy_ids = {p["id"] for p in legacy["providers"]}
+    assert new_ids == legacy_ids, (
+        f"drift detected — new endpoint knows {new_ids - legacy_ids}, "
+        f"legacy knows {legacy_ids - new_ids}"
+    )
+
+
+def test_legacy_patch_llm_settings_writes_to_db(client):
+    """PATCH /api/settings/llm flips enabled in the same DB."""
+    client.post(
+        "/api/llm-providers",
+        json={
+            "id": "legacy-patch-test",
+            "display_name": "Legacy Patch",
+            "kind": "openai_compat",
+            "api_key": "sk-fake",
+            "enabled": True,
+        },
+    )
+    r = client.patch(
+        "/api/settings/llm",
+        json={"provider_id": "legacy-patch-test", "enabled": False},
+    )
+    assert r.status_code == 200, r.text
+    # Verify the DB row reflects the change.
+    after = client.get("/api/llm-providers/legacy-patch-test").json()
+    assert after["enabled"] is False
+
+
+def test_legacy_patch_refuses_enable_without_key(client):
+    """Same guard as the new endpoint — can't enable provider with no key."""
+    client.post(
+        "/api/llm-providers",
+        json={
+            "id": "legacy-no-key-test",
+            "display_name": "No Key",
+            "kind": "openai_compat",
+        },
+    )
+    r = client.patch(
+        "/api/settings/llm",
+        json={"provider_id": "legacy-no-key-test", "enabled": True},
+    )
+    assert r.status_code == 400
+
+
+def test_health_ready_uses_db_for_llm_check(client):
+    """/api/health/ready now reports llm_config from the DB, not the JSON file."""
+    r = client.get("/api/health/ready")
+    assert r.status_code == 200
+    checks = r.json()["checks"]
+    # llm_config must be present and DB-shaped (count + enabled count)
+    assert "llm_config" in checks
+    assert "enabled" in checks["llm_config"] or "no providers" in checks["llm_config"]
+
+
+# ── Dev placeholder string sync (Phase 10B review fix) ─────────────
+
+def test_dev_placeholder_string_in_sync():
+    """The placeholder string used in crypto.py must match the one in
+    config.py (Pydantic default) AND .env.example — otherwise users
+    following the example file won't trigger the plaintext-storage
+    warning.
+
+    This is a SOURCE-LEVEL check: we read the .py files directly so we
+    can detect drift even when the runtime config is overridden by env
+    vars (which is what happens during testing).
+    """
+    backend_dir = Path(__file__).resolve().parents[1]
+    crypto_src = (backend_dir / "app" / "core" / "crypto.py").read_text()
+    config_src = (backend_dir / "app" / "core" / "config.py").read_text()
+    env_example = (backend_dir / ".env.example").read_text()
+
+    # Extract _DEV_PLACEHOLDER from crypto.py
+    import re
+    m = re.search(r'_DEV_PLACEHOLDER\s*=\s*"([^"]+)"', crypto_src)
+    assert m, "crypto._DEV_PLACEHOLDER not found"
+    placeholder = m.group(1)
+
+    # config.py must use the same placeholder in its Pydantic default.
+    assert placeholder in config_src, (
+        f"placeholder {placeholder!r} not referenced in config.py — "
+        "the Pydantic default for master_key uses a different value"
+    )
+
+    # .env.example must use the same placeholder in its CV_MASTER_KEY line.
+    for line in env_example.splitlines():
+        if line.startswith("CV_MASTER_KEY="):
+            val = line.split("=", 1)[1].strip()
+            assert val == placeholder, (
+                f".env.example CV_MASTER_KEY={val!r} doesn't match "
+                f"crypto._DEV_PLACEHOLDER={placeholder!r} — "
+                "users following the example wouldn't trigger the plaintext warning"
+            )
+            break
+    else:
+        pytest.fail("CV_MASTER_KEY not found in .env.example")

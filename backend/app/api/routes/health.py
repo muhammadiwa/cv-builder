@@ -42,11 +42,31 @@ def ready() -> dict:
         log.error("storage_unwritable", error=str(e))
         checks["storage_writable"] = f"failed: {e}"
 
-    # LLM provider configured?
-    if settings.llm_providers_config.exists():
-        checks["llm_config"] = "ok"
-    else:
-        checks["llm_config"] = f"missing: {settings.llm_providers_config}"
+    # LLM providers configured (Phase 10B — DB-backed)?
+    # We now check the llm_providers DB table directly. The legacy JSON
+    # file is still consulted as a fallback for setups that haven't been
+    # migrated yet (the seeder copies from JSON → DB on first run).
+    try:
+        from sqlalchemy import text
 
-    overall = "ready" if all(v == "ok" for v in checks.values()) else "degraded"
+        from app.db.session import engine
+
+        with engine.connect() as conn:
+            n = conn.execute(text("SELECT COUNT(*) FROM llm_providers")).scalar()
+            enabled = conn.execute(
+                text("SELECT COUNT(*) FROM llm_providers WHERE enabled = 1")
+            ).scalar()
+        if n == 0:
+            checks["llm_config"] = "missing: no providers in DB"
+        elif enabled == 0:
+            checks["llm_config"] = f"warn: {n} providers configured but none enabled"
+        else:
+            checks["llm_config"] = f"ok: {enabled}/{n} enabled"
+    except Exception as e:  # noqa: BLE001
+        log.warning("llm_health_check_failed", error=str(e))
+        checks["llm_config"] = f"failed: {e}"
+
+    overall = "ready" if all(
+        v.startswith("ok") or v.startswith("warn") for v in checks.values()
+    ) else "degraded"
     return {"status": overall, "checks": checks}

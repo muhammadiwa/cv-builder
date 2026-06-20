@@ -36,9 +36,13 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 # Sentinel for the dev placeholder — clearly not a valid Fernet key.
-# Lives in both ``settings.master_key`` (the Pydantic default) and the
-# .env.example file so the two stay in sync.
-_DEV_PLACEHOLDER = "dev-only-not-secure-please-rotate-in-production"
+# This exact string MUST also appear in:
+#   - app/core/config.py  (Pydantic default for master_key)
+#   - .env.example        (CV_MASTER_KEY= line)
+# The test_dev_placeholder_string_in_sync test enforces all three
+# stay in lockstep so a fresh checkout following .env.example gets the
+# plaintext-storage warning.
+_DEV_PLACEHOLDER = "dev-only-please-rotate-in-production"
 
 
 @lru_cache(maxsize=1)

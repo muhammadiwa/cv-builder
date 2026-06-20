@@ -56,8 +56,13 @@ class Settings(BaseSettings):
     log_dir: Path = Path("./storage/logs")
 
     # ── Security ───────────────────────────────────────────────────
+    # Fernet 32-byte key for encrypting user data at rest.
+    # The default value (matched by crypto._DEV_PLACEHOLDER) signals dev
+    # mode and triggers a loud plaintext-storage warning on first use.
+    # For production, generate a real key with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     master_key: SecretStr = Field(
-        default=SecretStr("dev-only-not-secure-please-rotate-in-production"),
+        default=SecretStr("dev-only-please-rotate-in-production"),
         description="Fernet 32-byte key for encrypting user data at rest.",
     )
 

@@ -27,72 +27,144 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("/llm", response_model=LLMSettingsOut)
-def get_llm_settings():
+def get_llm_settings(db: Session = Depends(get_db)):
     """List all configured LLM providers with status (enabled, has key, models).
 
-    Cheap call — no provider calls, just reads config + env. UI uses this to
-    render the LLM panel in Settings and toggle enable/disable.
+    Phase 10B: reads from the ``llm_providers`` DB table (via
+    ``app.llm.store``), not from the legacy JSON file. The Settings UI
+    uses this to render the legacy LLM panel; new code should use
+    ``/api/llm-providers`` directly.
     """
-    client = LLMClient()
-    providers = client.list_providers()
-    default = next((p["id"] for p in providers if p.get("enabled")), "")
+    from app.llm.store import load_all
+
+    rows = load_all(db)
+    providers = [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "enabled": r["enabled"],
+            "has_api_key": bool(r["api_key"]),
+            "kind": r["kind"],
+            "base_url": r["base_url"],
+            "models": r["models"],
+        }
+        for r in rows
+    ]
+    default = next((p["id"] for p in providers if p["enabled"]), "")
     return LLMSettingsOut(providers=providers, default_provider=default)
 
 
 @router.patch("/llm")
-def patch_llm_settings(payload: LLMSettingsUpdate):
-    """Toggle a provider's enabled flag. Persisted back to llm_providers.json.
+def patch_llm_settings(
+    payload: LLMSettingsUpdate, db: Session = Depends(get_db)
+):
+    """Toggle a provider's enabled flag.
 
-    Only the ``enabled`` flag is mutable from the UI — model, priority, and
-    api_key_env are Lead-only config (edit the on-disk JSON for those).
+    Phase 10B: persists to the ``llm_providers`` DB table (the new
+    ``/api/llm-providers/{id}`` PATCH endpoint exposes more fields; this
+    endpoint is preserved for the legacy Settings UI which only toggles
+    enabled + priority).
     """
-    from app.core.config import get_settings
-    settings = get_settings()
-    path = settings.llm_providers_config
-    if not path.exists():
-        raise HTTPException(404, f"llm_providers.json not found: {path}")
-    with path.open() as f:
-        cfg = json.load(f)
-    for p in cfg.get("providers", []):
-        if p["id"] == payload.provider_id:
-            if payload.enabled is not None:
-                p["enabled"] = payload.enabled
-            if payload.priority is not None:
-                p["priority"] = payload.priority
-            break
-    else:
-        raise HTTPException(404, "provider not found")
-    with path.open("w") as f:
-        json.dump(cfg, f, indent=2)
-    return {"status": "ok", "providers": cfg["providers"]}
+    from app.models.models import LLMProvider
+
+    row = db.get(LLMProvider, payload.provider_id)
+    if row is None:
+        raise HTTPException(404, f"provider '{payload.provider_id}' not found")
+    if payload.enabled is not None:
+        if payload.enabled and not row.api_key_set:
+            raise HTTPException(
+                400,
+                "cannot enable provider without an api_key — set the key first",
+            )
+        row.enabled = payload.enabled
+    if payload.priority is not None:
+        if not (1 <= payload.priority <= 999):
+            raise HTTPException(400, "priority must be between 1 and 999")
+        row.priority = payload.priority
+    db.commit()
+    db.refresh(row)
+    # Return shape matches the legacy response so the existing FE works
+    return {
+        "status": "ok",
+        "providers": [
+            {
+                "id": row.id,
+                "name": row.display_name,
+                "enabled": row.enabled,
+                "priority": row.priority,
+                "has_api_key": row.api_key_set,
+                "kind": row.kind,
+                "base_url": row.base_url,
+                "models": dict(row.models_json or {}),
+            }
+        ],
+    }
 
 
 @router.post("/llm/test")
-async def test_llm_provider(payload: dict):
+async def test_llm_provider(payload: dict, db: Session = Depends(get_db)):
     """Send a tiny test prompt to the chosen provider. Returns ok + latency.
 
-    Used by the Settings page "Test connection" button. Cheap (max_tokens=8).
+    Phase 10B: this legacy endpoint now reads the api_key from the DB
+    (decrypted via the Fernet helper) instead of the env var. New code
+    should use ``/api/llm-providers/{id}/test`` which exposes the same
+    behavior plus a model override + structured response.
     """
+    from app.core.crypto import decrypt_secret
+    from app.llm.providers.anthropic import AnthropicProvider
+    from app.llm.providers.openai_compat import OpenAICompatProvider
+    from app.models.models import LLMProvider
+
     provider_id = payload.get("provider_id")
     prompt = payload.get("prompt", "Reply with the single word: ok")
-    client = LLMClient()
-    target = next((p for p in client.providers if p.id == provider_id), None)
-    if target is None:
+    row = db.get(LLMProvider, provider_id or "")
+    if row is None or not row.enabled:
         raise HTTPException(404, f"provider not found or disabled: {provider_id}")
-    model = client._model_for_provider(provider_id, "match") or ""
+    api_key = decrypt_secret(row.api_key) or ""
+    if not api_key:
+        return {"ok": False, "provider": provider_id, "error": "no api_key set"}
+    if not row.base_url:
+        return {"ok": False, "provider": provider_id, "error": "no base_url configured"}
+
+    common = {
+        "id_": row.id,
+        "name": row.display_name,
+        "base_url": row.base_url,
+        "api_key": api_key,
+        "priority": row.priority,
+        "enabled": row.enabled,
+    }
+    target = (
+        AnthropicProvider(**common)
+        if row.kind == "anthropic"
+        else OpenAICompatProvider(**common)
+    )
+    # Pick a model — first non-empty in models_json, fallback to a sane default.
+    model = ""
+    for v in (row.models_json or {}).values():
+        if v:
+            model = v
+            break
     if not model:
-        raise HTTPException(400, f"no model configured for {provider_id}/match")
+        model = "claude-haiku-4-5" if row.kind == "anthropic" else "gpt-4o-mini"
     try:
-        result = await target.generate(prompt, model, temperature=0.0, max_tokens=8, json_mode=False)
+        result = await target.generate(
+            prompt, model, temperature=0.0, max_tokens=8, json_mode=False
+        )
         return {
             "ok": True,
             "provider": provider_id,
             "model": model,
             "latency_ms": result.latency_ms,
-            "text_preview": result.text[:200],
+            "text_preview": (result.text or "")[:200],
         }
     except Exception as e:
-        return {"ok": False, "provider": provider_id, "model": model, "error": str(e)[:500]}
+        return {
+            "ok": False,
+            "provider": provider_id,
+            "model": model,
+            "error": str(e)[:500],
+        }
 
 
 # ── Scraper sources ────────────────────────────────────────────────
