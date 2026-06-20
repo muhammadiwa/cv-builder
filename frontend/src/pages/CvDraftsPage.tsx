@@ -3,6 +3,7 @@ import { FileText, Plus, Trash2, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { cvsApi, jobsApi, type CVDraft, type JobOut } from '../lib/api';
 import CVEditor from '../components/cvs/CVEditor';
+import CVRecommendationsPanel from '../components/cvs/CVRecommendationsPanel';
 
 interface JobOption {
   id: string;
@@ -122,6 +123,13 @@ export default function CvDraftsPage() {
           {error}
         </div>
       )}
+
+      {/* B6 fix: render the recommendation engine at the top of the
+          page so the API client is no longer dead code. Clicking a
+          card selects the matching CV in the list below. */}
+      <CVRecommendationsPanel
+        onOpenCV={(cvId) => setSelectedId(cvId)}
+      />
 
       {toast && (
         <div

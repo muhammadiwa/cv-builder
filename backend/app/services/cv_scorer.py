@@ -139,8 +139,63 @@ class CVScoreResult:
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
+def _aliases_for(canonical: str, alias_map: dict[str, str]) -> list[str]:
+    """Return every alias that points to ``canonical``.
+
+    Example with matcher.TECH_ALIASES: ``_aliases_for("kubernetes", m)``
+    returns ``["k8s"]``. Lets the scorer accept either form.
+    """
+    return [v for v, c in alias_map.items() if c == canonical]
+
+
+_EXT_CHARS = r"[a-zA-Z0-9_+\#]"  # word chars + "+" "#" tech-extension
+
+
+def _match_token(keyword: str, blob: str) -> bool:
+    """Whole-token match for a (already-normalized) keyword.
+
+    B1 fix: prior implementation used ``keyword in blob`` which made
+    "Java" match "JavaScript", "Go" match "Google", "R" match "React",
+    "C" match "C++". The new matcher uses an anchored regex:
+
+    - If the keyword starts with a word char (``a-zA-Z0-9_``), require
+      a non-word char or BOL immediately before (``(?<!\\w)``).
+    - If the keyword ends with a word char, require a non-word char
+      AND not a tech-extension char (``+``, ``#``) immediately after
+      (``(?!EXT_CHARS)``). The blocklist is what stops ``C`` from
+      matching ``C++`` or ``C#`` — a letter followed by ``+``/``#``
+      means the keyword is being extended, not bounded.
+
+      ``.`` is intentionally NOT in the blocklist because sentence-end
+      punctuation must let "Python" match "python." — only when ``.``
+      is followed by a word char (e.g. "python.dev") does it count as
+      extension (because the next char is in EXT_CHARS via its word-
+      char block).
+    - If the keyword ends with a non-word char (``.NET``, ``C++``,
+      ``CI/CD``), only block word-char continuation — the non-word
+      char itself is a sufficient terminator.
+    - For keywords starting with a non-word char (``.NET``) the
+      lookbehind is dropped so "asp.net" still matches ".net".
+
+    Both sides are normalized to lowercase already; no IGNORECASE flag.
+    """
+    if not keyword:
+        return False
+    starts_with_word = keyword[0].isalnum() or keyword[0] == "_"
+    ends_with_word = keyword[-1].isalnum() or keyword[-1] == "_"
+    lookbehind = r"(?<!\w)" if starts_with_word else ""
+    if ends_with_word:
+        lookahead = r"(?!" + _EXT_CHARS + r")"
+    else:
+        lookahead = r"(?!\w)"
+    pattern = lookbehind + re.escape(keyword) + lookahead
+    return re.search(pattern, blob) is not None
+
+
 # Mirrors the alias-canonicalization from matcher.TECH_ALIASES so a CV
 # that lists "k8s" still counts as a hit for the job's "Kubernetes".
+# Imported lazily inside ``_keyword_present`` to avoid a cycle between
+# cv_scorer <-> matcher at import time.
 def _flatten_cv_text(cv_json: dict[str, Any]) -> str:
     """Concatenate every text field in the CV into one searchable string.
 
@@ -180,18 +235,30 @@ def _normalize_keyword(kw: str) -> str:
     return s
 
 
-def _keyword_present(keyword: str, blob: str, alias_map: dict[str, str] | None = None) -> bool:
-    """Substring match, after alias canonicalization if a map is provided.
+def _keyword_present(
+    keyword: str,
+    blob: str,
+    alias_map: dict[str, str] | None = None,
+) -> bool:
+    """Whole-token match (B1) with optional alias canonicalization (B2).
 
-    Returns True iff the (normalized, aliased) keyword appears as a
-    substring of the (normalized) CV blob.
+    Returns True iff the (normalized) keyword — or any of its registered
+    aliases — appears as a whole token in the (normalized) blob.
+
+    The ``alias_map`` is the same ``TECH_ALIASES`` dict used by the
+    matcher (variant -> canonical). When provided, a CV that lists
+    "k8s" will count as a hit for a job that asks for "Kubernetes".
     """
     nk = _normalize_keyword(keyword)
     if not nk:
         return False
-    if alias_map and nk in alias_map:
-        nk = _normalize_keyword(alias_map[nk])
-    return nk in blob
+    if _match_token(nk, blob):
+        return True
+    if alias_map:
+        for variant in _aliases_for(nk, alias_map):
+            if _match_token(variant, blob):
+                return True
+    return False
 
 
 # ── Axis scorers ─────────────────────────────────────────────────────
@@ -200,15 +267,16 @@ def _keyword_present(keyword: str, blob: str, alias_map: dict[str, str] | None =
 def _score_ats_coverage(
     cv_json: dict[str, Any],
     job_analysis: dict[str, Any] | None,
+    alias_map: dict[str, str] | None = None,
 ) -> tuple[float, list[str], list[str], dict[str, Any]]:
     """Fraction of job keywords present in the CV.
 
-    If no job is attached (generic CV), returns a neutral 0.5 with
-    empty matched/missing lists — we can't grade keyword coverage
-    without a target.
+    If no job is attached, returns 0.0 (B8 fix) — honest signal that
+    we have no target to grade against. A bare CV with no target
+    job SHOULD show a low overall score, not a misleading 0.5.
     """
     if not job_analysis:
-        return 0.5, [], [], {"reason": "no_target_job"}
+        return 0.0, [], [], {"reason": "no_target_job"}
 
     # Pull keywords from both ats_keywords (flat) and skill group keywords.
     keywords: list[str] = []
@@ -227,10 +295,10 @@ def _score_ats_coverage(
     uniq = [k for k in keywords if not (k.lower() in seen or seen.add(k.lower()))]
 
     if not uniq:
-        return 0.5, [], [], {"reason": "job_has_no_keywords"}
+        return 0.0, [], [], {"reason": "job_has_no_keywords"}
 
     blob = _flatten_cv_text(cv_json)
-    matched = [k for k in uniq if _keyword_present(k, blob)]
+    matched = [k for k in uniq if _keyword_present(k, blob, alias_map)]
     missing = [k for k in uniq if k not in matched]
     score = len(matched) / len(uniq)
     return score, matched, missing, {"total_keywords": len(uniq)}
@@ -239,16 +307,19 @@ def _score_ats_coverage(
 def _score_skill_gap(
     cv_json: dict[str, Any],
     job_analysis: dict[str, Any] | None,
+    alias_map: dict[str, str] | None = None,
 ) -> tuple[float, list[str], list[str], dict[str, Any]]:
     """Fraction of required skill categories the CV already addresses.
 
     Unlike ATS coverage (substring match on text), this is structural:
     we check the CV's skills section for each required keyword.
 
-    Without a target job, neutral 0.5 (same rationale as ATS).
+    Without a target job, returns 0.0 (B8 fix) — same honesty as
+    ats_coverage. The headline score then reflects "we have no target"
+    rather than pretending the CV is half-good.
     """
     if not job_analysis:
-        return 0.5, [], [], {"reason": "no_target_job"}
+        return 0.0, [], [], {"reason": "no_target_job"}
 
     required_keywords: list[str] = []
     for group in (job_analysis.get("required_skills") or []):
@@ -261,10 +332,10 @@ def _score_skill_gap(
     uniq = [k for k in required_keywords if not (k.lower() in seen or seen.add(k.lower()))]
 
     if not uniq:
-        return 0.5, [], [], {"reason": "job_has_no_required_skills"}
+        return 0.0, [], [], {"reason": "job_has_no_required_skills"}
 
     blob = _flatten_cv_text(cv_json)
-    matched = [k for k in uniq if _keyword_present(k, blob)]
+    matched = [k for k in uniq if _keyword_present(k, blob, alias_map)]
     missing = [k for k in uniq if k not in matched]
     score = len(matched) / len(uniq)
     return score, matched, missing, {"total_required": len(uniq)}
@@ -323,7 +394,10 @@ def _score_bullet_strength(cv_json: dict[str, Any]) -> tuple[float, dict[str, An
             strengths.extend(per_role_bullets)
 
     if not strengths:
-        return 0.5, {"reason": "no_bullets_found"}
+        # B7 fix: 0.0, not 0.5 — honest "no bullets to measure". A CV
+        # with no work experience shouldn't pass bullet_strength with a
+        # neutral "halfway good" score.
+        return 0.0, {"reason": "no_bullets_found"}
 
     score = sum(strengths) / len(strengths)
     return score, {"total_bullets": len(strengths), "per_role": per_role}
@@ -338,9 +412,12 @@ def _score_format_safety(cv_json: dict[str, Any]) -> tuple[float, dict[str, Any]
     """
     html: str | None = cv_json.get("_rendered_html")
     if not html:
-        # The CV route stores rendered_html on the row, not in cv_json;
-        # callers pass it via a synthetic key. Fall back to neutral.
-        return 0.5, {"reason": "no_rendered_html_supplied"}
+        # B9 fix: 0.0, not 0.5 — the format checks are the WHOLE POINT
+        # of this axis. Returning neutral when we can't check would
+        # silently let a CV with <table> + <img> body pass. In practice
+        # the route injects rendered_html so this branch rarely fires,
+        # but if a caller ever forgets, the score reflects that.
+        return 0.0, {"reason": "no_rendered_html_supplied"}
 
     checks = {
         "has_lang_attr": bool(re.search(r"<html[^>]+lang=", html, re.IGNORECASE)),
@@ -393,8 +470,12 @@ def _build_recommendations(
         })
 
     # Missing ATS keywords (subset of skill_gap but cover other axes too).
+    # B10 fix: hoist the normalized-skill set out of the loop. The
+    # previous version rebuilt it on every iteration (O(n*m) string
+    # normalizations) and was harder to read.
+    skill_norm_set = {_normalize_keyword(s) for s in missing_skills}
     for kw in missing_keywords[:5]:
-        if _normalize_keyword(kw) in {_normalize_keyword(s) for s in missing_skills}:
+        if _normalize_keyword(kw) in skill_norm_set:
             continue  # already covered above
         out.append({
             "id": f"add_keyword:{_normalize_keyword(kw)}",
@@ -458,8 +539,21 @@ def score_cv(
     """
     cfg = (config or SCORER_CONFIG).normalized()
 
-    ats_score, matched_kw, missing_kw, ats_details = _score_ats_coverage(cv_json, job_analysis)
-    sg_score, matched_sk, missing_sk, sg_details = _score_skill_gap(cv_json, job_analysis)
+    # B2 fix: thread TECH_ALIASES so "k8s" in the CV matches
+    # "Kubernetes" in the job, etc. Lazy import to avoid a cycle with
+    # matcher at module load.
+    try:
+        from app.services.matcher import TECH_ALIASES
+        alias_map = TECH_ALIASES
+    except ImportError:  # pragma: no cover — defensive
+        alias_map = None
+
+    ats_score, matched_kw, missing_kw, ats_details = _score_ats_coverage(
+        cv_json, job_analysis, alias_map
+    )
+    sg_score, matched_sk, missing_sk, sg_details = _score_skill_gap(
+        cv_json, job_analysis, alias_map
+    )
     bs_score, bs_details = _score_bullet_strength(cv_json)
     fs_score, fs_details = _score_format_safety(cv_json)
 

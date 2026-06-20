@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Sparkles, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-import { cvsApi, jobsApi, type CVDraft, type CVSectionKind, type CVVersion, type JobOut } from '../../lib/api';
+import { cvsApi, jobsApi, scoreBucket, type CVDraft, type CVSectionKind, type CVVersion, type JobOut } from '../../lib/api';
 import CVScorePanel from './CVScorePanel';
 
 interface Props {
@@ -210,13 +210,15 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
             )}
           >
             Score
-            {/* Phase 7: live score chip */}
+            {/* F4 fix: chip uses the unified scoreBucket() so the chip
+                agrees with the recommendation card cutoffs. Old code
+                used 0.75/0.5; new code uses 0.7/0.5 to match BE. */}
             <span
               className={clsx(
                 'text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full',
-                draft.score >= 0.75 ? 'bg-emerald-100 text-emerald-700'
-                : draft.score >= 0.5 ? 'bg-amber-100 text-amber-700'
-                : 'bg-red-100 text-red-700'
+                scoreBucket(draft.score) === 'good' && 'bg-emerald-100 text-emerald-700',
+                scoreBucket(draft.score) === 'ok' && 'bg-amber-100 text-amber-700',
+                scoreBucket(draft.score) === 'low' && 'bg-red-100 text-red-700'
               )}
               data-testid="cv-score-chip"
             >
@@ -271,7 +273,7 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
         <div className="p-6 max-w-3xl" data-testid="score-tab-content">
           {/* Phase 7: live CV score panel — auto-refreshes on save via the
               embedded score_breakdown_json in the draft prop. */}
-          <CVScorePanel cv={draft} onScoreUpdate={onUpdate} />
+          <CVScorePanel cv={draft} />
           <p className="mt-3 text-[12px] text-slate-500 leading-relaxed">
             Score = 0.4 × ATS keyword coverage + 0.3 × skill gap + 0.2 × bullet
             strength + 0.1 × format safety. Each save recomputes the score

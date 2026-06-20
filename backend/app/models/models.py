@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -225,6 +225,15 @@ class CVDraft(Base):
     recommendations: Mapped[list["CVRecommendation"]] = relationship(back_populates="cv_draft", cascade="all, delete-orphan")
     exports: Mapped[list["Export"]] = relationship(back_populates="cv_draft", cascade="all, delete-orphan")
 
+    # B11 fix: defense-in-depth — the scorer already clamps to [0, 1]
+    # in code (see ``score_cv``), but a CHECK constraint stops any
+    # future caller from writing a NaN, inf, or out-of-band value
+    # directly. SQLite supports CHECK via the dialect, Postgres enforces
+    # it server-side.
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 1", name="cv_drafts_score_range"),
+    )
+
 
 class CVVersion(Base):
     __tablename__ = "cv_versions"
@@ -238,6 +247,10 @@ class CVVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     cv_draft: Mapped["CVDraft"] = relationship(back_populates="versions")
+
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 1", name="cv_versions_score_range"),
+    )
 
 
 class CVRecommendation(Base):

@@ -9,7 +9,7 @@
  * on every mutating endpoint, so this component degrades gracefully
  * if the explicit score endpoint isn't reachable.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   TrendingUp,
@@ -20,6 +20,8 @@ import {
   Target,
   Award,
   FileCheck2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   cvsApi,
@@ -28,11 +30,11 @@ import {
   type CVScoreAxis,
   type CVScoreAxisData,
   type CVRecommendationImpact,
+  breakdownToScore,
 } from '../../lib/api';
 
 interface CVScorePanelProps {
   cv: CVDraft;
-  onScoreUpdate?: (cv: CVDraft) => void;
 }
 
 const AXIS_LABELS: Record<CVScoreAxis, { label: string; icon: React.ReactNode }> = {
@@ -99,18 +101,45 @@ function AxisBar({
   );
 }
 
-export default function CVScorePanel({ cv, onScoreUpdate }: CVScorePanelProps) {
+const MAX_INLINE_RECS = 3;
+
+export default function CVScorePanel({ cv }: CVScorePanelProps) {
   const [score, setScore] = useState<CVScore | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAllRecs, setShowAllRecs] = useState(false);
 
-  // Triggered manually via "Re-score" button or after onScoreUpdate.
+  // F1 fix: track the breakdown reference, not just truthiness of
+  // `score`. Previously the hydration effect was gated on `!score`
+  // which meant the very first hydration ran and then the panel
+  // ignored subsequent updates from the parent's `cv.score_breakdown_json`
+  // until the user clicked "Re-score". Now we always hydrate when
+  // the breakdown identity changes (after a save / enhance / patch).
+  const lastBreakdownRef = useRef<unknown>(null);
+
+  // F2 fix: drop `score` from the deps array. It was previously
+  // self-referential (set by the effect itself), causing the effect
+  // to fire on every render of the local `score` state — race-prone
+  // with the user-triggered ``refresh()`` call.
+  useEffect(() => {
+    const breakdown = cv.score_breakdown_json as Record<string, unknown> | null;
+    if (!breakdown || Object.keys(breakdown).length === 0) return;
+    if (breakdown === lastBreakdownRef.current) return;
+    lastBreakdownRef.current = breakdown;
+    // F6 fix: reuse the helper so the shape stays in sync with the
+    // API response. If the API adds a field, the helper is the one
+    // place that needs to grow.
+    setScore(breakdownToScore(breakdown, cv));
+  }, [cv.id, cv.score_breakdown_json, cv.updated_at]);
+
+  // Triggered manually via "Re-score" button.
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
       const fresh = await cvsApi.score(cv.id);
       setScore(fresh);
+      lastBreakdownRef.current = cv.score_breakdown_json; // keep ref coherent
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -122,32 +151,13 @@ export default function CVScorePanel({ cv, onScoreUpdate }: CVScorePanelProps) {
     }
   };
 
-  // If the CV's score_breakdown_json arrives pre-populated (from the
-  // create/patch/enhance response), hydrate from it once on mount.
-  useEffect(() => {
-    const breakdown = cv.score_breakdown_json as Record<string, unknown> | null;
-    if (breakdown && Object.keys(breakdown).length > 0 && !score) {
-      setScore({
-        cv_id: cv.id,
-        overall: (breakdown.overall as number) ?? cv.score ?? 0,
-        axes: (breakdown.axes as CVScore['axes']) ?? {
-          ats_coverage: { score: 0, weight: 0 },
-          skill_gap: { score: 0, weight: 0 },
-          bullet_strength: { score: 0, weight: 0 },
-          format_safety: { score: 0, weight: 0 },
-        },
-        matched_keywords: (breakdown.axes as Record<string, CVScoreAxisData>)?.ats_coverage?.matched ?? [],
-        missing_keywords: (breakdown.axes as Record<string, CVScoreAxisData>)?.ats_coverage?.missing ?? [],
-        matched_skills: (breakdown.axes as Record<string, CVScoreAxisData>)?.skill_gap?.matched ?? [],
-        missing_skills: (breakdown.axes as Record<string, CVScoreAxisData>)?.skill_gap?.missing ?? [],
-        recommendations: (breakdown.recommendations as CVScore['recommendations']) ?? [],
-        scored_at: cv.updated_at,
-      });
-    }
-  }, [cv.id, cv.score_breakdown_json, cv.score, cv.updated_at, score]);
-
   const headlinePct = Math.round((score?.overall ?? cv.score ?? 0) * 100);
   const recs = score?.recommendations ?? [];
+  // F8 fix: when there are more than MAX_INLINE_RECS recommendations,
+  // collapse the rest behind a "See all" toggle. Heading shows the
+  // total count so the user knows there's more.
+  const visibleRecs = showAllRecs ? recs : recs.slice(0, MAX_INLINE_RECS);
+  const hiddenCount = Math.max(0, recs.length - MAX_INLINE_RECS);
 
   return (
     <div className="card card-pad" data-testid="cv-score-panel">
@@ -165,6 +175,9 @@ export default function CVScorePanel({ cv, onScoreUpdate }: CVScorePanelProps) {
           type="button"
           onClick={refresh}
           disabled={loading}
+          // F7 fix: explicit screen-reader label (title alone is ignored
+          // by some assistive tech when paired with icon-only buttons).
+          aria-label="Re-score this CV"
           className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
           title="Re-score"
           data-testid="cv-score-refresh-btn"
@@ -206,7 +219,7 @@ export default function CVScorePanel({ cv, onScoreUpdate }: CVScorePanelProps) {
             Top recommendations ({recs.length})
           </div>
           <div className="space-y-2">
-            {recs.slice(0, 5).map((rec) => (
+            {visibleRecs.map((rec) => (
               <div
                 key={rec.id}
                 className={clsx(
@@ -227,6 +240,25 @@ export default function CVScorePanel({ cv, onScoreUpdate }: CVScorePanelProps) {
               </div>
             ))}
           </div>
+          {/* F8 fix: collapse the long tail of recommendations behind a toggle. */}
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllRecs((v) => !v)}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+              data-testid="cv-score-rec-toggle"
+            >
+              {showAllRecs ? (
+                <>
+                  <ChevronUp className="w-3 h-3" /> Show fewer
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3 h-3" /> Show all {recs.length} ({hiddenCount} more)
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
 

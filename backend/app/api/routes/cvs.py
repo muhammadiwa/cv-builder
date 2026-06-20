@@ -36,6 +36,7 @@ from app.schemas.schemas import (
     CVDraftOut,
     CVEnhanceIn,
     CVRenderOut,
+    CVRecommendationItem,
     CVScoreOut,
     CVScoreRecommendation,
     CVVersionOut,
@@ -120,6 +121,22 @@ def _save_version(
     return ver
 
 
+def _cv_json_for_scoring(draft: CVDraft) -> dict[str, Any]:
+    """Build the ``cv_json`` dict passed to :func:`score_cv`.
+
+    B12 fix: single source of truth for the synthetic
+    ``_rendered_html`` key the format-safety axis grades. Before,
+    ``_score_and_persist`` and ``score_cv_draft`` both inlined the
+    same ``cv_json_with_html = dict(...) + '_rendered_html'`` block.
+    If one ever forgot to inject, format checks would silently return
+    0.0 (the B9 honest-no-data signal) without anyone noticing.
+    """
+    cv_json = dict(draft.cv_json or {})
+    if draft.rendered_html:
+        cv_json["_rendered_html"] = draft.rendered_html
+    return cv_json
+
+
 def _score_and_persist(draft: CVDraft) -> None:
     """Recompute the CV score and persist it on the draft row.
 
@@ -135,18 +152,11 @@ def _score_and_persist(draft: CVDraft) -> None:
     """
     target_analysis: dict | None = None
     if draft.job_id:
-        from app.models.models import Job
         job = draft.job  # relationship proxy (already loaded in callers)
         if job is not None and job.job_analysis_json:
             target_analysis = job.job_analysis_json
 
-    # Inject the rendered HTML into a synthetic key so the format-safety
-    # axis can grade it without re-rendering.
-    cv_json_with_html = dict(draft.cv_json or {})
-    if draft.rendered_html:
-        cv_json_with_html["_rendered_html"] = draft.rendered_html
-
-    result = score_cv(cv_json_with_html, target_analysis)
+    result = score_cv(_cv_json_for_scoring(draft), target_analysis)
     draft.score = result.overall
     draft.score_breakdown_json = result.to_breakdown()
     log.debug(
@@ -408,6 +418,107 @@ def create_cv(
         template_id=draft.template_id,
     )
     return _serialize_draft(draft)
+
+
+# ── Recommendation Engine (Phase 7) ────────────────────────────────
+# MUST be declared before @router.get("/{cv_id}") below — FastAPI
+# matches routes in declaration order, and the {cv_id} path is a
+# catch-all that would shadow the literal /recommendations route.
+@router.get("/recommendations", response_model=list[CVRecommendationItem])
+def cv_recommendations(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[CVRecommendationItem]:
+    """Best CV×job pairs, sorted by composite score.
+
+    Composite = 0.6 * match_score + 0.4 * cv_score. The 60/40 split
+    favors "is this job right for me?" (match) over "is this CV good
+    for this job?" (cv_score) — but both matter.
+
+    Excludes pairs where the job hasn't been parsed yet, and pairs
+    where the CV hasn't been scored yet (zero-score CVs still rank,
+    just lower).
+
+    B3 fix: response is now ``list[CVRecommendationItem]`` (was
+    ``list[dict[str, Any]]``) so FastAPI validates the contract and
+    OpenAPI exposes the schema.
+    B4 fix: jobs are batch-fetched in a single query rather than
+    ``db.get(Job, ...)`` per CV (N+1 → 2 queries total).
+    """
+    from app.models.models import Job, JobMatch
+
+    # Two queries (CVs + jobs + matches) instead of a join — keeps the
+    # response flat and the SQL portable across SQLite / Postgres.
+    cvs = (
+        db.query(CVDraft)
+        .join(Profile, CVDraft.profile_id == Profile.id)
+        .filter(Profile.user_id == user.id)
+        .all()
+    )
+    if not cvs:
+        return []
+
+    # B4 fix: batch-fetch all referenced jobs in one query.
+    cv_job_ids = {cv.job_id for cv in cvs if cv.job_id}
+    if not cv_job_ids:
+        return []
+    jobs_by_id = {
+        j.id: j
+        for j in db.query(Job).filter(Job.id.in_(cv_job_ids)).all()
+        if j.user_id == user.id  # extra safety — only return user's own
+    }
+
+    matches = (
+        db.query(JobMatch)
+        .filter(JobMatch.job_id.in_(set(jobs_by_id.keys()) or {"__none__"}))
+        .all()
+    )
+    match_by_job = {m.job_id: m for m in matches}
+
+    items: list[CVRecommendationItem] = []
+    for cv in cvs:
+        if not cv.job_id:
+            continue
+        job = jobs_by_id.get(cv.job_id)
+        if job is None:
+            continue
+        match = match_by_job.get(job.id)
+        if match is None:
+            continue
+
+        # Reconstruct missing skills from the latest score breakdown so
+        # the FE can show "you're missing X, Y" inline.
+        missing_skills: list[str] = []
+        if isinstance(cv.score_breakdown_json, dict):
+            sg = (cv.score_breakdown_json.get("axes") or {}).get("skill_gap") or {}
+            missing_skills = list(sg.get("missing") or [])
+
+        composite = round(0.6 * match.match_score + 0.4 * (cv.score or 0.0), 4)
+        if composite >= 0.7:
+            rec = "apply"
+        elif composite >= 0.5:
+            rec = "stretch"
+        else:
+            rec = "skip"
+        # B3 fix: build a typed model instead of an untyped dict.
+        items.append(
+            CVRecommendationItem(
+                cv_id=cv.id,
+                cv_title=cv.title,
+                job_id=job.id,
+                job_title=job.title or "Untitled",
+                company=job.company,
+                match_score=match.match_score,
+                cv_score=cv.score or 0.0,
+                composite=composite,
+                recommendation=rec,
+                missing_skills=missing_skills,
+            )
+        )
+
+    items.sort(key=lambda x: x.composite, reverse=True)
+    return items[:limit]
 
 
 # ── Get one ────────────────────────────────────────────────────────
@@ -771,6 +882,9 @@ def score_cv_draft(
     restore. This endpoint exists so the FE can trigger a refresh
     (e.g. after editing ``cv_json`` via a future bulk editor) without
     going through the enhance round-trip.
+
+    B5 fix: now also writes a version row so the re-score shows up in
+    the audit trail — every other mutating endpoint already does.
     """
     draft = db.get(CVDraft, cv_id)
     if draft is None:
@@ -785,14 +899,15 @@ def score_cv_draft(
         if job is not None and job.job_analysis_json:
             target_analysis = job.job_analysis_json
 
-    cv_json_with_html = dict(draft.cv_json or {})
-    if draft.rendered_html:
-        cv_json_with_html["_rendered_html"] = draft.rendered_html
-
-    result = score_cv(cv_json_with_html, target_analysis)
+    # B12 fix: use the shared helper so the rendered_html injection is
+    # in one place.
+    result = score_cv(_cv_json_for_scoring(draft), target_analysis)
     draft.score = result.overall
     draft.score_breakdown_json = result.to_breakdown()
     draft.updated_at = _utcnow()
+    # B5 fix: persist a version snapshot so the re-score is visible in
+    # the version history.
+    _save_version(db, draft, "manual re-score via /score")
     db.commit()
     db.refresh(draft)
 
@@ -807,89 +922,3 @@ def score_cv_draft(
         recommendations=[CVScoreRecommendation(**r) for r in result.recommendations],
         scored_at=_utcnow(),
     )
-
-
-# ── Recommendation Engine (Phase 7) ────────────────────────────────
-
-
-@router.get("/recommendations", response_model=list[dict[str, Any]])
-def cv_recommendations(
-    limit: int = 10,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> list[dict[str, Any]]:
-    """Best CV×job pairs, sorted by composite score.
-
-    Composite = 0.6 * match_score + 0.4 * cv_score. The 60/40 split
-    favors "is this job right for me?" (match) over "is this CV good
-    for this job?" (cv_score) — but both matter.
-
-    Excludes pairs where the job hasn't been parsed yet, and pairs
-    where the CV hasn't been scored yet (zero-score CVs still rank,
-    just lower).
-    """
-    from app.models.models import Job, JobMatch
-
-    # Pull the user's CVs and scored parsed jobs + matches in two queries
-    # rather than a join — keeps the response flat and the SQL portable.
-    cvs = (
-        db.query(CVDraft)
-        .join(Profile, CVDraft.profile_id == Profile.id)
-        .filter(Profile.user_id == user.id)
-        .all()
-    )
-    if not cvs:
-        return []
-
-    cv_by_id = {c.id: c for c in cvs}
-
-    matches = (
-        db.query(JobMatch)
-        .filter(JobMatch.job_id.in_([j.id for j in db.query(Job).filter(Job.user_id == user.id).all()] or ["__none__"]))
-        .all()
-    )
-    match_by_job = {m.job_id: m for m in matches}
-
-    items: list[dict[str, Any]] = []
-    for cv in cvs:
-        # The CV is "scoreable" only if a job is attached (the scorer
-        # uses ats_keywords). CVs without a target still appear at the
-        # bottom of the list with a 0 cv_score so the user sees them.
-        if not cv.job_id:
-            continue
-        job = db.get(Job, cv.job_id)
-        if job is None or job.user_id != user.id:
-            continue
-        match = match_by_job.get(job.id)
-        if match is None:
-            continue
-
-        # Reconstruct missing skills from the latest score breakdown so
-        # the FE can show "you're missing X, Y" inline.
-        missing_skills: list[str] = []
-        if isinstance(cv.score_breakdown_json, dict):
-            sg = (cv.score_breakdown_json.get("axes") or {}).get("skill_gap") or {}
-            missing_skills = list(sg.get("missing") or [])
-
-        composite = round(0.6 * match.match_score + 0.4 * (cv.score or 0.0), 4)
-        if composite >= 0.7:
-            rec = "apply"
-        elif composite >= 0.5:
-            rec = "stretch"
-        else:
-            rec = "skip"
-        items.append({
-            "cv_id": cv.id,
-            "cv_title": cv.title,
-            "job_id": job.id,
-            "job_title": job.title or "Untitled",
-            "company": job.company,
-            "match_score": match.match_score,
-            "cv_score": cv.score or 0.0,
-            "composite": composite,
-            "recommendation": rec,
-            "missing_skills": missing_skills,
-        })
-
-    items.sort(key=lambda x: x["composite"], reverse=True)
-    return items[:limit]

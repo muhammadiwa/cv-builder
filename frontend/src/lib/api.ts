@@ -340,16 +340,58 @@ export interface CVScoreAxisData {
   details?: Record<string, unknown>;
 }
 
+// F3 fix: enforce the 4-axis shape at the TS level so the FE
+// hydration code doesn't have to hand-roll fallbacks. Mirrors the
+// Pydantic ``_axes_have_all_known_keys`` validator on the BE.
+export type CVScoreAxes = {
+  ats_coverage: CVScoreAxisData;
+  skill_gap: CVScoreAxisData;
+  bullet_strength: CVScoreAxisData;
+  format_safety: CVScoreAxisData;
+};
+
 export interface CVScore {
   cv_id: string;
   overall: number;
-  axes: Record<CVScoreAxis, CVScoreAxisData>;
+  axes: CVScoreAxes;
   matched_keywords: string[];
   missing_keywords: string[];
   matched_skills: string[];
   missing_skills: string[];
   recommendations: CVScoreRecommendation[];
   scored_at: string;
+}
+
+// F6 fix: single source of truth for projecting
+// ``CVDraft.score_breakdown_json`` → ``CVScore``. Used by the
+// hydration effect in CVScorePanel; kept here so any future field
+// added to CVScore is added in one place (the panel doesn't reinvent
+// the shape).
+export function breakdownToScore(
+  breakdown: Record<string, unknown>,
+  cv: CVDraft
+): CVScore {
+  const axesRaw = (breakdown.axes ?? {}) as Partial<CVScoreAxes>;
+  // Hydrate any missing axis with a safe zero so the UI can still
+  // render. The BE validator guarantees all four are present for
+  // new responses; this fallback covers legacy rows.
+  const axes: CVScoreAxes = {
+    ats_coverage: axesRaw.ats_coverage ?? { score: 0, weight: 0 },
+    skill_gap: axesRaw.skill_gap ?? { score: 0, weight: 0 },
+    bullet_strength: axesRaw.bullet_strength ?? { score: 0, weight: 0 },
+    format_safety: axesRaw.format_safety ?? { score: 0, weight: 0 },
+  };
+  return {
+    cv_id: cv.id,
+    overall: (breakdown.overall as number) ?? cv.score ?? 0,
+    axes,
+    matched_keywords: axes.ats_coverage.matched ?? [],
+    missing_keywords: axes.ats_coverage.missing ?? [],
+    matched_skills: axes.skill_gap.matched ?? [],
+    missing_skills: axes.skill_gap.missing ?? [],
+    recommendations: (breakdown.recommendations as CVScoreRecommendation[]) ?? [],
+    scored_at: cv.updated_at,
+  };
 }
 
 export interface CVRecommendationItem {
@@ -363,6 +405,21 @@ export interface CVRecommendationItem {
   composite: number;
   recommendation: 'apply' | 'stretch' | 'skip';
   missing_skills: string[];
+}
+
+// F4 fix: unified threshold set used across the FE for "is this
+// score good?". Matches the BE composite-recommendation cutoffs
+// (apply ≥ 0.7, stretch ≥ 0.5) so the chip on the CV editor tab and
+// the recommendation card never disagree for the same number.
+export const SCORE_THRESHOLDS = {
+  good: 0.7,
+  ok: 0.5,
+} as const;
+
+export function scoreBucket(score: number): 'good' | 'ok' | 'low' {
+  if (score >= SCORE_THRESHOLDS.good) return 'good';
+  if (score >= SCORE_THRESHOLDS.ok) return 'ok';
+  return 'low';
 }
 
 export type CVSectionKind = 'summary' | 'bullets' | 'experience' | 'skills';

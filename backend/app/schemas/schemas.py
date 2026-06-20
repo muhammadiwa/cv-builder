@@ -463,6 +463,9 @@ class CVScoreOut(BaseModel):
     Returned by ``POST /api/cvs/{id}/score`` (and embedded in
     ``CVDraftOut.score_breakdown_json`` on every mutating endpoint).
     """
+
+    model_config = ConfigDict(extra="forbid")
+
     cv_id: str
     overall: float
     axes: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -472,6 +475,24 @@ class CVScoreOut(BaseModel):
     missing_skills: list[str] = Field(default_factory=list)
     recommendations: list[CVScoreRecommendation] = Field(default_factory=list)
     scored_at: datetime
+
+    # F3 fix: the FE TS interface declares
+    # ``axes: Record<CVScoreAxis, CVScoreAxisData>`` (strict 4 keys).
+    # Pydantic can't natively type dict keys with Literal, so enforce
+    # the four known axes must all be present at validation time —
+    # closes the FE/BE type-mismatch gap (the FE hydration fallback
+    # was hand-rolling the four axes because the type didn't help).
+    # The scorer always returns all four (see ``score_cv``), so this
+    # only fires on truly malformed input.
+    @model_validator(mode="after")
+    def _axes_have_all_known_keys(self) -> "CVScoreOut":
+        required = {"ats_coverage", "skill_gap", "bullet_strength", "format_safety"}
+        missing = required - set(self.axes.keys())
+        if missing:
+            raise ValueError(
+                f"CVScoreOut.axes missing required keys: {sorted(missing)}"
+            )
+        return self
 
 
 class CVRecommendationItem(BaseModel):

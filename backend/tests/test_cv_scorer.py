@@ -14,9 +14,11 @@ import pytest
 from app.services.cv_scorer import (
     CVScorerConfig,
     SCORER_CONFIG,
+    _aliases_for,
     _build_recommendations,
     _flatten_cv_text,
     _keyword_present,
+    _match_token,
     _normalize_keyword,
     _score_ats_coverage,
     _score_bullet_strength,
@@ -81,20 +83,112 @@ class TestHelpers:
         assert _keyword_present("rust", blob) is False
 
 
+# ── B1 fix: word-boundary matching ──────────────────────────────────
+class TestWordBoundaryMatching:
+    """B1 fix: substring ``in`` was greedy. "Java" matched "JavaScript",
+    "Go" matched "Google", "R" matched "React", "C" matched "C++".
+    The new ``_match_token`` uses anchored regex so the keyword must
+    be a complete token in the blob.
+    """
+
+    def test_java_does_not_match_javascript(self):
+        # Before fix: True. After fix: False.
+        assert _match_token("java", "experienced javascript developer") is False
+
+    def test_java_matches_standalone(self):
+        assert _match_token("java", "experienced java developer") is True
+
+    def test_go_does_not_match_google(self):
+        assert _match_token("go", "worked at google on cloud search") is False
+
+    def test_go_matches_standalone(self):
+        assert _match_token("go", "wrote services in go for 5 years") is True
+
+    def test_r_does_not_match_react(self):
+        assert _match_token("r", "built UIs with react and redux") is False
+
+    def test_c_does_not_match_cplusplus(self):
+        # Critical: "C" as a skill keyword should NOT match C++ or C#.
+        assert _match_token("c", "5 years of c++ systems programming") is False
+
+    def test_cplusplus_matches_standalone(self):
+        # But "C++" itself should still match.
+        assert _match_token("c++", "5 years of c++ systems programming") is True
+
+    def test_csharp_matches_standalone(self):
+        assert _match_token("c#", "built apis in c# for fintech") is True
+
+    def test_dotnet_matches_after_letter(self):
+        # ".NET" preceded by word char (e.g. "ASP") must still match.
+        # The regex drops the lookbehind when keyword starts with non-word.
+        assert _match_token(".net", "asp.net web forms migration") is True
+
+    def test_nextjs_matches(self):
+        assert _match_token("next.js", "shipping next.js apps since 2020") is True
+
+    def test_cicd_matches(self):
+        # "/" is non-word, so the regex drops the trailing lookahead.
+        assert _match_token("ci/cd", "set up ci/cd pipelines on github actions") is True
+
+    def test_punctuation_at_boundaries(self):
+        # Trailing punctuation should not block a match.
+        assert _match_token("python", "skills: python, go, rust") is True
+        assert _match_token("python", "skills include python.") is True
+
+
+# ── B2 fix: alias canonicalization ──────────────────────────────────
+class TestAliasMatching:
+    """B2 fix: ``_keyword_present`` previously ignored its ``alias_map``
+    argument. Now TECH_ALIASES-style maps are threaded through, so a
+    CV that lists "k8s" matches a job that asks for "Kubernetes".
+    """
+
+    def test_k8s_matches_kubernetes_via_alias(self):
+        # Fake alias map: variant -> canonical.
+        aliases = {"k8s": "kubernetes"}
+        blob = "deployed workloads on k8s clusters"
+        assert _keyword_present("Kubernetes", blob, aliases) is True
+
+    def test_alias_is_optional(self):
+        # Without the map, the alias alone does NOT match.
+        blob = "deployed workloads on k8s clusters"
+        assert _keyword_present("Kubernetes", blob, None) is False
+
+    def test_canonical_keyword_still_matches_directly(self):
+        aliases = {"k8s": "kubernetes"}
+        # Even with the map, the canonical form matches itself.
+        assert _keyword_present("kubernetes", "ran kubernetes in production", aliases) is True
+
+    def test_unknown_alias_does_not_block_direct_match(self):
+        # Aliases are a FALLBACK — they expand which tokens can match
+        # the canonical form, they don't override direct matches. A CV
+        # that mentions "rust" directly should match a job asking for
+        # "rust" regardless of what the alias map contains.
+        aliases = {"py": "python"}
+        assert _keyword_present("rust", "wrote rust for 3 years", aliases) is True
+
+    def test_aliases_for_helper(self):
+        aliases = {"k8s": "kubernetes", "k9s": "kubernetes"}
+        result = _aliases_for("kubernetes", aliases)
+        assert set(result) == {"k8s", "k9s"}
+
+
 # ── ATS coverage ─────────────────────────────────────────────────────
 
 
 class TestATSCoverage:
     def test_no_job_returns_neutral(self):
+        # B8 fix: no target job → 0.0, not 0.5. Honest signal that
+        # we have nothing to grade against.
         score, matched, missing, details = _score_ats_coverage({}, None)
-        assert score == 0.5
+        assert score == 0.0
         assert matched == []
         assert missing == []
         assert details["reason"] == "no_target_job"
 
     def test_job_with_no_keywords_returns_neutral(self):
         score, _, _, details = _score_ats_coverage({}, {"ats_keywords": []})
-        assert score == 0.5
+        assert score == 0.0
         assert details["reason"] == "job_has_no_keywords"
 
     def test_full_match_scores_one(self):
@@ -113,14 +207,34 @@ class TestATSCoverage:
         assert matched == ["Python"]
         assert set(missing) == {"Django", "Rust"}
 
+    def test_java_keyword_rejects_javascript_substring(self):
+        # B1 fix integration: job asks for "Java", CV says "JavaScript".
+        # The whole-token matcher rejects the false positive.
+        cv = {"summary": "Full-stack JavaScript developer with 8 years"}
+        job = {"ats_keywords": ["Java"]}
+        _, matched, missing, _ = _score_ats_coverage(cv, job)
+        assert "Java" in missing
+        assert "Java" not in matched
+
+    def test_alias_k8s_matches_kubernetes(self):
+        # B2 fix integration: alias map is now threaded through.
+        cv = {"summary": "Production k8s deployments at scale"}
+        job = {"ats_keywords": ["Kubernetes"]}
+        _, matched, missing, _ = _score_ats_coverage(
+            cv, job, alias_map={"k8s": "kubernetes"}
+        )
+        assert "Kubernetes" in matched
+        assert missing == []
+
 
 # ── Skill gap ────────────────────────────────────────────────────────
 
 
 class TestSkillGap:
     def test_no_job_returns_neutral(self):
+        # B8 fix: 0.0, not 0.5.
         score, matched, missing, details = _score_skill_gap({}, None)
-        assert score == 0.5
+        assert score == 0.0
         assert details["reason"] == "no_target_job"
 
     def test_all_required_present(self):
@@ -144,8 +258,10 @@ class TestSkillGap:
 
 class TestBulletStrength:
     def test_no_bullets_returns_neutral(self):
+        # B7 fix: 0.0, not 0.5. A CV with no work experience has no
+        # bullets to measure — honest "no data" is 0.0, not "halfway good".
         score, details = _score_bullet_strength({"work": []})
-        assert score == 0.5
+        assert score == 0.0
         assert details["reason"] == "no_bullets_found"
 
     def test_bullet_with_metric_scores_high(self):
@@ -182,8 +298,10 @@ class TestBulletStrength:
 
 class TestFormatSafety:
     def test_no_html_returns_neutral(self):
+        # B9 fix: 0.0, not 0.5. The format checks are the whole point
+        # of this axis — returning neutral silently passes unsafe HTML.
         score, details = _score_format_safety({})
-        assert score == 0.5
+        assert score == 0.0
         assert details["reason"] == "no_rendered_html_supplied"
 
     def test_perfect_html_scores_one(self):
@@ -257,10 +375,15 @@ class TestScoreCVEndToEnd:
         cv = {"basics": {"name": "X"}, "skills": [{"name": "Py"}]}
         result = score_cv(cv, None)
         assert 0.0 <= result.overall <= 1.0
-        # No job → ats and skill_gap are neutral (0.5)
-        assert result.ats_coverage.score == 0.5
-        assert result.skill_gap.score == 0.5
+        # B8 fix: no job → ats and skill_gap are now 0.0 (honest)
+        # instead of 0.5 (misleading).
+        assert result.ats_coverage.score == 0.0
+        assert result.skill_gap.score == 0.0
         assert result.matched_keywords == []
+        # bullet_strength still neutral (no work), format_safety
+        # still 0.0 (no rendered_html).
+        assert result.bullet_strength.score == 0.0
+        assert result.format_safety.score == 0.0
 
     def test_cv_with_full_coverage(self):
         cv = {
