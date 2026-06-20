@@ -164,6 +164,15 @@ def _apply_to_job(job: Job, validated: JobAnalysisIn, confidence: float) -> None
     job.job_analysis_json = d
 
     job.status = "parsed"
+    if job.error_message is not None:
+        # B9 fix: log when a prior error is cleared by a successful re-analyze.
+        # This makes the "scraped once, failed, then re-analyzed successfully"
+        # flow visible in logs without adding a dedicated column.
+        log.info(
+            "analyze_jd_cleared_prior_error",
+            job_id=getattr(job, "id", None),
+            prior_error=job.error_message[:200],
+        )
     job.error_message = None
     job.parsed_at = datetime.now(timezone.utc)
 

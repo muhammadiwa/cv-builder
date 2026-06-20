@@ -168,6 +168,7 @@ class JobOut(JobIn):
     parsed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    extractor_used: str | None = None
 
 
 class JobListItem(BaseModel):
@@ -287,6 +288,10 @@ class SkillMatchDetail(BaseModel):
     required_keyword: str        # specific keyword (e.g. "Java Spring Boot")
     matched_keyword: str | None = None   # profile skill that matched (None if missing)
     strength: float              # 0.0–1.0; 0 means no match found
+    # L2 fix: which matcher branch produced this hit ("" | "exact" |
+    # "substring" | "fuzzy"). Lets the FE group by strategy and lets
+    # ops tune the thresholds later.
+    match_method: str | None = None
 
 
 class ExperienceBreakdown(BaseModel):
@@ -360,6 +365,10 @@ class JobMatchOut(BaseModel):
     llm: LLMNarrative | None = None
     confidence_score: float | None = None
 
+    # L2 fix: per-strategy hit counts. {"exact": N, "substring": N,
+    # "fuzzy": N}. Always present (even on a 0% match).
+    match_telemetry: dict[str, int] = Field(default_factory=dict)
+
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -432,6 +441,56 @@ class CVVersionOut(BaseModel):
     change_summary: str
     score: float
     created_at: datetime
+
+
+class CVScoreRecommendation(BaseModel):
+    """One prioritized, actionable improvement surfaced by the scorer.
+
+    The FE renders these as cards with a "fix" CTA. ``id`` is a
+    stable string (e.g. ``"add_skill:python"``) so the FE can
+    key on it across re-renders.
+    """
+    id: str
+    title: str
+    impact: Literal["high", "med", "low"]
+    axis: Literal["ats_coverage", "skill_gap", "bullet_strength", "format_safety"]
+    details: str
+
+
+class CVScoreOut(BaseModel):
+    """Phase 7 — detailed CV score response.
+
+    Returned by ``POST /api/cvs/{id}/score`` (and embedded in
+    ``CVDraftOut.score_breakdown_json`` on every mutating endpoint).
+    """
+    cv_id: str
+    overall: float
+    axes: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    matched_keywords: list[str] = Field(default_factory=list)
+    missing_keywords: list[str] = Field(default_factory=list)
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    recommendations: list[CVScoreRecommendation] = Field(default_factory=list)
+    scored_at: datetime
+
+
+class CVRecommendationItem(BaseModel):
+    """Phase 7 — one CV×job pair surfaced by the recommendation engine.
+
+    Combines the match score (Phase 5) with the CV score (Phase 7) so
+    the FE can show "Best matches for your CV" without two separate
+    API round-trips.
+    """
+    cv_id: str
+    cv_title: str
+    job_id: str
+    job_title: str
+    company: str | None = None
+    match_score: float
+    cv_score: float
+    composite: float  # 0.6 * match_score + 0.4 * cv_score
+    recommendation: Literal["apply", "stretch", "skip"]
+    missing_skills: list[str] = Field(default_factory=list)
 
 
 # ── Cover Letter ────────────────────────────────────────────────────

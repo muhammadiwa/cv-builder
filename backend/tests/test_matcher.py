@@ -21,40 +21,50 @@ from app.services.matcher import (
 
 class TestScorePair:
     def test_exact_match(self):
-        assert _score_pair("Python", "Python") == 1.0
+        # _score_pair now returns (strength, method) so callers can
+        # attribute each hit in L2 telemetry. Index [0] keeps the
+        # strength; [1] is the strategy name.
+        assert _score_pair("Python", "Python") == (1.0, "exact")
 
     def test_substring_match(self):
         # "Java" is a substring of "Java Spring Boot"
-        assert _score_pair("Java", "Java Spring Boot") == 0.9
-        assert _score_pair("React", "React.js") == 0.9
-        assert _score_pair("Postgres", "PostgreSQL") == 0.9
+        assert _score_pair("Java", "Java Spring Boot") == (0.9, "substring")
+        assert _score_pair("React", "React.js") == (0.9, "substring")
+        # "Postgres" is an alias for "postgresql" → exact (H3 fix)
+        assert _score_pair("Postgres", "PostgreSQL") == (1.0, "exact")
 
     def test_fuzzy_match(self):
-        # "Node.js" vs "NodeJS" — fuzzy match
-        s = _score_pair("Node.js", "NodeJS")
+        # "Node.js" vs "NodeJS" — alias exact (H3 fix turns these
+        # into a canonical match, so this branch tests a non-alias
+        # fuzzy pair instead).
+        s, method = _score_pair("Pyhton", "Python")  # typo'd profile kw
+        # difflib ratio is ~0.91 → fuzzy band
         assert 0.6 < s < 0.95
+        assert method == "fuzzy"
 
     def test_no_match(self):
-        assert _score_pair("Java", "Golang") == 0.0
-        assert _score_pair("Python", "JavaScript") == 0.0
+        assert _score_pair("Java", "Golang") == (0.0, "")
+        assert _score_pair("Python", "JavaScript") == (0.0, "")
 
     def test_empty_inputs(self):
-        assert _score_pair("", "Java") == 0.0
-        assert _score_pair("Java", "") == 0.0
-        assert _score_pair("", "") == 0.0
+        assert _score_pair("", "Java") == (0.0, "")
+        assert _score_pair("Java", "") == (0.0, "")
+        assert _score_pair("", "") == (0.0, "")
 
     def test_case_insensitive(self):
-        assert _score_pair("PYTHON", "python") == 1.0
-        assert _score_pair("Django", "django") == 1.0
+        assert _score_pair("PYTHON", "python") == (1.0, "exact")
+        assert _score_pair("Django", "django") == (1.0, "exact")
 
     def test_punctuation_stripped(self):
-        assert _score_pair("C++", "C++") == 1.0
-        assert _score_pair("Node.js", "nodejs") >= 0.75
+        assert _score_pair("C++", "C++") == (1.0, "exact")
+        # nodejs → node.js via alias table (H3 fix), so this is now exact.
+        assert _score_pair("Node.js", "nodejs") == (1.0, "exact")
 
     def test_k8s_vs_kubernetes_no_match(self):
-        # difflib ratio of these two strings is ~0.18 — below threshold.
-        # Known limitation; future work: alias table.
-        assert _score_pair("K8s", "Kubernetes") == 0.0
+        # H3 fix: K8s is now an alias for "kubernetes" → exact match.
+        # difflib ratio of these two strings is ~0.18 — well below
+        # threshold — but the alias table rescues us.
+        assert _score_pair("K8s", "Kubernetes") == (1.0, "exact")
 
 
 # ── compute_skill_matches ────────────────────────────────────────────

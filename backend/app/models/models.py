@@ -128,6 +128,12 @@ class Job(Base):
     salary_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     salary_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
+    # Which HTML extractor succeeded for URL-sourced jobs: "selectolax" |
+    # "trafilatura" | "beautifulsoup". Nullable for manual-paste jobs that
+    # never went through the scraper. Useful for debugging scrape quality
+    # without re-running the extractor.
+    extractor_used: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     job_analysis_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     ats_keywords_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 

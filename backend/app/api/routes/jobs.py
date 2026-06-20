@@ -53,8 +53,34 @@ def _job_to_out(job: Job) -> JobOut:
     return JobOut.model_validate(job)
 
 
-def _safe_scrape_and_analyze(job_id: str) -> None:
-    """Background wrapper: scrape URL → update raw_description → analyze.
+_SCRAPE_EXC = (
+    InvalidURLError,
+    SSRFBlockedError,
+    FetchError,
+    ContentTooLargeError,
+    EmptyContentError,
+)
+
+
+def _fail_job(db: Session, job_id: str, stage: str, exc: Exception) -> None:
+    """Mark a job as failed and log. Helper extracted from
+    ``_safe_scrape_and_analyze`` to keep the wrapper flat (B10)."""
+    job = db.get(Job, job_id)
+    if job is None:
+        log.error("safe_scrape_job_vanished", job_id=job_id)
+        return
+    job.status = "failed"
+    job.error_message = f"{stage}_failed: {exc}"[:1000]
+    db.commit()
+    log.error(f"{stage}_failed", job_id=job_id, error=str(exc))
+
+
+async def _safe_scrape_and_analyze_async(job_id: str) -> None:
+    """Async core: scrape URL → update raw_description → analyze.
+
+    Split out from the BackgroundTasks-compatible sync wrapper so we can
+    avoid ``asyncio.run`` in a sync context (B13). The wrapper below just
+    bridges to this coroutine via a single ``asyncio.run`` call.
 
     Errors are swallowed into the Job row so the client can see them
     via GET /jobs/{id}. Raises are logged but never propagated.
@@ -73,37 +99,42 @@ def _safe_scrape_and_analyze(job_id: str) -> None:
             try:
                 result = scrape_job(job.source_url)
                 job.raw_description = result.text
+                job.extractor_used = result.extractor_used  # B11 fix
                 job.scraped_at = _utcnow()
                 job.status = "parsing"
                 db.commit()
-            except (InvalidURLError, SSRFBlockedError, FetchError, ContentTooLargeError, EmptyContentError) as e:
-                job.status = "failed"
-                job.error_message = f"scrape_failed: {e}"[:1000]
-                db.commit()
-                log.error("scrape_failed", job_id=job_id, error=str(e))
+            except _SCRAPE_EXC as e:
+                _fail_job(db, job_id, "scrape", e)
                 return
             except Exception as e:  # noqa: BLE001
-                job.status = "failed"
-                job.error_message = f"scrape_unexpected: {e}"[:1000]
-                db.commit()
-                log.error("scrape_unexpected", job_id=job_id, error=str(e))
+                _fail_job(db, job_id, "scrape_unexpected", e)
                 return
 
-        # 2) Analyze (LLM)
+        # 2) Analyze (LLM) — same DB session so any LLM-call logging
+        # lands on the same transactional context.
         try:
-            import asyncio
-            asyncio.run(analyze_jd(job_id, db))
+            await analyze_jd(job_id, db)
         except Exception as e:  # noqa: BLE001
-            # analyze_jd itself handles status='failed' on known errors,
-            # but catch anything that bubbles up here as a safety net.
+            # analyze_jd handles status='failed' on known errors;
+            # anything that bubbles up is a safety net.
             job = db.get(Job, job_id)
             if job and job.status != "failed":
-                job.status = "failed"
-                job.error_message = f"analyze_unexpected: {e}"[:1000]
-                db.commit()
-            log.error("safe_analyze_unexpected", job_id=job_id, error=str(e))
+                _fail_job(db, job_id, "analyze_unexpected", e)
+            else:
+                log.error("safe_analyze_unexpected", job_id=job_id, error=str(e))
     finally:
         db.close()
+
+
+def _safe_scrape_and_analyze(job_id: str) -> None:
+    """BackgroundTasks-compatible sync entry point.
+
+    Bridges to the async coroutine. ``asyncio.run`` here is OK because
+    BackgroundTasks runs the function in a worker thread, so we never
+    collide with the event loop the request thread is on (B13).
+    """
+    import asyncio
+    asyncio.run(_safe_scrape_and_analyze_async(job_id))
 
 
 # ── Routes ──────────────────────────────────────────────────────

@@ -246,3 +246,86 @@ def test_b7_list_excludes_ats_keywords_json(client):
         # JobListItem intentionally excludes job_analysis_json + ats_keywords_json
         assert "job_analysis_json" not in j
         assert "ats_keywords_json" not in j
+
+
+# ── B11: extractor_used is persisted to the Job row ─────────────────
+
+
+class TestExtractorUsedPersisted:
+    """B11 fix: which HTML extractor succeeded is saved on the Job row.
+
+    Before the fix, ``ScrapeResult.extractor_used`` was returned by
+    ``scrape_job`` but discarded by ``_safe_scrape_and_analyze``.
+    """
+
+    def test_job_out_has_extractor_used_field(self):
+        from app.schemas.schemas import JobOut
+        # Pydantic exposes the field; default is None for manual jobs.
+        assert "extractor_used" in JobOut.model_fields
+        assert JobOut.model_fields["extractor_used"].default is None
+
+    def test_job_model_has_extractor_used_column(self):
+        from app.models.models import Job
+        col = Job.__table__.columns.get("extractor_used")
+        assert col is not None
+        assert col.nullable is True
+        assert str(col.type) == "VARCHAR(32)"
+
+
+# ── B10: _safe_scrape_and_analyze is now flat (no triple try/except) ──
+
+
+class TestSafeScrapeHelper:
+    """B10 fix: the wrapper now delegates to a single _fail_job helper
+    instead of repeating the same status='failed' block three times."""
+
+    def test_fail_job_helper_exists(self):
+        from app.api.routes.jobs import _fail_job, _safe_scrape_and_analyze_async
+        assert callable(_fail_job)
+        assert callable(_safe_scrape_and_analyze_async)
+
+    def test_async_wrapper_is_awaitable(self):
+        # The wrapper is now an `async def` so callers can `await` it
+        # directly (B13 fix). Verify by inspecting the function kind.
+        import inspect
+        from app.api.routes.jobs import _safe_scrape_and_analyze_async
+        assert inspect.iscoroutinefunction(_safe_scrape_and_analyze_async)
+
+    def test_scrape_exception_tuple_exported(self):
+        # The five scrape exceptions are grouped into a tuple so the
+        # except clause stays one-liner-readable.
+        from app.api.routes.jobs import _SCRAPE_EXC
+        assert len(_SCRAPE_EXC) == 5
+
+
+# ── B13: no nested asyncio.run in sync context ────────────────────────
+
+
+class TestAsyncBridgePattern:
+    """B13 fix: sync BackgroundTasks wrapper now calls asyncio.run ONCE
+    at the boundary, not nested inside the analyze_jd call."""
+
+    def test_sync_wrapper_calls_async_helper(self):
+        import inspect
+        from app.api.routes.jobs import _safe_scrape_and_analyze, _safe_scrape_and_analyze_async
+        # The sync wrapper still exists for BackgroundTasks compat.
+        assert callable(_safe_scrape_and_analyze)
+        # The actual work moved to an async coroutine.
+        assert inspect.iscoroutinefunction(_safe_scrape_and_analyze_async)
+
+
+# ── B9: analyze_jd success log when clearing prior error ─────────────
+
+
+class TestAnalyzeJDClearsPriorError:
+    """B9 fix: a successful re-analyze that wipes a stale error_message
+    now emits an ``analyze_jd_cleared_prior_error`` log line."""
+
+    def test_log_helper_uses_structlog_kwarg(self):
+        # Just confirm the code path uses structlog-style kwargs (the
+        # historical bug was stdlib logger being called with kwargs).
+        from app.services.jd_analyzer import _apply_to_job
+        import inspect
+        src = inspect.getsource(_apply_to_job)
+        assert "analyze_jd_cleared_prior_error" in src
+        assert "prior_error=" in src

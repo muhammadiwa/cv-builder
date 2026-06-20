@@ -11,6 +11,7 @@ import {
   Briefcase,
   GraduationCap,
   Award,
+  HelpCircle,
 } from 'lucide-react';
 import {
   matchesApi,
@@ -72,6 +73,17 @@ function ScoreBar({ label, value, icon }: { label: string; value: number; icon: 
   );
 }
 
+// L1 fix: render a category header above the skills in that bucket.
+// The bucket key is the raw `required_skill` string from the matcher
+// (e.g. "Programming Languages", "DevOps & Version Control",
+// "<cat> (preferred)" — preferred rows are bucketed under their own
+// "Nice to have" group so they don't visually interleave with required
+// keywords).
+function bucketLabel(rawCategory: string): string {
+  if (rawCategory.endsWith('(preferred)')) return 'Nice to have';
+  return rawCategory || 'Other';
+}
+
 function SkillMatchRow({ match }: { match: SkillMatchDetail }) {
   const isPreferred = match.required_skill.endsWith('(preferred)');
   const pctVal = Math.round(match.strength * 100);
@@ -79,6 +91,10 @@ function SkillMatchRow({ match }: { match: SkillMatchDetail }) {
     match.strength >= 0.9 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
     : match.strength >= 0.6 ? 'bg-amber-50 text-amber-700 border-amber-200'
     : 'bg-slate-50 text-slate-600 border-slate-200';
+  // L2 fix: badge fuzzy hits as "approximate" so users know the
+  // match was loose (typo-tolerant, sequence-ratio, etc.). Exact
+  // substring hits stay unbadged — they're reliable.
+  const showApprox = match.match_method === 'fuzzy' || match.match_method === 'substring';
   return (
     <div className="flex items-center justify-between gap-3 py-1.5 text-[13px]">
       <div className="flex-1 min-w-0">
@@ -86,6 +102,18 @@ function SkillMatchRow({ match }: { match: SkillMatchDetail }) {
           <span className="font-medium">{match.required_keyword}</span>
           {isPreferred && (
             <span className="ml-1.5 text-[10px] uppercase tracking-wide text-slate-400">nice-to-have</span>
+          )}
+          {showApprox && (
+            <span
+              className="ml-1.5 text-[10px] uppercase tracking-wide text-amber-600"
+              title={
+                match.match_method === 'fuzzy'
+                  ? 'Approximate match — fuzzy string similarity'
+                  : 'Substring match — one name contains the other'
+              }
+            >
+              ≈ approx
+            </span>
           )}
         </div>
         {match.matched_keyword && match.matched_keyword !== match.required_keyword && (
@@ -103,6 +131,38 @@ function SkillMatchRow({ match }: { match: SkillMatchDetail }) {
   );
 }
 
+// L1 fix: skills grouped by their `required_skill` category. The
+// matcher already returns `required_skill` per match detail, so the
+// grouping is a single pass on the client.
+function SkillsByCategory({ matches }: { matches: SkillMatchDetail[] }) {
+  if (matches.length === 0) {
+    return <p className="text-[12px] text-slate-500 italic py-2">No matches in this group.</p>;
+  }
+  const buckets = new Map<string, SkillMatchDetail[]>();
+  for (const m of matches) {
+    const key = bucketLabel(m.required_skill);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key)!.push(m);
+  }
+  // Stable ordering: bucket insertion order is preserved by Map.
+  return (
+    <div className="space-y-3">
+      {Array.from(buckets.entries()).map(([label, items]) => (
+        <div key={label}>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">
+            {label} ({items.length})
+          </div>
+          <div className="divide-y divide-slate-100">
+            {items.map((m, i) => (
+              <SkillMatchRow key={`${label}-${i}`} match={m} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function MatchPanel({
   jobId,
   jobStatus,
@@ -114,11 +174,11 @@ export default function MatchPanel({
 
   const canMatch = jobStatus === 'parsed';
 
-  const handleCompute = async () => {
+  const handleCompute = async (opts?: { fast?: boolean }) => {
     setComputing(true);
     setError(null);
     try {
-      const result = await matchesApi.compute(jobId);
+      const result = await matchesApi.compute(jobId, opts);
       onMatchChange(result);
     } catch (err: unknown) {
       const msg =
@@ -129,6 +189,18 @@ export default function MatchPanel({
     } finally {
       setComputing(false);
     }
+  };
+
+  // L3 fix: confirm dialog before recompute so an accidental click
+  // doesn't burn another LLM call. We skip the prompt for the first
+  // compute (when there's no existing match).
+  const handleRecompute = () => {
+    const ok = window.confirm(
+      'Recomputing this match will make another LLM call (~5–15s) ' +
+        'and overwrite the existing narrative. Continue?',
+    );
+    if (!ok) return;
+    handleCompute();
   };
 
   if (!match) {
@@ -152,7 +224,7 @@ export default function MatchPanel({
         )}
         <button
           type="button"
-          onClick={handleCompute}
+          onClick={() => handleCompute()}
           disabled={!canMatch || computing}
           data-testid="compute-match-btn"
           className="btn-primary text-[13px]"
@@ -175,6 +247,14 @@ export default function MatchPanel({
 
   const rec = RECOMMENDATION_STYLES[match.recommendation];
   const scorePct = Math.round(match.match_score * 100);
+  // P3 fix: low-confidence score on a sparse profile needs a tooltip
+  // so users don't think the matcher is broken. We flag when there
+  // are <3 matched skills AND the score is <50%.
+  const sparseProfile =
+    match.matched_skills.length < 3 && scorePct < 50;
+  const totalMatched = (match.match_telemetry?.exact ?? 0) +
+    (match.match_telemetry?.substring ?? 0) +
+    (match.match_telemetry?.fuzzy ?? 0);
 
   return (
     <div className="card card-pad" data-testid="match-panel">
@@ -191,7 +271,7 @@ export default function MatchPanel({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={handleCompute}
+            onClick={handleRecompute}
             disabled={computing}
             data-testid="recompute-match-btn"
             className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
@@ -214,8 +294,26 @@ export default function MatchPanel({
               {scorePct}
             </span>
             <span className="text-base text-slate-500 font-medium">%</span>
+            {/* P3 fix: explain the score on a sparse profile. */}
+            {sparseProfile && (
+              <span
+                className="ml-1 inline-flex items-center text-slate-400 hover:text-slate-600 cursor-help"
+                title="Your profile is missing most required skills — upload a complete resume for an accurate match."
+                data-testid="match-sparse-profile-hint"
+              >
+                <HelpCircle className="w-4 h-4" />
+              </span>
+            )}
           </div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 mt-1">overall</div>
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 mt-1 flex items-center gap-1.5">
+            <span>overall</span>
+            {/* L2 fix: telemetry summary next to the score. */}
+            {totalMatched > 0 && (
+              <span className="text-slate-400 normal-case tracking-normal">
+                · {match.match_telemetry?.exact ?? 0} exact, {match.match_telemetry?.substring ?? 0} substring, {match.match_telemetry?.fuzzy ?? 0} fuzzy
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex-1">
           <span
@@ -291,7 +389,7 @@ export default function MatchPanel({
         </div>
       )}
 
-      {/* Skills detail (collapsible) */}
+      {/* Skills detail (collapsible) — L1 fix: grouped by category. */}
       <details className="group" data-testid="match-skills-details">
         <summary className="cursor-pointer text-[13px] font-medium text-slate-700 hover:text-slate-900 flex items-center justify-between mb-2">
           <span>Skill-by-skill breakdown</span>
@@ -305,28 +403,14 @@ export default function MatchPanel({
               <CheckCircle2 className="w-3 h-3" />
               Matched ({match.matched_skills.length})
             </div>
-            <div className="divide-y divide-slate-100">
-              {match.matched_skills.map((m, i) => (
-                <SkillMatchRow key={`m-${i}`} match={m} />
-              ))}
-              {match.matched_skills.length === 0 && (
-                <p className="text-[12px] text-slate-500 italic py-2">No direct matches</p>
-              )}
-            </div>
+            <SkillsByCategory matches={match.matched_skills} />
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wide text-red-700 font-semibold mb-1.5 flex items-center gap-1">
               <XCircle className="w-3 h-3" />
               Missing ({match.missing_skills.length})
             </div>
-            <div className="divide-y divide-slate-100">
-              {match.missing_skills.map((m, i) => (
-                <SkillMatchRow key={`x-${i}`} match={m} />
-              ))}
-              {match.missing_skills.length === 0 && (
-                <p className="text-[12px] text-slate-500 italic py-2">Nothing missing 🎉</p>
-              )}
-            </div>
+            <SkillsByCategory matches={match.missing_skills} />
           </div>
         </div>
       </details>

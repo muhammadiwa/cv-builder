@@ -22,14 +22,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.models import Job, JobMatch, Profile
-from app.schemas.schemas import JobMatchOut
+from app.schemas.schemas import JobMatchOut, SkillMatchDetail
 from app.services.matcher import MatchResult, compute_match
 from app.services.match_narrator import narrate_match
 
@@ -90,9 +90,41 @@ def _match_to_out(m: JobMatch) -> JobMatchOut:
 
     Reads the legacy JSON containers and re-projects them into the rich
     Phase 5 schema (score_breakdown, matched_skills, llm, etc).
+
+    Stays a sync helper — it just unwraps JSON, no DB I/O. The route
+    handler above owns the async LLM narration + persistence.
     """
     breakdown = m.score_breakdown_json or {}
     strategy = m.strategy_json or {}
+
+    matched = [
+        SkillMatchDetail(
+            required_skill=item.get("required_skill", ""),
+            required_keyword=item.get("required_keyword", ""),
+            matched_keyword=item.get("matched_keyword"),
+            strength=float(item.get("strength", 0.0)),
+            match_method=item.get("match_method"),  # L2 fix
+        )
+        for item in (m.matched_items_json or [])
+    ]
+    missing = [
+        SkillMatchDetail(
+            required_skill=item.get("required_skill", ""),
+            required_keyword=item.get("required_keyword", ""),
+            matched_keyword=None,
+            strength=0.0,
+            match_method=None,
+        )
+        for item in (m.missing_items_json or [])
+    ]
+
+    # L2 fix: telemetry from the persisted matched_items_json (falls
+    # back to zeroed counters for legacy rows without match_method).
+    telemetry: dict[str, int] = {"exact": 0, "substring": 0, "fuzzy": 0}
+    for item in (m.matched_items_json or []):
+        method = item.get("match_method")
+        if method in telemetry:
+            telemetry[method] += 1
 
     return JobMatchOut(
         id=m.id,
@@ -101,13 +133,13 @@ def _match_to_out(m: JobMatch) -> JobMatchOut:
         match_score=m.match_score,
         recommendation=m.risk_level,  # "apply" | "stretch" | "skip"
         score_breakdown={
-            "skill": breakdown.get("skill", 0.0),
-            "experience": breakdown.get("experience", 0.0),
-            "seniority": breakdown.get("seniority", 0.0),
-            "education": breakdown.get("education", 0.0),
+            "skill": float(breakdown.get("skill", 0.0)),
+            "experience": float(breakdown.get("experience", 0.0)),
+            "seniority": float(breakdown.get("seniority", 0.0)),
+            "education": float(breakdown.get("education", 0.0)),
         },
-        matched_skills=m.matched_items_json or [],
-        missing_skills=m.missing_items_json or [],
+        matched_skills=matched,
+        missing_skills=missing,
         experience=strategy.get("experience") or {
             "required_years": None, "profile_years": None, "status": "unknown",
         },
@@ -127,6 +159,7 @@ def _match_to_out(m: JobMatch) -> JobMatchOut:
             else None
         ),
         confidence_score=None,
+        match_telemetry=telemetry,
         created_at=m.created_at,
         updated_at=m.created_at,  # JobMatch has no updated_at column yet
     )
@@ -155,6 +188,7 @@ def _persist_match(
             "required_keyword": m.required_keyword,
             "matched_keyword": m.matched_keyword,
             "strength": m.strength,
+            "match_method": m.match_method,  # L2 fix: telemetry attribute
         }
         for m in result.matched
     ]
@@ -235,6 +269,14 @@ def _persist_match(
 async def compute_or_refresh_match(
     job_id: str,
     background_tasks: BackgroundTasks,
+    fast: bool = Query(
+        False,
+        description=(
+            "M3 fix: when true, skip the LLM narrator and return only the "
+            "deterministic score. Useful for instant refreshes / batch "
+            "recompute / mobile clients on slow networks."
+        ),
+    ),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -243,8 +285,9 @@ async def compute_or_refresh_match(
     - 404 if the job doesn't exist or is soft-deleted
     - 400 if the job hasn't been parsed yet (need the LLM analysis first)
     - 400 if the user has no profile yet
-    - 200 with the match payload (LLM narrative runs sync; may be None
-      if the provider fails — the deterministic score is still returned)
+    - 200 with the match payload (LLM narrative runs sync unless
+      ``?fast=true``; may be None if the provider fails — the
+      deterministic score is still returned).
     """
     job = db.get(Job, job_id)
     if job is None or job.user_id != user.id or job.deleted_at is not None:
@@ -263,11 +306,15 @@ async def compute_or_refresh_match(
     # 2) LLM narrator — runs inline because POST is synchronous. Latency
     # is typically 2–10s; if it fails we still return the deterministic
     # result with llm=null. We don't 5xx on LLM failure.
-    try:
-        llm = await narrate_match(result, db)
-    except Exception as e:  # noqa: BLE001
-        log.warning("narrate_match_unexpected", error=str(e)[:200])
+    if fast:
         llm = None
+        log.info("match_fast_path", job_id=job_id)
+    else:
+        try:
+            llm = await narrate_match(result, db)
+        except Exception as e:  # noqa: BLE001
+            log.warning("narrate_match_unexpected", error=str(e)[:200])
+            llm = None
 
     row = _persist_match(db, job_id, profile_id, result, llm)
     return _match_to_out(row)

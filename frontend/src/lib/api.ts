@@ -164,6 +164,10 @@ export interface SkillMatchDetail {
   required_keyword: string;
   matched_keyword: string | null;
   strength: number;
+  // L2 fix: which matcher strategy produced this hit. "" | "exact" |
+  // "substring" | "fuzzy". Lets the FE group by strategy and badge
+  // fuzzy hits as "approximate" so users know when to double-check.
+  match_method: 'exact' | 'substring' | 'fuzzy' | '' | null;
 }
 
 export interface ExperienceBreakdown {
@@ -211,13 +215,20 @@ export interface JobMatch {
   education: EducationBreakdown;
   llm: LLMNarrative | null;
   confidence_score: number | null;
+  // L2 fix: per-strategy hit counts from the matcher. Always present
+  // (zero-filled on a 0% match or legacy rows). Used by the panel's
+  // breakdown header to show "12 exact, 3 fuzzy" etc.
+  match_telemetry: { exact: number; substring: number; fuzzy: number };
   created_at: string;
   updated_at: string | null;
 }
 
 export const matchesApi = {
-  compute: async (jobId: string): Promise<JobMatch> => {
-    const resp = await api.post<JobMatch>(`/jobs/${jobId}/match`);
+  compute: async (jobId: string, opts?: { fast?: boolean }): Promise<JobMatch> => {
+    // M3 fix: ?fast=true skips the LLM narrator (instant deterministic
+    // refresh; useful when iterating on profile tweaks).
+    const qs = opts?.fast ? '?fast=true' : '';
+    const resp = await api.post<JobMatch>(`/jobs/${jobId}/match${qs}`);
     return resp.data;
   },
   get: async (jobId: string): Promise<JobMatch> => {
@@ -308,6 +319,52 @@ export interface CVVersion {
   created_at: string;
 }
 
+// ── Phase 7: CV scoring + recommendations ──────────────────────────────
+
+export type CVScoreAxis = 'ats_coverage' | 'skill_gap' | 'bullet_strength' | 'format_safety';
+export type CVRecommendationImpact = 'high' | 'med' | 'low';
+
+export interface CVScoreRecommendation {
+  id: string;
+  title: string;
+  impact: CVRecommendationImpact;
+  axis: CVScoreAxis;
+  details: string;
+}
+
+export interface CVScoreAxisData {
+  score: number;
+  weight: number;
+  matched?: string[];
+  missing?: string[];
+  details?: Record<string, unknown>;
+}
+
+export interface CVScore {
+  cv_id: string;
+  overall: number;
+  axes: Record<CVScoreAxis, CVScoreAxisData>;
+  matched_keywords: string[];
+  missing_keywords: string[];
+  matched_skills: string[];
+  missing_skills: string[];
+  recommendations: CVScoreRecommendation[];
+  scored_at: string;
+}
+
+export interface CVRecommendationItem {
+  cv_id: string;
+  cv_title: string;
+  job_id: string;
+  job_title: string;
+  company: string | null;
+  match_score: number;
+  cv_score: number;
+  composite: number;
+  recommendation: 'apply' | 'stretch' | 'skip';
+  missing_skills: string[];
+}
+
 export type CVSectionKind = 'summary' | 'bullets' | 'experience' | 'skills';
 
 export const cvsApi = {
@@ -362,6 +419,18 @@ export const cvsApi = {
   restoreVersion: async (cvId: string, versionId: string): Promise<CVDraft> => {
     const resp = await api.post<CVDraft>(
       `/cvs/${cvId}/versions/${versionId}/restore`,
+    );
+    return resp.data;
+  },
+  // Phase 7: force re-score + return full breakdown.
+  score: async (cvId: string): Promise<CVScore> => {
+    const resp = await api.post<CVScore>(`/cvs/${cvId}/score`);
+    return resp.data;
+  },
+  // Phase 7: best CV×job pairs sorted by composite score.
+  recommendations: async (limit = 10): Promise<CVRecommendationItem[]> => {
+    const resp = await api.get<CVRecommendationItem[]>(
+      `/cvs/recommendations?limit=${limit}`,
     );
     return resp.data;
   },

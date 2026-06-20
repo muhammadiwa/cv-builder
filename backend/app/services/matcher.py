@@ -16,9 +16,129 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 
-# ── Constants ────────────────────────────────────────────────────────
+# ── Config (P4 fix) ─────────────────────────────────────────────────
+#
+# Magic numbers were lifted from this module so thresholds can be tuned
+# without code changes. The dataclass is mutable so tests / callers can
+# monkey-patch a stricter config, but the default ``MATCHER_CONFIG`` is
+# what production uses.
 
-# Component weights — must sum to 1.0.
+@dataclass
+class MatcherConfig:
+    """All tunable thresholds for the deterministic matcher (P4 fix).
+
+    Component weights must sum to 1.0. The class itself does not enforce
+    that — call :meth:`normalized_weights` to rebalance automatically.
+    """
+
+    # Component weights for the overall score.
+    weight_skill: float = 0.60
+    weight_experience: float = 0.20
+    weight_seniority: float = 0.10
+    weight_education: float = 0.10
+
+    # Fuzzy match acceptance threshold (0.0–1.0).
+    fuzzy_ratio_threshold: float = 0.75
+
+    # Recommendation thresholds (on overall score).
+    recommend_apply_threshold: float = 0.75
+    recommend_stretch_threshold: float = 0.50
+
+    # Discount applied to fuzzy matches (1.0 for exact/substring).
+    fuzzy_strength_multiplier: float = 0.85
+
+    # Substring match strength (when one string contains the other).
+    substring_strength: float = 0.9
+
+    def normalized_weights(self) -> "MatcherConfig":
+        """Return a copy with weights rebalanced to sum to 1.0."""
+        total = (
+            self.weight_skill
+            + self.weight_experience
+            + self.weight_seniority
+            + self.weight_education
+        )
+        if total == 0:
+            return self
+        return MatcherConfig(
+            weight_skill=self.weight_skill / total,
+            weight_experience=self.weight_experience / total,
+            weight_seniority=self.weight_seniority / total,
+            weight_education=self.weight_education / total,
+            fuzzy_ratio_threshold=self.fuzzy_ratio_threshold,
+            recommend_apply_threshold=self.recommend_apply_threshold,
+            recommend_stretch_threshold=self.recommend_stretch_threshold,
+            fuzzy_strength_multiplier=self.fuzzy_strength_multiplier,
+            substring_strength=self.substring_strength,
+        )
+
+
+# Module-level singleton used by the free functions below. Override in
+# tests via ``matcher.MATCHER_CONFIG = MatcherConfig(...)``.
+MATCHER_CONFIG = MatcherConfig()
+
+
+# ── Alias table (H3 fix) ─────────────────────────────────────────────
+#
+# Tech synonyms that the fuzzy matcher either misses or matches at low
+# ratio. The table is consulted BEFORE normalization in ``_score_pair``
+# so canonical names always win the exact match branch.
+
+TECH_ALIASES: dict[str, str] = {
+    # Container / orchestration
+    "k8s": "kubernetes",
+    "kube": "kubernetes",
+    "k8": "kubernetes",
+    # Language/tool shortnames
+    "js": "javascript",
+    "ts": "typescript",
+    "py": "python",
+    "rb": "ruby",
+    "rs": "rust",
+    "go lang": "go",
+    "golang": "go",
+    # Frameworks / libs
+    "reactjs": "react",
+    "react js": "react",
+    "vuejs": "vue",
+    "vue js": "vue",
+    "vue.js": "vue",
+    "angularjs": "angular",
+    "nextjs": "next.js",
+    "next js": "next.js",
+    "nuxtjs": "nuxt",
+    "expressjs": "express",
+    "express js": "express",
+    "nodejs": "node.js",
+    "node js": "node.js",
+    "nestjs": "nest",
+    # Databases
+    "postgres": "postgresql",
+    "psql": "postgresql",
+    "mongo": "mongodb",
+    "mssql": "sql server",
+    "mysql server": "mysql",
+    # Cloud
+    "gcp": "google cloud",
+    "amazon web services": "aws",
+    "amazon aws": "aws",
+    "azure cloud": "azure",
+    # CI/CD
+    "gh actions": "github actions",
+    "gh actions ci": "github actions",
+    # Misc
+    "ml": "machine learning",
+    "ai": "artificial intelligence",
+    "nlp": "natural language processing",
+    "cv": "computer vision",
+    "tf": "tensorflow",
+    "pytorch": "torch",
+}
+
+
+# ── Constants (legacy exports kept for back-compat with tests) ──────
+
+# Component weights — must sum to 1.0. Mirrors MatcherConfig defaults.
 WEIGHT_SKILL = 0.60
 WEIGHT_EXPERIENCE = 0.20
 WEIGHT_SENIORITY = 0.10
@@ -48,7 +168,7 @@ EDUCATION_RANK = {
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-_PUNCT_RE = re.compile(r"[^a-z0-9+#.\s]")
+_PUNCT_RE = re.compile(r"[^a-z0-9+#.\\s]")
 
 
 def _normalize(text: str) -> str:
@@ -63,28 +183,44 @@ def _normalize(text: str) -> str:
     return s.strip()
 
 
-def _score_pair(a: str, b: str) -> float:
-    """Return a match strength in [0.0, 1.0] for two skill keywords.
+def _apply_alias(name: str) -> str:
+    """H3 fix: map a normalized tech name to its canonical form.
+
+    Non-matches return ``name`` unchanged. Aliases are matched against
+    the normalized form so casing/whitespace don't matter.
+    """
+    key = _normalize(name)
+    return TECH_ALIASES.get(key, key)
+
+
+def _score_pair(a: str, b: str, config: MatcherConfig | None = None) -> tuple[float, str]:
+    """Return (match_strength, match_method) for two skill keywords (L2 fix).
+
+    ``match_method`` is one of: ``"exact"``, ``"substring"``, ``"fuzzy"``,
+    or ``""`` (no match). The method makes it possible to attribute each
+    hit in telemetry (L2) without re-running the comparison.
 
     Heuristic, in order:
-      1. Exact (post-normalize)            → 1.0
-      2. One normalized string contains the other → 0.9
-      3. difflib ratio > 0.75             → ratio × 0.85 (discount fuzzy)
-      4. Otherwise                         → 0.0
+      1. Alias-canonicalized exact match → 1.0 ("exact")
+      2. One canonical string contains the other → 0.9 ("substring")
+      3. difflib ratio > threshold → ratio × multiplier ("fuzzy")
+      4. Otherwise → 0.0, "" (no match)
     """
+    cfg = config or MATCHER_CONFIG
     if not a or not b:
-        return 0.0
+        return 0.0, ""
     na, nb = _normalize(a), _normalize(b)
     if not na or not nb:
-        return 0.0
-    if na == nb:
-        return 1.0
-    if na in nb or nb in na:
-        return 0.9
+        return 0.0, ""
+    ca, cb = _apply_alias(a), _apply_alias(b)
+    if ca == cb:
+        return 1.0, "exact"
+    if ca in cb or cb in ca:
+        return cfg.substring_strength, "substring"
     ratio = SequenceMatcher(None, na, nb).ratio()
-    if ratio >= FUZZY_RATIO_THRESHOLD:
-        return ratio * 0.85
-    return 0.0
+    if ratio >= cfg.fuzzy_ratio_threshold:
+        return ratio * cfg.fuzzy_strength_multiplier, "fuzzy"
+    return 0.0, ""
 
 
 def _profile_total_years(experiences: list[dict]) -> int | None:
@@ -174,6 +310,10 @@ class SkillMatch:
     required_keyword: str
     matched_keyword: str | None
     strength: float
+    # L2 fix: which match strategy produced this hit. "" for misses,
+    # otherwise "exact" | "substring" | "fuzzy". Telemetry consumer is the
+    # JobMatchOut.match_telemetry field below.
+    match_method: str = ""
 
 
 @dataclass
@@ -222,6 +362,21 @@ class MatchResult:
             return "stretch"
         return "skip"
 
+    @property
+    def match_telemetry(self) -> dict[str, int]:
+        """L2 fix: per-strategy hit counts for tuning the thresholds later.
+
+        Counts every matched item in self.matched by ``match_method``.
+        Useful for A/B-ing a stricter fuzzy threshold or a larger alias
+        table — you can see whether dropping substring matches would
+        remove real hits or just luck-of-the-draw ones.
+        """
+        out: dict[str, int] = {"exact": 0, "substring": 0, "fuzzy": 0}
+        for m in self.matched:
+            if m.match_method in out:
+                out[m.match_method] += 1
+        return out
+
 
 # ── Public entry points ──────────────────────────────────────────────
 
@@ -269,17 +424,20 @@ def compute_skill_matches(
         for kw in group.get("keywords", []):
             best_strength = 0.0
             best_profile_kw: str | None = None
+            best_method: str = ""
             for pkw in profile_keywords:
-                s = _score_pair(pkw, kw)
-                if s > best_strength:
-                    best_strength = s
+                strength, method = _score_pair(pkw, kw)
+                if strength > best_strength:
+                    best_strength = strength
                     best_profile_kw = pkw
+                    best_method = method
 
             detail = SkillMatch(
                 required_skill=cat,
                 required_keyword=kw,
                 matched_keyword=best_profile_kw if best_strength > 0 else None,
                 strength=round(best_strength, 3),
+                match_method=best_method,  # L2 fix: telemetry attribute
             )
             all_strengths.append(best_strength)
             if best_strength > 0:
@@ -292,15 +450,16 @@ def compute_skill_matches(
     # so the FE shows it as a bonus (not a missing requirement).
     for pkw in profile_keywords:
         for (cat, kw) in preferred_keywords:
-            s = _score_pair(pkw, kw)
-            if s > 0:
+            strength, method = _score_pair(pkw, kw)
+            if strength > 0:
                 # Only add if this profile kw didn't already win any required match
                 if not any(m.matched_keyword == pkw for m in matched):
                     matched.append(SkillMatch(
                         required_skill=f"{cat} (preferred)",
                         required_keyword=kw,
                         matched_keyword=pkw,
-                        strength=round(s * 0.5, 3),  # half-weight for preferred
+                        strength=round(strength * 0.5, 3),  # half-weight for preferred
+                        match_method=method,  # L2 fix
                     ))
                 break
 

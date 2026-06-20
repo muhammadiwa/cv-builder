@@ -24,6 +24,7 @@ import {
 import clsx from 'clsx';
 import { jobsApi, matchesApi, type JobOut, type JobAnalysis, type JobSkillCategory, type JobMatch } from '../lib/api';
 import MatchPanel from '../components/jobs/MatchPanel';
+import QuickFactsGrid, { type QuickFact } from '../components/jobs/QuickFactsGrid';
 
 // Module-level so HMR + Strict Mode double-invoke can't double-schedule.
 // Mirrors the Phase 2 ProfilePage pattern.
@@ -313,63 +314,44 @@ export default function JobDetailPage() {
           )}
         </div>
 
-        {/* Quick facts row */}
+        {/* Quick facts row — P2 fix: extracted to a reusable grid. */}
         {(hasSalary || analysis?.employment_type || analysis?.required_experience_years || analysis?.required_education) && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-slate-100">
-            {hasSalary && (
-              <div>
-                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
-                  <DollarSign className="w-3 h-3" />
-                  Salary
-                </div>
-                <div className="text-[14px] font-semibold text-slate-900">
-                  {salaryMin && salaryMax
-                    ? `${salaryCurrency} ${salaryMin.toLocaleString()}–${salaryMax.toLocaleString()}`
-                    : salaryMin
-                    ? `${salaryCurrency} ${salaryMin.toLocaleString()}+`
-                    : `${salaryCurrency} ${salaryMax?.toLocaleString()}`}
-                </div>
-              </div>
-            )}
-            {!hasSalary && analysis?.employment_type && (
-              <div className="col-span-2 text-[12px] text-slate-500 italic">
-                Salary not stated in JD
-              </div>
-            )}
-            {analysis?.employment_type && (
-              <div>
-                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
-                  <Clock className="w-3 h-3" />
-                  Type
-                </div>
-                <div className="text-[14px] font-semibold text-slate-900 capitalize">
-                  {analysis.employment_type.replace('-', ' ')}
-                </div>
-              </div>
-            )}
-            {analysis?.required_experience_years !== undefined && (
-              <div>
-                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
-                  <Briefcase className="w-3 h-3" />
-                  Experience
-                </div>
-                <div className="text-[14px] font-semibold text-slate-900">
-                  {analysis.required_experience_years}+ years
-                </div>
-              </div>
-            )}
-            {analysis?.required_education && (
-              <div>
-                <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
-                  <GraduationCap className="w-3 h-3" />
-                  Education
-                </div>
-                <div className="text-[14px] font-semibold text-slate-900">
-                  {analysis.required_education}
-                </div>
-              </div>
-            )}
-          </div>
+          <QuickFactsGrid
+            facts={
+              [
+                hasSalary && {
+                  icon: DollarSign,
+                  label: 'Salary',
+                  value:
+                    salaryMin && salaryMax
+                      ? `${salaryCurrency} ${salaryMin.toLocaleString()}–${salaryMax.toLocaleString()}`
+                      : salaryMin
+                      ? `${salaryCurrency} ${salaryMin.toLocaleString()}+`
+                      : `${salaryCurrency} ${salaryMax?.toLocaleString()}`,
+                },
+                analysis?.employment_type && {
+                  icon: Clock,
+                  label: 'Type',
+                  value: analysis.employment_type.replace('-', ' '),
+                },
+                analysis?.required_experience_years !== undefined && {
+                  icon: Briefcase,
+                  label: 'Experience',
+                  value: `${analysis.required_experience_years}+ years`,
+                },
+                analysis?.required_education && {
+                  icon: GraduationCap,
+                  label: 'Education',
+                  value: analysis.required_education,
+                },
+              ].filter(Boolean) as QuickFact[]
+            }
+            footer={
+              !hasSalary && analysis?.employment_type
+                ? 'Salary not stated in JD'
+                : undefined
+            }
+          />
         )}
       </div>
 
