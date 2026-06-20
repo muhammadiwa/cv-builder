@@ -111,9 +111,13 @@ def preview_template(
             400, "preview requires either profile_id or cv_json"
         )
 
-    # Validate accent_color early so the preview doesn't render with
-    # the silent fallback (#111111) and surprise the user.
     cfg = dict(payload.template_config_json or {})
+    # ``template_config_json`` is ``dict[str, Any]`` in the schema so
+    # Pydantic's top-level field_validator can't see the nested
+    # ``accent_color``. Re-check here so the preview doesn't render
+    # with a silent fallback (#111111) and surprise the user with a
+    # color they didn't pick. This intentionally returns 400 (not 422)
+    # because the offending field is nested, not top-level.
     if "accent_color" in cfg:
         try:
             cfg["accent_color"] = validate_ats_color(cfg["accent_color"])
@@ -174,11 +178,9 @@ def create_template(
             409, f"template id '{payload.id}' already exists; pick a different id or use /duplicate"
         )
 
-    # Validate accent_color explicitly (Pydantic accepts any string here).
-    try:
-        accent = validate_ats_color(payload.accent_color)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from e
+    # accent_color was already validated by the Pydantic
+    # ``TemplateCreateIn._check_accent_color`` field_validator (M1 fix).
+    # We trust the schema and don't re-validate here.
 
     config: dict[str, Any] = {
         "id": payload.id,
@@ -186,7 +188,7 @@ def create_template(
         "type": payload.type,
         "sections": payload.sections,
         "font_family": payload.font_family,
-        "accent_color": accent,
+        "accent_color": payload.accent_color,
         "density": payload.density,
         "bullet_style": payload.bullet_style,
         "date_format": payload.date_format,
@@ -230,12 +232,9 @@ def patch_template(
             f"use POST /templates/{template_id}/duplicate to fork it",
         )
 
-    # Validate accent_color if provided.
-    if payload.accent_color is not None:
-        try:
-            payload.accent_color = validate_ats_color(payload.accent_color)
-        except ValueError as e:
-            raise HTTPException(400, str(e)) from e
+    # accent_color was already validated by the Pydantic
+    # ``TemplatePatchIn._check_accent_color`` field_validator (M1 fix).
+    # We trust the schema and don't re-validate here.
 
     cfg = dict(tpl.template_config_json or {})
 

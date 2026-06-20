@@ -21,8 +21,6 @@ import { templatesApi } from '../../lib/api';
 interface TemplatePickerProps {
   value: string;
   onChange: (id: string) => void;
-  /** Optional id to skip from "current" highlight (e.g. when editing). */
-  excludeId?: string;
   /** Disable interaction (e.g. while saving). */
   disabled?: boolean;
   /** "compact" = inline select; "card" = card-grid picker. Default "compact". */
@@ -97,6 +95,8 @@ export default function TemplatePicker({
           type="button"
           onClick={() => !disabled && setOpen((o) => !o)}
           disabled={disabled}
+          aria-expanded={open}
+          aria-haspopup="listbox"
           className="w-full flex items-center justify-between gap-2 border border-slate-300 rounded px-2 py-1.5 text-sm bg-white hover:bg-slate-50 disabled:opacity-50"
         >
           <span className="truncate text-left">
@@ -112,6 +112,11 @@ export default function TemplatePicker({
           <div
             className="absolute z-20 mt-1 w-full max-h-72 overflow-auto bg-white border border-slate-200 rounded shadow-lg"
             data-testid={`${testId}-dropdown`}
+            role="listbox"
+            // Close dropdown on Escape — screen reader + keyboard friendly.
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setOpen(false);
+            }}
           >
             {templates.map((t) => (
               <button

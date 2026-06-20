@@ -529,6 +529,12 @@ function TemplateFormModal({
     <div
       className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
     >
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col"
@@ -745,6 +751,10 @@ function TemplateFormModal({
                   style={{ height: 'calc(90vh - 110px)', border: 'none' }}
                   title="Template preview"
                   data-testid="live-preview-iframe"
+                  // Sandbox isolates the previewed HTML — it can't access
+                  // cookies, run scripts beyond what the renderer emits,
+                  // or escape into the parent app's origin.
+                  sandbox=""
                 />
               ) : (
                 <div className="p-4 text-sm text-slate-500 flex items-center gap-2">
@@ -851,6 +861,12 @@ function TemplatePreviewModal({
     <div
       className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
     >
       <div
         className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
@@ -881,6 +897,7 @@ function TemplatePreviewModal({
               className="w-full bg-white"
               style={{ height: 'calc(90vh - 110px)', border: 'none' }}
               title="Template preview"
+              sandbox=""
             />
           ) : (
             <div className="p-12 text-rose-700 text-sm">Preview failed</div>

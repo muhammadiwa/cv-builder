@@ -36,7 +36,8 @@ export default function Toast() {
       const ce = e as CustomEvent<ToastEvent>;
       const { type, message, ttl = 4000 } = ce.detail;
       const id = nextId++;
-      setToasts((prev) => [...prev, { id, type, message, ttl }]);
+      // Newest on top: unshift rather than push.
+      setToasts((prev) => [{ id, type, message, ttl }, ...prev]);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, ttl);
@@ -51,6 +52,8 @@ export default function Toast() {
     <div
       className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"
       data-testid="toast-container"
+      aria-live="polite"
+      aria-atomic="false"
     >
       {toasts.map((t) => {
         const Icon = ICONS[t.type];

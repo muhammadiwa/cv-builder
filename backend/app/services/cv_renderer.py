@@ -111,6 +111,40 @@ def _strip_text(text: Any) -> str:
     return s
 
 
+# ── URL safety (H1 fix) ───────────────────────────────────────────
+# H1 fix: ``html.escape(..., quote=True)`` does NOT escape ``:`` or ``/``,
+# so a ``javascript:alert(1)`` URL survives escaping and renders as a
+# live ``<a href>`` that executes JS when clicked. The CV is loaded
+# inside a ``<iframe srcDoc>`` on the FE without a sandbox (M2), so
+# this is a real attack chain. Whitelist safe schemes and strip
+# anything else before rendering.
+_ALLOWED_URL_SCHEMES = frozenset({"http", "https", "mailto"})
+
+
+def _safe_url(url: Any) -> str:
+    """Return a URL safe to embed in ``href``, or empty string if unsafe.
+
+    Accepts only ``http://``, ``https://``, ``mailto:`` URLs. Anything
+    else (``javascript:``, ``data:``, ``vbscript:``, ``file:``, ``ftp:``,
+    etc.) is silently dropped — we render the link text but never the
+    dangerous ``href``. Empty/None inputs return "".
+    """
+    if url is None:
+        return ""
+    s = str(url).strip()
+    if not s:
+        return ""
+    # Find scheme: split at first ":" before any "/"
+    if ":" not in s:
+        # Relative URL — strip the whole thing; ATS-safe means we don't
+        # trust arbitrary relative refs either.
+        return ""
+    scheme = s.split(":", 1)[0].lower()
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        return ""
+    return s
+
+
 def _format_date_range(
     start: Any,
     end: Any,
@@ -448,7 +482,7 @@ def _render_projects(projects: list[dict[str, Any]]) -> CVSection:
         if tech_str:
             parts.append(f'<p class="cv-meta"><em>{_esc(tech_str)}</em></p>')
         if url:
-            parts.append(f'<p class="cv-meta"><a href="{_esc(url)}">{_esc(url)}</a></p>')
+            parts.append(f'<p class="cv-meta"><a href="{_esc(_safe_url(url))}">{_esc(url)}</a></p>')
         items_html.append("  <div class=\"cv-proj\">\n" + "\n".join(parts) + "\n  </div>")
 
         md_parts: list[str] = []
@@ -1077,7 +1111,7 @@ def build_cv_doc_from_json(cv_json: dict[str, Any]) -> CVDoc:
             if tech_str:
                 parts.append(f'<p class="cv-meta"><em>{_esc(tech_str)}</em></p>')
             if url:
-                parts.append(f'<p class="cv-meta"><a href="{_esc(url)}">{_esc(url)}</a></p>')
+                parts.append(f'<p class="cv-meta"><a href="{_esc(_safe_url(url))}">{_esc(url)}</a></p>')
             items_html.append("  <div class=\"cv-proj\">\n" + "\n".join(parts) + "\n  </div>")
             md = []
             if name:
@@ -1169,6 +1203,28 @@ def seed_default_templates(db: Any) -> None:
                     is_default=(cfg["id"] == DEFAULT_TEMPLATE_ID),
                 )
             )
+        else:
+            # Phase 10A: idempotent upgrade — if the row was seeded with
+            # a legacy config (pre-font_family / pre-accent_color), merge
+            # the new keys in without nuking any user customizations that
+            # may have been patched on top. We only add missing keys.
+            stored = dict(existing.template_config_json or {})
+            merged = {**cfg, **stored}  # stored wins (user patches).
+            # Ensure the canonical defaults are present even if stored had
+            # them deleted.
+            for key in (
+                "font_family",
+                "accent_color",
+                "density",
+                "bullet_style",
+                "date_format",
+                "page_size",
+            ):
+                if key not in stored:
+                    merged[key] = cfg[key]
+            if merged != stored:
+                existing.template_config_json = merged
+                db.add(existing)
     db.commit()
     _SEEDED_FLAG["done"] = True
 

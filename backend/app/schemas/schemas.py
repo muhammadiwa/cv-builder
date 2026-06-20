@@ -671,11 +671,29 @@ class RecentCallOut(BaseModel):
 
 from typing import Literal  # noqa: E402  (kept here for local clarity)
 
+from pydantic import field_validator  # noqa: E402
+
 FontFamilyLiteral = Literal["serif", "sans", "mono"]
 DensityLiteral = Literal["compact", "normal", "spacious"]
 BulletStyleLiteral = Literal["dash", "bullet", "arrow"]
 DateFormatLiteral = Literal["Mon YYYY", "MM/YYYY", "YYYY"]
 PageSizeLiteral = Literal["A4", "Letter"]
+
+
+def _validate_ats_color(v: str | None) -> str | None:
+    """M1 fix: validate accent_color at the Pydantic layer so callers
+    get a consistent 422 (instead of route-level 400) and the OpenAPI
+    docs advertise the constraint.
+
+    Imported here (lazily) to avoid a circular import with the
+    renderer module, which itself imports the schema in tests.
+    """
+    if v is None:
+        return v
+    # Local import keeps the import graph acyclic.
+    from app.services.cv_renderer import validate_ats_color
+
+    return validate_ats_color(v)
 
 
 class TemplateListItem(BaseModel):
@@ -722,6 +740,11 @@ class TemplateCreateIn(BaseModel):
     page_size: PageSizeLiteral = "A4"
     is_ats_friendly: bool = True
 
+    @field_validator("accent_color")
+    @classmethod
+    def _check_accent_color(cls, v: str) -> str:
+        return _validate_ats_color(v)  # type: ignore[return-value]
+
 
 class TemplatePatchIn(BaseModel):
     """Partial template update. All fields optional. ``id`` is NOT
@@ -738,6 +761,11 @@ class TemplatePatchIn(BaseModel):
     date_format: DateFormatLiteral | None = None
     page_size: PageSizeLiteral | None = None
     is_ats_friendly: bool | None = None
+
+    @field_validator("accent_color")
+    @classmethod
+    def _check_accent_color(cls, v: str | None) -> str | None:
+        return _validate_ats_color(v)
 
 
 class TemplatePreviewIn(BaseModel):

@@ -12,11 +12,11 @@ from app.api.middleware import RateLimitMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
-from app.db.session import Base, engine
+from app.db.session import Base, SessionLocal, engine
 # Import models so they register with Base.metadata before create_all() runs.
 # Without this, Base.metadata.tables is empty and no schema is created.
 from app import models  # noqa: F401
-from app.services.cv_renderer import reset_seed_cache  # Phase 10A
+from app.services.cv_renderer import reset_seed_cache, seed_default_templates  # Phase 10A
 
 
 def create_app() -> FastAPI:
@@ -43,8 +43,12 @@ def create_app() -> FastAPI:
 
     # Phase 10A: force seed check on every cold start so newly-added
     # presets land in the DB even if the previous process had the
-    # module-level cache flag set to ``done``.
+    # module-level cache flag set to ``done``. Also triggers the
+    # idempotent upgrade-merge for presets that pre-date the new
+    # styling keys (font_family / accent_color / density / ...).
     reset_seed_cache()
+    with SessionLocal() as _seed_db:
+        seed_default_templates(_seed_db)
 
     app = FastAPI(
         title=settings.app_name,
@@ -63,11 +67,18 @@ def create_app() -> FastAPI:
     )
 
     # Phase 9C: per-IP rate limiting (in-memory, single-process).
-    # Exempt /api/health (probes) and the docs routes.
+    # Exempt /api/health (probes), docs routes, and /api/templates/preview
+    # (preview is called on every keystroke from the TemplatesPage editor —
+    # without exemption, users hit 429 while iterating on a design).
     app.add_middleware(
         RateLimitMiddleware,
         requests_per_minute=settings.rate_limit_rpm,
-        exempt_paths=("/api/health", "/docs", "/openapi.json"),
+        exempt_paths=(
+            "/api/health",
+            "/docs",
+            "/openapi.json",
+            "/api/templates/preview",
+        ),
     )
 
     app.include_router(api_router)

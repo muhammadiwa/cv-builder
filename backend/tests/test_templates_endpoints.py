@@ -129,8 +129,11 @@ def test_create_rejects_unsafe_color(client):
         "accent_color": "#ff0000",
     }
     r = client.post("/api/templates", json=payload)
-    assert r.status_code == 400
-    assert "ATS-safe palette" in r.json()["detail"]
+    # M1 fix: Pydantic field_validator returns 422 (not 400) for the
+    # accent_color constraint violation.
+    assert r.status_code == 422, r.text
+    body = r.text
+    assert "ATS-safe" in body or "accent_color" in body
 
 
 def test_create_rejects_invalid_id_pattern(client):
@@ -192,8 +195,10 @@ def test_patch_rejects_unsafe_color(client):
     assert create.status_code == 201
 
     r = client.patch("/api/templates/user_safe", json={"accent_color": "#ff0000"})
-    assert r.status_code == 400
-    assert "ATS-safe palette" in r.json()["detail"]
+    # M1 fix: Pydantic validator → 422 (was 400).
+    assert r.status_code == 422
+    body = r.text
+    assert "ATS-safe" in body or "accent_color" in body
 
 
 def test_patch_builtin_preset_returns_403(client):
@@ -366,8 +371,10 @@ def test_preview_requires_profile_or_cv_json(client):
 
 
 def test_preview_rejects_unsafe_color(client):
-    profile_r = client.get("/api/profile")
-    profile_id = profile_r.json()["id"]
+    """``template_config_json`` is ``dict[str, Any]`` so Pydantic can't
+    validate the nested ``accent_color`` field at the schema layer —
+    the route does it manually and returns 400."""
+    profile_id = _ensure_profile(client)
 
     r = client.post("/api/templates/preview", json={
         "profile_id": profile_id,

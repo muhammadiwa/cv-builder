@@ -288,3 +288,79 @@ def test_renderer_full_at_s_modern_preset_renders():
     assert "Acme Corp" in html
     # ATS-modern accent should appear
     assert cfg["accent_color"] in html
+
+
+# ── _safe_url (H1 fix) ────────────────────────────────────────────
+def test_safe_url_accepts_http_https_mailto():
+    from app.services.cv_renderer import _safe_url
+    assert _safe_url("https://example.com") == "https://example.com"
+    assert _safe_url("http://example.com") == "http://example.com"
+    assert _safe_url("mailto:a@b.com") == "mailto:a@b.com"
+
+
+def test_safe_url_rejects_javascript_scheme():
+    """H1 fix: javascript: URLs must be stripped before rendering."""
+    from app.services.cv_renderer import _safe_url
+    assert _safe_url("javascript:alert(1)") == ""
+    assert _safe_url("JavaScript:alert(1)") == ""
+    assert _safe_url("JAVASCRIPT:alert(1)") == ""
+
+
+def test_safe_url_rejects_other_dangerous_schemes():
+    from app.services.cv_renderer import _safe_url
+    for bad in [
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "file:///etc/passwd",
+        "ftp://evil.example.com",
+        "blob:http://x/123",
+    ]:
+        assert _safe_url(bad) == "", f"should reject {bad!r}"
+
+
+def test_safe_url_rejects_empty_and_none():
+    from app.services.cv_renderer import _safe_url
+    assert _safe_url("") == ""
+    assert _safe_url(None) == ""
+    assert _safe_url("   ") == ""
+
+
+def test_safe_url_rejects_relative_urls():
+    from app.services.cv_renderer import _safe_url
+    assert _safe_url("/path/to/page") == ""
+    assert _safe_url("just-a-string") == ""
+
+
+def test_safe_url_preserves_query_and_fragment():
+    from app.services.cv_renderer import _safe_url
+    assert (
+        _safe_url("https://example.com/page?q=1&r=2#anchor")
+        == "https://example.com/page?q=1&r=2#anchor"
+    )
+
+
+def test_renderer_strips_javascript_href():
+    """H1 fix: end-to-end — render profile with malicious URL, verify
+    the href is empty (link text remains visible but harmless)."""
+    profile = {
+        "basics": {"name": "Mallory", "email": "m@x.com"},
+        "projects": [
+            {
+                "name": "Pwn",
+                "description": "Project",
+                "keywords": [],
+                "url": "javascript:alert(1)",
+            }
+        ],
+        "work": [],
+        "education": [],
+        "skills": [],
+    }
+    html = render_html_document(profile)
+    # No href="javascript:..." should survive rendering.
+    assert 'href="javascript:' not in html.lower()
+    # The link text is still rendered (so user sees the project),
+    # but with empty href — safe.
+    assert 'href=""' in html
+    # Sanity: project name still visible.
+    assert "Pwn" in html
