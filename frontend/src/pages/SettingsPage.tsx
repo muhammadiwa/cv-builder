@@ -56,6 +56,7 @@ export default function SettingsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<LLMProvider | null>(null);
 
   const load = async () => {
     try {
@@ -151,20 +152,7 @@ export default function SettingsPage() {
                 provider={p}
                 onEdit={() => setEditingId(p.id)}
                 onDelete={async () => {
-                  if (
-                    !confirm(
-                      `Delete provider "${p.display_name}"? This can't be undone.`,
-                    )
-                  ) {
-                    return;
-                  }
-                  try {
-                    await llmProvidersApi.delete(p.id);
-                    showToast('success', `Deleted ${p.display_name}`);
-                    await load();
-                  } catch (e) {
-                    showToast('error', `Delete failed: ${(e as Error).message}`);
-                  }
+                  setConfirmDelete(p);
                 }}
                 onTest={async () => {
                   setTestingId(p.id);
@@ -228,6 +216,79 @@ export default function SettingsPage() {
           }}
         />
       )}
+
+      {/* ── Confirm-delete dialog ─────────────────────────── */}
+      {confirmDelete && (
+        <ConfirmDeleteDialog
+          provider={confirmDelete}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={async () => {
+            const target = confirmDelete;
+            setConfirmDelete(null);
+            try {
+              await llmProvidersApi.delete(target.id);
+              showToast('success', `Deleted ${target.display_name}`);
+              await load();
+            } catch (e) {
+              showToast('error', `Delete failed: ${(e as Error).message}`);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Confirm-delete dialog (a11y-friendly replacement for confirm()) ──
+function ConfirmDeleteDialog({
+  provider,
+  onCancel,
+  onConfirm,
+}: {
+  provider: LLMProvider;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onCancel}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onCancel();
+      }}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-delete-title"
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="confirm-delete-title" className="text-lg font-semibold text-slate-900">
+          Delete provider?
+        </h2>
+        <p className="text-sm text-slate-600 mt-2">
+          Delete <strong>{provider.display_name}</strong>? This can't be undone.
+          {provider.api_key_set && (
+            <span className="block mt-1 text-amber-700">
+              The encrypted API key for this provider will also be removed.
+            </span>
+          )}
+        </p>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button onClick={onCancel} className="btn-secondary">
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded text-sm"
+            data-testid="confirm-delete-btn"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -74,9 +74,11 @@ def create_app() -> FastAPI:
     )
 
     # Phase 9C: per-IP rate limiting (in-memory, single-process).
-    # Exempt /api/health (probes), docs routes, and /api/templates/preview
+    # Exempt /api/health (probes), docs routes, /api/templates/preview
     # (preview is called on every keystroke from the TemplatesPage editor —
-    # without exemption, users hit 429 while iterating on a design).
+    # without exemption, users hit 429 while iterating on a design), and
+    # /api/llm-providers/{id}/test (settings page "Test connection" button —
+    # users may click it several times in a row while debugging).
     app.add_middleware(
         RateLimitMiddleware,
         requests_per_minute=settings.rate_limit_rpm,
@@ -85,6 +87,7 @@ def create_app() -> FastAPI:
             "/docs",
             "/openapi.json",
             "/api/templates/preview",
+            "/api/llm-providers",  # single-user mode — exempt all CRUD + /test
         ),
     )
 
