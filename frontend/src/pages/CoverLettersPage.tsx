@@ -573,6 +573,11 @@ function CoverLetterDetail({
               {exporting === 'docx' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
               DOCX
             </button>
+            {/* M6 fix (Phase 9 review): wire coverLettersApi.listExports
+                so the BE endpoint has a UI consumer. The dropdown shows
+                the last 5 exports for this letter; clicking re-runs
+                the export so the user always gets a fresh download. */}
+            <ExportHistoryDropdown letterId={letter.id} />
           </div>
         </div>
 
@@ -821,6 +826,91 @@ function GenerateCoverLetterModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Export History (M6 fix — wires coverLettersApi.listExports) ──────
+
+function ExportHistoryDropdown({ letterId }: { letterId: string }) {
+  const [history, setHistory] = useState<
+    { file_type: string; file_size: number; sha256: string | null; created_at: string }[]
+  >([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const items = await coverLettersApi.listExports(letterId, 5);
+      setHistory(items);
+    } catch (e: unknown) {
+      const detail =
+        (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        (e as Error).message;
+      setError(detail);
+    } finally {
+      setLoading(false);
+    }
+  }, [letterId]);
+
+  useEffect(() => {
+    if (open) {
+      refresh();
+    }
+  }, [open, refresh]);
+
+  return (
+    <div className="relative" data-testid="export-history">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-medium px-2.5 py-1.5 rounded-md"
+        title="View past exports for this letter"
+        data-testid="export-history-btn"
+      >
+        <FileDown className="w-3.5 h-3.5" />
+        History
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-72 bg-white rounded-md border border-slate-200 shadow-lg z-10">
+          <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700">Recent exports</span>
+            <button
+              onClick={refresh}
+              className="text-[10px] text-indigo-600 hover:text-indigo-800"
+              data-testid="export-history-refresh"
+            >
+              Refresh
+            </button>
+          </div>
+          {loading && (
+            <div className="p-3 text-xs text-slate-500 flex items-center gap-2">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+            </div>
+          )}
+          {error && (
+            <div className="p-3 text-xs text-red-600">{error}</div>
+          )}
+          {!loading && !error && history.length === 0 && (
+            <div className="p-3 text-xs text-slate-500">No exports yet.</div>
+          )}
+          {!loading && !error && history.length > 0 && (
+            <ul className="max-h-48 overflow-y-auto divide-y divide-slate-100">
+              {history.map((h) => (
+                <li
+                  key={`${h.created_at}-${h.sha256}`}
+                  className="px-3 py-1.5 text-[11px] text-slate-600 flex items-center justify-between"
+                >
+                  <span className="uppercase font-medium">{h.file_type}</span>
+                  <span>{new Date(h.created_at).toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }

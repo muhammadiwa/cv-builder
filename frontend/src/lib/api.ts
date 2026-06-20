@@ -587,10 +587,10 @@ export const applicationsApi = {
     const resp = await api.get<Application[]>('/applications', { params });
     return resp.data;
   },
-  get: async (id: string): Promise<Application> => {
-    const resp = await api.get<Application>(`/applications/${id}`);
-    return resp.data;
-  },
+  // M6 fix (Phase 9 review): removed `get` — dead code. The detail
+  // drawer uses ``apps.find((a) => a.id === selectedId)`` on the
+  // already-loaded list, so the per-id GET was never called. If a
+  // future feature needs a fresh fetch, re-add it then.
   create: async (payload: {
     job_id: string;
     cv_draft_id?: string | null;
@@ -716,7 +716,11 @@ export const coverLettersApi = {
     const cd = resp.headers['content-disposition'] as string | undefined;
     const match = cd?.match(/filename="?([^"]+)"?/);
     const fileName = match?.[1] ?? `cover_letter_${id.slice(0, 8)}.${fmt}`;
-    const exportId = (resp.headers['x-cv-export-id'] as string | undefined) ?? '';
+    // H1 fix (Phase 9 review): header name is X-Cover-Letter-Export-Id
+    // (different from the CV export's X-Cv-Export-Id). Reading the
+    // wrong header returned an empty exportId and broke the audit
+    // hook on the FE.
+    const exportId = (resp.headers['x-cover-letter-export-id'] as string | undefined) ?? '';
     const sizeHeader = resp.headers['x-cv-export-size'] as string | undefined;
     const size = sizeHeader ? Number(sizeHeader) : resp.data.size;
     const url = URL.createObjectURL(resp.data);

@@ -18,11 +18,16 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
 from app.models.models import Application, Job, User
-from app.schemas.schemas import ApplicationIn, ApplicationOut, ApplicationStatus
+from app.schemas.schemas import (
+    ApplicationIn,
+    ApplicationOut,
+    ApplicationPatchIn,
+    ApplicationStatus,
+)
 
 from .jobs import get_current_user
 
@@ -34,14 +39,21 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
+# L5 fix (Phase 9 review): single-query ownership check via joinedload.
+# Avoids the two round-trips (Application.get → Job.get) the old helper
+# did. The Application model already has ``job: relationship``.
 def _get_owned_application(
     db: Session, application_id: str, user: User
 ) -> Application:
-    """Fetch an application and verify ownership via the job chain."""
-    app = db.get(Application, application_id)
+    app = (
+        db.query(Application)
+        .options(joinedload(Application.job))
+        .filter(Application.id == application_id)
+        .first()
+    )
     if app is None:
         raise HTTPException(404, f"application {application_id} not found")
-    job = db.get(Job, app.job_id)
+    job = app.job  # eager-loaded
     if job is None or job.user_id != user.id:
         raise HTTPException(403, "not your application")
     return app
@@ -65,6 +77,12 @@ def _serialize(app: Application) -> dict[str, Any]:
     }
 
 
+# L7 fix (Phase 9 review): validate the status query param against
+# the literal union so a bogus value returns 422 instead of an empty
+# list. Without this, ``?status=lol`` silently returns [].
+_STATUS_VALUES = {"draft", "ready", "applied", "interview", "rejected", "offer"}
+
+
 # ── Routes ──────────────────────────────────────────────────────────
 
 
@@ -77,6 +95,8 @@ def list_applications(
     user: User = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     """List the user's applications, newest updated first."""
+    if status is not None and status not in _STATUS_VALUES:
+        raise HTTPException(422, f"invalid status: {status}")
     q = (
         db.query(Application)
         .join(Job, Application.job_id == Job.id)
@@ -139,30 +159,24 @@ def get_application(
     return _serialize(app)
 
 
+# H5 fix (Phase 9 review): PATCH now uses the typed ``ApplicationPatchIn``
+# Pydantic model so ``status`` enum validation happens at the framework
+# boundary. Previously accepted ``dict[str, Any]`` and ``setattr(app,
+# "status", value)`` would persist any string, bypassing the
+# ApplicationStatus Literal.
 @router.patch("/{application_id}", response_model=ApplicationOut)
 def patch_application(
     application_id: str,
-    payload: dict[str, Any],
+    payload: ApplicationPatchIn,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Edit application fields (status, dates, contact, notes)."""
     app = _get_owned_application(db, application_id, user)
-    allowed = {
-        "cv_draft_id",
-        "cover_letter_id",
-        "status",
-        "applied_date",
-        "follow_up_date",
-        "contact_person",
-        "contact_email",
-        "notes",
-    }
     changes: list[str] = []
-    for key, value in payload.items():
-        if key not in allowed:
-            continue
-        # If transitioning to "applied" for the first time, stamp applied_date
+    data = payload.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        # Auto-stamp applied_date on first transition to 'applied'
         if key == "status" and value == "applied" and app.applied_date is None:
             app.applied_date = datetime.now(timezone.utc)
             changes.append("applied_date=auto")
@@ -188,7 +202,7 @@ def transition_status(
     """Convenience endpoint for status transitions. Auto-stamps applied_date
     when moving to 'applied' for the first time."""
     new_status = payload.get("status")
-    if new_status not in ("draft", "ready", "applied", "interview", "rejected", "offer"):
+    if new_status not in _STATUS_VALUES:
         raise HTTPException(400, f"invalid status: {new_status}")
     app = _get_owned_application(db, application_id, user)
     if new_status == "applied" and app.applied_date is None:

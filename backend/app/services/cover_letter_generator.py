@@ -29,6 +29,8 @@ from typing import Any
 
 import structlog
 
+from app.services.cv_scorer import _match_token
+
 log = structlog.get_logger(__name__)
 
 PROMPT_TASK_TYPE = "cover_letter"
@@ -366,7 +368,11 @@ async def enhance_cover_letter(
             json_mode=True,
             prompt_version=PROMPT_VERSION,
         )
-    except Exception as exc:  # noqa: BLE001
+    except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
+        # M2 fix (Phase 9 review): narrow from `Exception` to known
+        # LLM-transport failure types. Programmer errors (NameError,
+        # AttributeError) now surface instead of being silently
+        # swallowed as "LLM failed, fallback to deterministic."
         log.warning(
             "cover_letter_llm_failed",
             error=str(exc)[:200],
@@ -412,10 +418,13 @@ async def enhance_cover_letter(
             str(s.get("name") if isinstance(s, dict) else s).lower()
             for s in profile.get("skills") or []
         }
+        # H6 fix (Phase 9 review): word-boundary check via _match_token
+        # so "Python" doesn't sneak in just because "Pythonic" is in
+        # the user's skills list.
         safe_keywords = [
             kw for kw in keywords_used
-            if any(us in kw.lower() or kw.lower() in us for us in user_skills)
-            or not user_skills  # no skills listed → trust LLM
+            if not user_skills  # no skills listed → trust LLM
+            or any(_match_token(us, kw.lower()) for us in user_skills)
         ]
         keywords_used = safe_keywords or keywords_used[:2]
 
@@ -439,8 +448,16 @@ class CoverLetterScore:
     axes: dict[str, dict[str, Any]]
 
     def to_breakdown(self) -> dict[str, Any]:
+        # H2 fix (Phase 9 review): flatten matched_skills / missing_skills
+        # to the top level so the FE can read them directly. Previously
+        # they lived only under ``axes.keyword_coverage.{matched,missing}``
+        # which forced the FE to walk a nested path. Keep the nested
+        # copy too so existing consumers don't break.
+        kw_axis = self.axes.get("keyword_coverage", {})
         return {
             "overall": self.overall,
+            "matched_skills": list(kw_axis.get("matched") or []),
+            "missing_skills": list(kw_axis.get("missing") or []),
             "axes": self.axes,
             **self.breakdown,
         }
@@ -473,9 +490,15 @@ def score_cover_letter(
             if isinstance(n, str):
                 required_norm_raw.append(n)
     required_norm = [k.lower().strip() for k in required_norm_raw if k]
+    # H6 fix (Phase 9 review): use word-boundary token matching, not
+    # naive `kw in text` substring. The old code inflated scores by
+    # matching "python" in "pythonic", "data" in "database", "go" in
+    # "google", "c" in "C++", etc. Reuses the same _match_token helper
+    # as cv_scorer so the cover letter and CV scorers stay consistent.
     if required_norm:
-        matched = [k for k in required_norm_raw if k.lower() in text_lower]
-        missing = [k for k in required_norm_raw if k.lower() not in text_lower]
+        matched_norm = {k for k in required_norm if _match_token(k, text_lower)}
+        matched = [k for k in required_norm_raw if k.lower() in matched_norm]
+        missing = [k for k in required_norm_raw if k.lower() not in matched_norm]
         kw_score = len(matched) / len(required_norm)
     else:
         matched = []
@@ -617,12 +640,15 @@ def _build_recommendations(axes: dict[str, dict[str, Any]]) -> list[dict[str, st
         )
     length = axes["length"]
     wc = (length.get("details") or {}).get("word_count", 0)
+    # H3 fix (Phase 9 review): emit 'med' (not 'medium') so the FE
+    # impact enum matches. The union is 'high' | 'med' | 'low' on
+    # both sides; emitting 'medium' here was a contract drift.
     if wc > 0 and wc < 200:
         recs.append(
             {
                 "id": "shorten_letter",
                 "axis": "length",
-                "impact": "medium",
+                "impact": "med",
                 "title": f"Letter is {wc} words — aim for 250-400",
                 "details": "Too short hurts personalization depth.",
             }
@@ -632,7 +658,7 @@ def _build_recommendations(axes: dict[str, dict[str, Any]]) -> list[dict[str, st
             {
                 "id": "trim_letter",
                 "axis": "length",
-                "impact": "medium",
+                "impact": "med",
                 "title": f"Letter is {wc} words — trim to 250-400",
                 "details": "Recruiters skim; tight prose wins.",
             }

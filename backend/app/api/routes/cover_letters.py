@@ -15,17 +15,18 @@ All routes verify ownership via the profile_id chain (cover_letter
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
 from app.models.models import CoverLetter, Export, Job, Profile, User
-from app.schemas.schemas import CoverLetterIn, CoverLetterOut
+from app.schemas.schemas import CoverLetterIn, CoverLetterOut, CoverLetterPatchIn, ExportOut
 from app.services.cover_letter_generator import (
     generate_cover_letter_deterministic,
     enhance_cover_letter,
@@ -41,14 +42,51 @@ router = APIRouter(prefix="/cover-letters", tags=["cover-letters"])
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
+# L9 fix (Phase 9 review): hard cap to keep cover-letter content
+# rows bounded. 20_000 chars is ~3-4 pages of dense prose — well
+# above the realistic upper end of a recruiter-friendly letter.
+_MAX_CONTENT_CHARS = 20_000
+
+# H4 fix (Phase 9 review): shared safe-title helper used by both the
+# CV and cover-letter exporters. Keeps Content-Disposition filenames
+# well-formed even when the source subject contains path separators,
+# quotes, or control chars. Same allowlist used by cvs.py:export_cv
+# so behavior is identical across both exporters.
+_SAFE_TITLE_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
+_SAFE_TITLE_COLLAPSE_RE = re.compile(r"\s+")
+
+
+def _safe_filename_title(raw: str | None, fallback: str, max_len: int = 80) -> str:
+    """Sanitize an arbitrary string for use in ``Content-Disposition: filename=``.
+
+    Strips any chars outside ``[A-Za-z0-9._- ]`` and collapses runs of
+    whitespace. Falls back to ``fallback`` if the result is empty.
+    Truncates to ``max_len`` characters.
+    """
+    if not raw:
+        return fallback[:max_len]
+    cleaned = _SAFE_TITLE_RE.sub("", raw).strip()
+    cleaned = _SAFE_TITLE_COLLAPSE_RE.sub("-", cleaned).strip("-")
+    if not cleaned:
+        return fallback[:max_len]
+    return cleaned[:max_len]
+
+
+# L5 fix (Phase 9 review): single-query ownership check via joinedload.
+# Avoids the two round-trips (CoverLetter.get → Profile.get) the old
+# helper did, where one suffices with a JOIN.
 def _get_owned_cover_letter(
     db: Session, cover_letter_id: str, user: User
 ) -> CoverLetter:
-    """Fetch a cover letter and verify ownership via profile."""
-    cl = db.get(CoverLetter, cover_letter_id)
+    cl = (
+        db.query(CoverLetter)
+        .options(joinedload(CoverLetter.profile))
+        .filter(CoverLetter.id == cover_letter_id)
+        .first()
+    )
     if cl is None:
         raise HTTPException(404, f"cover letter {cover_letter_id} not found")
-    profile = db.get(Profile, cl.profile_id)
+    profile = cl.profile  # eager-loaded, no extra round trip
     if profile is None or profile.user_id != user.id:
         raise HTTPException(403, "not your cover letter")
     return cl
@@ -60,6 +98,9 @@ def _utcnow() -> datetime:
 
 def _serialize_cover_letter(cl: CoverLetter) -> dict[str, Any]:
     """Convert ORM → dict matching CoverLetterOut shape."""
+    # L8 fix (Phase 9 review): drop the defensive ``dict(...)`` copy —
+    # the ORM already returns a fresh dict per attribute access, and
+    # the Pydantic response_model will validate on its own.
     return {
         "id": cl.id,
         "job_id": cl.job_id,
@@ -71,7 +112,7 @@ def _serialize_cover_letter(cl: CoverLetter) -> dict[str, Any]:
         "personalization_points": list(cl.personalization_points or []),
         "job_keywords_used": list(cl.job_keywords_used or []),
         "score": cl.score or 0.0,
-        "score_breakdown_json": dict(cl.score_breakdown_json or {}),
+        "score_breakdown_json": cl.score_breakdown_json or {},
         "status": cl.status,
         "created_at": cl.created_at,
         "updated_at": cl.updated_at,
@@ -140,7 +181,11 @@ async def generate_cover_letter(
     if use_llm:
         try:
             draft = await enhance_cover_letter(draft, profile_dict, job_dict)
-        except Exception as exc:  # noqa: BLE001
+        except (RuntimeError, TimeoutError, ConnectionError, OSError) as exc:
+            # M2 fix (Phase 9 review): narrow from ``Exception`` so
+            # genuine bugs surface instead of silently degrading to
+            # deterministic. Mirrors the narrow in
+            # ``cover_letter_generator.enhance_cover_letter``.
             log.warning(
                 "cover_letter_generate_llm_failed",
                 error=str(exc)[:200],
@@ -229,48 +274,47 @@ def get_cover_letter(
 @router.patch("/{cover_letter_id}", response_model=CoverLetterOut)
 def patch_cover_letter(
     cover_letter_id: str,
-    payload: dict[str, Any],
+    # H5 fix (Phase 9 review): switch from ``dict[str, Any]`` to the
+    # existing ``CoverLetterIn`` Pydantic model so ``tone`` and
+    # ``status`` enum validation happen at the framework boundary
+    # instead of via hand-rolled `if value not in (...)` checks that
+    # drift if the enum grows.
+    payload: CoverLetterPatchIn,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Edit a cover letter. Allowed: content, subject, tone, status.
+    """Edit a cover letter. Allowed: content, subject, tone, status,
+    personalization_points, job_keywords_used.
 
     Editing `content` triggers a re-score automatically (same
     pattern as CV's _score_and_persist).
     """
     cl = _get_owned_cover_letter(db, cover_letter_id, user)
 
-    allowed = {"content", "subject", "tone", "status", "personalization_points", "job_keywords_used"}
-    unknown = set(payload.keys()) - allowed
-    if unknown:
-        raise HTTPException(400, f"unknown keys: {sorted(unknown)}")
-
-    if "tone" in payload:
-        tone = payload["tone"]
-        if tone not in ("professional", "confident", "friendly", "concise", "formal"):
-            raise HTTPException(400, f"invalid tone: {tone}")
-        cl.tone = tone
-
-    if "status" in payload:
-        st = payload["status"]
-        if st not in ("draft", "ready", "exported"):
-            raise HTTPException(400, f"invalid status: {st}")
-        cl.status = st
-
-    if "subject" in payload:
-        cl.subject = str(payload["subject"])[:500]
-
-    if "personalization_points" in payload:
-        cl.personalization_points = list(payload["personalization_points"])
-
-    if "job_keywords_used" in payload:
-        cl.job_keywords_used = list(payload["job_keywords_used"])
-
-    if "content" in payload:
-        cl.content = str(payload["content"])
+    if payload.tone is not None:
+        cl.tone = payload.tone
+    if payload.status is not None:
+        cl.status = payload.status
+    if payload.subject is not None:
+        cl.subject = str(payload.subject)[:500]
+    if payload.personalization_points is not None:
+        cl.personalization_points = list(payload.personalization_points)
+    if payload.job_keywords_used is not None:
+        cl.job_keywords_used = list(payload.job_keywords_used)
+    if payload.content is not None:
+        # L9 fix: enforce a hard cap on content length to keep DB
+        # rows bounded. A malicious or accidental huge PATCH would
+        # otherwise balloon the row (TEXT but still costly).
+        if len(payload.content) > _MAX_CONTENT_CHARS:
+            raise HTTPException(
+                400,
+                f"content too long ({len(payload.content)} chars > "
+                f"{_MAX_CONTENT_CHARS} max)",
+            )
+        cl.content = payload.content
 
     # Re-score if content or keywords changed
-    if "content" in payload or "job_keywords_used" in payload:
+    if payload.content is not None or payload.job_keywords_used is not None:
         job = db.get(Job, cl.job_id)
         required_keywords: list[str] = list(
             (job.job_analysis_json or {}).get("required_skills") or []
@@ -283,7 +327,7 @@ def patch_cover_letter(
     db.commit()
     db.refresh(cl)
 
-    log.info("cover_letter_updated", cover_letter_id=cl.id, fields=list(payload.keys()))
+    log.info("cover_letter_updated", cover_letter_id=cl.id, fields=list(payload.model_dump(exclude_unset=True).keys()))
     return _serialize_cover_letter(cl)
 
 
@@ -308,6 +352,13 @@ def rescore_cover_letter(
     cl.updated_at = _utcnow()
     db.commit()
     db.refresh(cl)
+    # M4 fix (Phase 9 review): audit log for completeness — every
+    # mutating endpoint should leave a structured event trail.
+    log.info(
+        "cover_letter_rescored",
+        cover_letter_id=cl.id,
+        new_score=cl.score,
+    )
     return _serialize_cover_letter(cl)
 
 
@@ -323,6 +374,9 @@ def delete_cover_letter(
     cl = _get_owned_cover_letter(db, cover_letter_id, user)
     db.delete(cl)
     db.commit()
+    # M4 fix (Phase 9 review): audit log for completeness — every
+    # mutating endpoint should leave a structured event trail.
+    log.info("cover_letter_deleted", cover_letter_id=cover_letter_id)
     return Response(status_code=204)
 
 
@@ -395,7 +449,10 @@ def export_cover_letter(
         html = _render_cover_letter_html(cl, profile)
         try:
             pdf_bytes = export_cv_to_pdf(html)
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError) as exc:
+            # M2 fix (Phase 9 review): narrow from ``Exception`` so a
+            # genuine bug (e.g. AttributeError on a refactor) surfaces
+            # instead of being silently swallowed as "PDF failed".
             log.error(
                 "cover_letter_pdf_export_failed",
                 cover_letter_id=cover_letter_id,
@@ -414,7 +471,7 @@ def export_cover_letter(
                     )
                 )
                 db.commit()
-            except Exception:
+            except (RuntimeError, OSError, ValueError):
                 db.rollback()
             raise HTTPException(
                 500,
@@ -426,7 +483,11 @@ def export_cover_letter(
             raise HTTPException(500, "Generated PDF failed validation")
 
         content_hash = hashlib.sha256(pdf_bytes).hexdigest()
-        file_name = f"{(cl.subject or 'cover_letter').replace('/', '-')[:60]}_v{cl.id[:8]}.pdf"
+        # H4 fix (Phase 9 review): use the shared safe-title helper
+        # so subjects containing quotes, backslashes, or control
+        # chars can't break the Content-Disposition header.
+        safe_subject = _safe_filename_title(cl.subject, fallback="cover_letter")
+        file_name = f"{safe_subject}_v{cl.id[:8]}.pdf"
 
         exp = Export(
             user_id=user.id,
@@ -499,7 +560,9 @@ def export_cover_letter(
         docx_bytes = buf.getvalue()
 
         content_hash = hashlib.sha256(docx_bytes).hexdigest()
-        file_name = f"{(cl.subject or 'cover_letter').replace('/', '-')[:60]}_v{cl.id[:8]}.docx"
+        # H4 fix: same safe-title path as the PDF branch above.
+        safe_subject = _safe_filename_title(cl.subject, fallback="cover_letter")
+        file_name = f"{safe_subject}_v{cl.id[:8]}.docx"
 
         exp = Export(
             user_id=user.id,
@@ -537,13 +600,13 @@ def export_cover_letter(
     raise HTTPException(400, f"unsupported format: {fmt}")
 
 
-@router.get("/{cover_letter_id}/exports", response_model=list[dict])
+@router.get("/{cover_letter_id}/exports", response_model=list[ExportOut])
 def list_cover_letter_exports(
     cover_letter_id: str,
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[dict]:
+) -> list[ExportOut]:
     cl = _get_owned_cover_letter(db, cover_letter_id, user)
     rows = (
         db.query(Export)
@@ -555,17 +618,7 @@ def list_cover_letter_exports(
         .limit(limit)
         .all()
     )
-    return [
-        {
-            "id": r.id,
-            "entity_type": r.entity_type,
-            "entity_id": r.entity_id,
-            "cover_letter_id": r.cover_letter_id,
-            "file_type": r.file_type,
-            "file_path": r.file_path,
-            "file_size": r.file_size,
-            "sha256": r.sha256,
-            "created_at": r.created_at,
-        }
-        for r in rows
-    ]
+    # M1 fix (Phase 9 review): use ExportOut for typed validation +
+    # OpenAPI schema. Previously returned ``list[dict]`` which bypassed
+    # Pydantic and hid the schema from the FE.
+    return [ExportOut.model_validate(r) for r in rows]

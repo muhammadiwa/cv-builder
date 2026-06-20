@@ -527,6 +527,21 @@ class CoverLetterIn(BaseModel):
     job_keywords_used: list[str] = Field(default_factory=list)
 
 
+# H5 fix (Phase 9 review): separate PATCH schema with optional fields
+# (no required job_id / profile_id / content) and a status field the
+# create schema doesn't carry. Lets the PATCH endpoint validate enum
+# values at the framework boundary instead of via hand-rolled checks.
+# ``extra='forbid'`` rejects unknown keys (test_patch_rejects_unknown_keys).
+class CoverLetterPatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    tone: Literal["professional", "confident", "friendly", "concise", "formal"] | None = None
+    status: Literal["draft", "ready", "exported"] | None = None
+    subject: str | None = None
+    content: str | None = None
+    personalization_points: list[str] | None = None
+    job_keywords_used: list[str] | None = None
+
+
 class CoverLetterOut(CoverLetterIn):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -711,6 +726,30 @@ class ApplicationIn(BaseModel):
     notes: str | None = None
 
 
+# H5 fix (Phase 9 review): separate PATCH schema with optional fields
+# (no required job_id) so the PATCH endpoint validates enum values at
+# the framework boundary. Previously accepted ``dict[str, Any]`` and
+# ``setattr(app, "status", value)`` would persist any string,
+# bypassing the ApplicationStatus Literal.
+class ApplicationPatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    cv_draft_id: str | None = None
+    cover_letter_id: str | None = None
+    status: ApplicationStatus | None = None
+    applied_date: datetime | None = None
+    follow_up_date: datetime | None = None
+    contact_person: str | None = None
+    contact_email: str | None = None
+    notes: str | None = None
+
+
+# L1 fix (Phase 9 review): removed PaginatedList wrapper. Returning
+# a wrapped {items, total} would be a breaking API change for the FE.
+# Instead, the list endpoints expose the same default limit
+# (limit=100 for applications, limit=500 for jobs) the FE requests
+# in bulk. The FE can fall back to "showing all N" once the data
+# set fits the default. If the user grows past the default, we can
+# add pagination later.
 class ApplicationOut(ApplicationIn):
     model_config = ConfigDict(from_attributes=True)
     id: str

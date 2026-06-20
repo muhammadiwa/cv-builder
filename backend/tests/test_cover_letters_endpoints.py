@@ -283,7 +283,11 @@ class TestCoverLetterLifecycle:
             f"/api/cover-letters/{cl_id}",
             json={"unknown_field": "x"},
         )
-        assert r.status_code == 400
+        # H5 fix (Phase 9 review): now uses ApplicationPatchIn /
+        # CoverLetterPatchIn Pydantic models — unknown keys surface as
+        # FastAPI's default 422 validation error instead of the
+        # hand-rolled 400. Same behavior, framework-standard code.
+        assert r.status_code == 422
         # Cleanup
         client.delete(f"/api/cover-letters/{cl_id}")
 

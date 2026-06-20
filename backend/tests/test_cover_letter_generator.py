@@ -325,3 +325,30 @@ class TestScorer:
         assert "overall" in breakdown
         assert "axes" in breakdown
         assert breakdown["overall"] == score.overall
+
+    def test_to_breakdown_flattens_matched_and_missing(self):
+        # H2 fix (Phase 9 review): to_breakdown now exposes matched/
+        # missing at the top level so the FE can read them directly
+        # without walking axes.keyword_coverage.
+        body = "Dear Hiring Team,\n\nI use Python daily.\n\nBest regards,\nTest"
+        score = score_cover_letter(body, ["Python", "Rust"])
+        breakdown = score.to_breakdown()
+        assert "matched_skills" in breakdown
+        assert "missing_skills" in breakdown
+        assert "Python" in breakdown["matched_skills"]
+        assert "Rust" in breakdown["missing_skills"]
+
+    def test_keyword_match_uses_word_boundaries(self):
+        # H6 fix (Phase 9 review): substring match was replaced with
+        # word-boundary token matching. "python" should NOT match
+        # "pythonic", "data" should NOT match "database", etc.
+        body = (
+            "Dear Hiring Team,\n\n"
+            "I write pythonic code and work with databases daily.\n\n"
+            "Best regards,\nTest"
+        )
+        score = score_cover_letter(body, ["Python", "data"])
+        # Neither keyword is present in the body as a standalone token.
+        matched = score.axes["keyword_coverage"]["matched"]
+        assert "Python" not in matched
+        assert "data" not in matched

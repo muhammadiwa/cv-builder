@@ -217,8 +217,12 @@ def export_cv_to_pdf(
                 serialized,
                 flags=re.IGNORECASE,
             )
-        except Exception:
-            # If lxml can't parse it, just use the input as-is.
+        except (lxml_html.etree.ParserError, lxml_html.etree.XMLSyntaxError, ValueError):
+            # M3 fix (Phase 9 review): narrow from `Exception` so
+            # real bugs (ImportError on a renamed lxml symbol, etc.)
+            # surface instead of being masked as "lxml fallback".
+            # ParserError / XMLSyntaxError cover malformed input;
+            # ValueError covers some edge cases from lxml's serializer.
             clean_body_html = rendered_html
         html_with_print = (
             f"<!DOCTYPE html><html><head><meta charset='utf-8'>"

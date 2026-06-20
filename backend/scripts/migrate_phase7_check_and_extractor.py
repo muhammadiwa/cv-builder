@@ -78,6 +78,13 @@ def main() -> int:
         ("UPDATE cv_versions SET score = MAX(0.0, MIN(1.0, score)) "
          "WHERE score IS NOT NULL AND (score < 0 OR score > 1)",
          "cv_versions score clamp"),
+        # M7 fix (Phase 9 review): clamp + CHECK trigger for
+        # cover_letters.score — same pattern as cv_drafts/cv_versions.
+        # Clamp first so any out-of-range legacy rows are fixed before
+        # the trigger fires on subsequent writes.
+        ("UPDATE cover_letters SET score = MAX(0.0, MIN(1.0, score)) "
+         "WHERE score IS NOT NULL AND (score < 0 OR score > 1)",
+         "cover_letters score clamp"),
         # Phase 7 B11: CVDraft + CVVersion score CHECK.
         ("CREATE TRIGGER IF NOT EXISTS cv_drafts_score_check "
          "BEFORE INSERT ON cv_drafts "
@@ -99,6 +106,17 @@ def main() -> int:
          "FOR EACH ROW WHEN NEW.score < 0 OR NEW.score > 1 "
          "BEGIN SELECT RAISE(ABORT, 'cv_versions.score out of range'); END;",
          "cv_versions score UPDATE CHECK trigger"),
+        # M7 fix (Phase 9 review): cover_letters.score CHECK triggers.
+        ("CREATE TRIGGER IF NOT EXISTS cover_letters_score_check "
+         "BEFORE INSERT ON cover_letters "
+         "FOR EACH ROW WHEN NEW.score < 0 OR NEW.score > 1 "
+         "BEGIN SELECT RAISE(ABORT, 'cover_letters.score out of range'); END;",
+         "cover_letters score CHECK trigger"),
+        ("CREATE TRIGGER IF NOT EXISTS cover_letters_score_update_check "
+         "BEFORE UPDATE ON cover_letters "
+         "FOR EACH ROW WHEN NEW.score < 0 OR NEW.score > 1 "
+         "BEGIN SELECT RAISE(ABORT, 'cover_letters.score out of range'); END;",
+         "cover_letters score UPDATE CHECK trigger"),
     ]
 
     for sql, label in statements:

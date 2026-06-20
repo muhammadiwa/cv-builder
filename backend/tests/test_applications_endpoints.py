@@ -21,39 +21,50 @@ def client():
 def seeded(client: TestClient):
     """Seed a User + Profile + Job for application testing.
 
-    The default test DB may be empty; we always wipe the rows we create
-    at the end so tests stay isolated.
+    Uses the SAME default user (default@local) that the cover-letter
+    test fixtures create. Single-user mode means get_current_user()
+    resolves to whichever user has that email, so all test modules
+    must seed under the same user_id or ownership checks fail.
     """
-    # Bootstrap a user (the auth helper accepts any X-User-Id header that
-    # matches a real User row, so we create one).
-    user_id = "11111111-1111-1111-1111-111111111111"
+    from app.models.models import Profile, User
+    user_id = "default-test-user"
     profile_id = "22222222-2222-2222-2222-222222222222"
     job_id = "33333333-3333-3333-3333-333333333333"
     app_id = "44444444-4444-4444-4444-444444444444"
 
+    # Reuse the default@local user created by the cover-letter fixture
+    # so get_current_user() resolves to the right row regardless of
+    # test execution order.
     with engine.begin() as conn:
-        # Clean slate
+        existing = conn.execute(
+            text("SELECT id FROM users WHERE email = 'default@local'")
+        ).first()
+        if existing is not None:
+            user_id = existing[0]
+        else:
+            conn.execute(
+                text(
+                    "INSERT INTO users (id, email, name, created_at, updated_at) "
+                    "VALUES (:id, :email, :name, :now, :now)"
+                ),
+                {
+                    "id": user_id,
+                    "email": "default@local",
+                    "name": "App Test",
+                    "now": datetime.now(timezone.utc),
+                },
+            )
+
+        # Clean slate (test-isolated rows only)
         conn.execute(text("DELETE FROM applications WHERE job_id = :j"), {"j": job_id})
         conn.execute(text("DELETE FROM jobs WHERE id = :j"), {"j": job_id})
         conn.execute(text("DELETE FROM profiles WHERE id = :p"), {"p": profile_id})
-        conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
-        conn.execute(
-            text(
-                "INSERT INTO users (id, email, name, created_at, updated_at) "
-                "VALUES (:id, :email, :name, :now, :now)"
-            ),
-            {
-                "id": user_id,
-                "email": "app-test@example.com",
-                "name": "App Test",
-                "now": datetime.now(timezone.utc),
-            },
-        )
+
         conn.execute(
             text(
                 "INSERT INTO profiles (id, user_id, name, email, base_profile_json, "
                 "ai_analysis_json, confidence_score, created_at, updated_at) "
-                "VALUES (:id, :uid, 'App Test', 'app-test@example.com', '{}', '{}', 0, :now, :now)"
+                "VALUES (:id, :uid, 'App Test', 'default@local', '{}', '{}', 0, :now, :now)"
             ),
             {"id": profile_id, "uid": user_id, "now": datetime.now(timezone.utc)},
         )
@@ -80,7 +91,6 @@ def seeded(client: TestClient):
         conn.execute(text("DELETE FROM applications WHERE job_id = :j"), {"j": job_id})
         conn.execute(text("DELETE FROM jobs WHERE id = :j"), {"j": job_id})
         conn.execute(text("DELETE FROM profiles WHERE id = :p"), {"p": profile_id})
-        conn.execute(text("DELETE FROM users WHERE id = :u"), {"u": user_id})
 
 
 # ── List ─────────────────────────────────────────────────────────────
@@ -139,15 +149,17 @@ def test_create_invalid_status_422(client, seeded):
 
 
 def test_get_application(client, seeded):
-    created = client.post(
-        "/api/applications",
-        json={"job_id": seeded["job_id"]},
-        headers=seeded["headers"],
-    ).json()
+        resp = client.post(
+            "/api/applications",
+            json={"job_id": seeded["job_id"]},
+            headers=seeded["headers"],
+        )
+        created = resp.json()
+        assert "id" in created, f"missing id in: {created}"
 
-    r = client.get(f"/api/applications/{created['id']}", headers=seeded["headers"])
-    assert r.status_code == 200
-    assert r.json()["id"] == created["id"]
+        r = client.get(f"/api/applications/{created['id']}", headers=seeded["headers"])
+        assert r.status_code == 200
+        assert r.json()["id"] == created["id"]
 
 
 def test_get_404(client, seeded):

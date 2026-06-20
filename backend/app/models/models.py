@@ -301,6 +301,21 @@ class CoverLetter(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     job: Mapped["Job"] = relationship(back_populates="cover_letters")
+    # L5 fix (Phase 9 review): add the Profile relationship so
+    # ``_get_owned_cover_letter`` can use ``joinedload(CoverLetter.profile)``
+    # instead of a second ``db.get(Profile, ...)`` round trip. Profile
+    # already declares ``cover_letters`` back via ``profile_id`` FK;
+    # we add the explicit counterpart here for the same reason.
+    profile: Mapped["Profile"] = relationship()
+    # M7 fix (Phase 9 review): defense-in-depth — same CheckConstraint
+    # + SQLite-trigger pattern as CVDraft.score (Phase 7.5). The scorer
+    # already clamps to [0, 1], but a CHECK stops any future caller from
+    # writing a NaN/inf/out-of-band value directly. New tables get
+    # both the constraint + the trigger; legacy DBs get the trigger
+    # via migrate_phase7_check_and_extractor.py.
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 1", name="cover_letters_score_range"),
+    )
     # ``exports`` relationship intentionally not declared here — the
     # ``exports.cover_letter_id`` column is a plain string (not an FK)
     # because the cover_letters table doesn't ship until a future

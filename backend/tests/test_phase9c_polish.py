@@ -104,6 +104,10 @@ def test_rate_limiter_keys_by_ip():
         RateLimitMiddleware,
         requests_per_minute=600,
         burst=1,
+        # M8 fix (Phase 9 review): the testclient's host is "testclient"
+        # (Starlette default). To verify the XFF-per-IP logic, declare
+        # it as a trusted proxy so the middleware actually reads XFF.
+        trusted_proxies=("testclient",),
     )
 
     @app.get("/x")
@@ -115,6 +119,29 @@ def test_rate_limiter_keys_by_ip():
     assert client.get("/x", headers={"X-Forwarded-For": "1.1.1.1"}).status_code == 429
     # Different IP → fresh bucket
     assert client.get("/x", headers={"X-Forwarded-For": "2.2.2.2"}).status_code == 200
+
+
+def test_rate_limiter_rejects_spoofed_xff():
+    """M8 fix: with an empty trusted_proxies set (the default), XFF
+    is never honored — clients can't spoof the header to bypass
+    per-IP limits. Both requests resolve to ``request.client.host``
+    (testclient) and share the same bucket."""
+    app = FastAPI()
+    app.add_middleware(
+        RateLimitMiddleware,
+        requests_per_minute=600,
+        burst=1,
+        # No trusted_proxies — secure-by-default.
+    )
+
+    @app.get("/x")
+    def x():
+        return {}
+
+    client = TestClient(app)
+    # Spoofing XFF should NOT give the client a fresh bucket.
+    assert client.get("/x", headers={"X-Forwarded-For": "1.1.1.1"}).status_code == 200
+    assert client.get("/x", headers={"X-Forwarded-For": "9.9.9.9"}).status_code == 429
 
 
 def test_rate_limiter_zero_rpm_disables():
