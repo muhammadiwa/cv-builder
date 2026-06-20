@@ -43,3 +43,6 @@ yarn-debug.log*
 
 # Auto-generated test artifacts
 docs/screenshots/phase4-fe-tests/
+tsconfig*.tsbuildinfo
+vite.config.d.ts
+vite.config.js

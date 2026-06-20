@@ -1,7 +1,7 @@
 """Manual migration — apply ALTER TABLE statements to bring the dev DB
 in sync with the current ORM models.
 
-Four things are pending:
+Five things are pending:
 
 1. Phase 4 retro fix: ``Job.extractor_used`` column was added to
    models.Job but never had a corresponding ALTER TABLE applied to
@@ -26,6 +26,13 @@ Four things are pending:
 
 4. Phase 8.5 fix: ``Export.sha256`` column for content-hash audit
    trail. Optional (nullable) — populated by the export route.
+
+5. Phase 9A fix: re-point ``exports.cover_letter_id`` FK from the
+   shadow ``cover_letters_tmp`` table to the real ``cover_letters``
+   table now that it ships, and drop the shadow table. SQLite doesn't
+   support ALTER TABLE ... DROP CONSTRAINT, so we rebuild exports
+   via CREATE/INSERT/DROP/RENAME. Safe — the original data is
+   preserved.
 
 Run with::
 
@@ -92,13 +99,6 @@ def main() -> int:
          "FOR EACH ROW WHEN NEW.score < 0 OR NEW.score > 1 "
          "BEGIN SELECT RAISE(ABORT, 'cv_versions.score out of range'); END;",
          "cv_versions score UPDATE CHECK trigger"),
-        # Phase 8: shadow table SQLAlchemy uses for the deferred FK
-        # from exports.cover_letter_id. Real CoverLetter table doesn't
-        # exist yet (Phase 9+); the shadow makes inserts work for CV
-        # exports where cover_letter_id is always NULL.
-        ("CREATE TABLE IF NOT EXISTS cover_letters_tmp ("
-         "id VARCHAR(36) PRIMARY KEY)",
-         "cover_letters_tmp shadow table"),
     ]
 
     for sql, label in statements:
@@ -116,10 +116,45 @@ def main() -> int:
 
     con.commit()
 
-    # P10 fix: post-condition smoke test — verify the score CHECK
-    # triggers actually fire. Try inserting a bad row, expect raise,
-    # rollback so the test doesn't pollute the DB. Same for sha256
-    # column existence.
+    # Phase 9A: re-point exports.cover_letter_id FK to cover_letters.
+    # Done after the statements above so the column shapes are stable.
+    cur.execute("PRAGMA foreign_key_list(exports)")
+    fk_targets = {row[2] for row in cur.fetchall()}
+    if "cover_letters_tmp" in fk_targets:
+        try:
+            cur.execute("PRAGMA foreign_keys = OFF")
+            cur.execute(
+                "CREATE TABLE exports_new ("
+                "id VARCHAR(36) PRIMARY KEY,"
+                "user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+                "entity_type VARCHAR(20) NOT NULL,"
+                "entity_id VARCHAR(36),"
+                "cv_draft_id VARCHAR(36) REFERENCES cv_drafts(id) ON DELETE SET NULL,"
+                "cover_letter_id VARCHAR(36) REFERENCES cover_letters(id) ON DELETE SET NULL,"
+                "file_type VARCHAR(10) NOT NULL,"
+                "file_path VARCHAR(1000) NOT NULL,"
+                "file_size INTEGER NOT NULL,"
+                "sha256 VARCHAR(64),"
+                "created_at DATETIME"
+                ")"
+            )
+            cur.execute("INSERT INTO exports_new SELECT * FROM exports")
+            cur.execute("DROP TABLE exports")
+            cur.execute("ALTER TABLE exports_new RENAME TO exports")
+            cur.execute("DROP TABLE IF EXISTS cover_letters_tmp")
+            cur.execute("PRAGMA foreign_keys = ON")
+            cur.execute("PRAGMA foreign_key_check")
+            con.commit()
+            print("  OK: exports FK re-pointed to cover_letters; cover_letters_tmp dropped")
+        except Exception as exc:
+            con.rollback()
+            print(f"  FAIL: re-point FK failed -> {exc}", file=sys.stderr)
+            con.close()
+            return 3
+    else:
+        print("  skip: exports FK already points to cover_letters")
+
+    # P10 fix: post-condition smoke test.
     smoke_ok = True
     try:
         cur.execute(
@@ -144,7 +179,7 @@ def main() -> int:
         print(f"  FAIL: smoke test exception -> {e}", file=sys.stderr)
         smoke_ok = False
 
-    # Verify sha256 column exists
+    # Verify sha256 column exists.
     cur.execute("PRAGMA table_info(exports)")
     cols = {row[1] for row in cur.fetchall()}
     if "sha256" not in cols:
@@ -155,7 +190,7 @@ def main() -> int:
 
     con.close()
     if not smoke_ok:
-        return 3
+        return 4
     print("migration complete")
     return 0
 

@@ -547,3 +547,121 @@ export const cvsApi = {
     return resp.data;
   },
 };
+
+// ── Phase 9A: Cover Letters ─────────────────────────────────────────
+
+export type CoverLetterTone =
+  | 'professional'
+  | 'confident'
+  | 'friendly'
+  | 'concise'
+  | 'formal';
+
+export type CoverLetterStatus = 'draft' | 'ready' | 'exported';
+
+export interface CoverLetterGenerateIn {
+  job_id: string;
+  profile_id: string;
+  cv_draft_id?: string | null;
+  tone?: CoverLetterTone;
+  use_llm?: boolean;
+}
+
+export interface CoverLetterPatchIn {
+  subject?: string;
+  content?: string;
+  tone?: CoverLetterTone;
+  status?: CoverLetterStatus;
+  personalization_points?: string[];
+}
+
+export interface CoverLetterScoreAxis {
+  score: number;
+  weight: number;
+  details?: Record<string, unknown>;
+}
+
+export interface CoverLetterScoreBreakdown {
+  overall?: number;
+  axes?: Record<string, CoverLetterScoreAxis>;
+  matched_keywords?: string[];
+  missing_keywords?: string[];
+  matched_skills?: string[];
+  missing_skills?: string[];
+  recommendations?: { id: string; title: string; impact: 'high' | 'med' | 'low'; details: string }[];
+  scored_at?: string;
+}
+
+export interface CoverLetterOut {
+  id: string;
+  job_id: string;
+  profile_id: string;
+  cv_draft_id: string | null;
+  tone: CoverLetterTone;
+  subject: string;
+  content: string;
+  personalization_points: string[];
+  job_keywords_used: string[];
+  score: number;
+  score_breakdown_json: CoverLetterScoreBreakdown;
+  status: CoverLetterStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export const coverLettersApi = {
+  generate: async (payload: CoverLetterGenerateIn): Promise<CoverLetterOut> => {
+    const resp = await api.post<CoverLetterOut>('/cover-letters/generate', payload);
+    return resp.data;
+  },
+  list: async (skip = 0, limit = 50): Promise<CoverLetterOut[]> => {
+    const resp = await api.get<CoverLetterOut[]>('/cover-letters', {
+      params: { skip, limit },
+    });
+    return resp.data;
+  },
+  get: async (id: string): Promise<CoverLetterOut> => {
+    const resp = await api.get<CoverLetterOut>(`/cover-letters/${id}`);
+    return resp.data;
+  },
+  patch: async (id: string, payload: CoverLetterPatchIn): Promise<CoverLetterOut> => {
+    const resp = await api.patch<CoverLetterOut>(`/cover-letters/${id}`, payload);
+    return resp.data;
+  },
+  rescore: async (id: string): Promise<CoverLetterOut> => {
+    const resp = await api.post<CoverLetterOut>(`/cover-letters/${id}/rescore`);
+    return resp.data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/cover-letters/${id}`);
+  },
+  exportFile: async (
+    id: string,
+    fmt: 'pdf' | 'docx' = 'pdf',
+  ): Promise<{ fileName: string; exportId: string; size: number }> => {
+    const resp = await api.post<Blob>(
+      `/cover-letters/${id}/export?format=${fmt}`,
+      {},
+      { responseType: 'blob' },
+    );
+    const cd = resp.headers['content-disposition'] as string | undefined;
+    const match = cd?.match(/filename="?([^"]+)"?/);
+    const fileName = match?.[1] ?? `cover_letter_${id.slice(0, 8)}.${fmt}`;
+    const exportId = (resp.headers['x-cv-export-id'] as string | undefined) ?? '';
+    const sizeHeader = resp.headers['x-cv-export-size'] as string | undefined;
+    const size = sizeHeader ? Number(sizeHeader) : resp.data.size;
+    const url = URL.createObjectURL(resp.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { fileName, exportId, size };
+  },
+  listExports: async (id: string, limit = 10): Promise<CVExport[]> => {
+    const resp = await api.get<CVExport[]>(`/cover-letters/${id}/exports?limit=${limit}`);
+    return resp.data;
+  },
+};
