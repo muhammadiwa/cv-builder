@@ -49,6 +49,13 @@ def create_app() -> FastAPI:
     reset_seed_cache()
     with SessionLocal() as _seed_db:
         seed_default_templates(_seed_db)
+        # Phase 10B: one-shot migration from configs/llm_providers.json.
+        # Idempotent — no-op if the DB already has rows.
+        from app.llm.store import seed_from_json_if_empty
+
+        seeded = seed_from_json_if_empty(_seed_db)
+        if seeded:
+            log.info("llm_seeded_from_legacy", count=seeded)
 
     app = FastAPI(
         title=settings.app_name,

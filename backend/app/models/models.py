@@ -432,3 +432,45 @@ class LLMCallLog(Base):
     success: Mapped[bool] = mapped_column(default=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
+class LLMProvider(Base):
+    """Phase 10B — runtime LLM provider configuration.
+
+    Each row is one OpenAI-compatible (or Anthropic) provider the app can
+    route requests to. The ``id`` slug is referenced by ``llm_call_log``
+    rows and used as the priority key by :class:`LLMClient`.
+
+    Why DB-backed instead of ``configs/llm_providers.json``:
+      * Changes take effect without a process restart (clients re-read).
+      * The Settings UI can add / edit / toggle providers without writing
+        files on disk in container deployments.
+      * ``api_key`` is stored encrypted (Fernet) so it doesn't appear in
+        backups / DB dumps as plaintext.
+
+    The ``api_key`` column stores the **encrypted** key. ``api_key_set``
+    is a derived bool so the FE can show "•••••••" without round-tripping
+    the ciphertext. ``api_key`` is **never** returned in API responses.
+    """
+
+    __tablename__ = "llm_providers"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    # "openai_compat" (default) | "anthropic"
+    kind: Mapped[str] = mapped_column(String(20), default="openai_compat")
+    base_url: Mapped[str] = mapped_column(String(500), default="")
+    # Encrypted (Fernet) API key. Empty string when not set.
+    api_key: Mapped[str] = mapped_column(Text, default="")
+    api_key_set: Mapped[bool] = mapped_column(default=False)
+    enabled: Mapped[bool] = mapped_column(default=False, index=True)
+    # Lower = tried first. 1 = primary, 99 = last-resort.
+    priority: Mapped[int] = mapped_column(Integer, default=99)
+    # Per-task model map: {"resume_parse": "gpt-4o-mini", ...}
+    models_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    max_tokens_default: Mapped[int] = mapped_column(Integer, default=4000)
+    temperature_default: Mapped[float] = mapped_column(Float, default=0.3)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )

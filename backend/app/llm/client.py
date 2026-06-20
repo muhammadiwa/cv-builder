@@ -127,19 +127,69 @@ class LLMClient:
     provider instances. ``generate`` walks them on failure.
     """
 
-    def __init__(self, config_path: Path | None = None, db: Session | None = None):
-        self._db = db  # optional: passed per-call or via setter
-        self._config_path = config_path or self._resolve_config_path()
-        self.config = self._load_config(self._config_path)
-        self.providers: list[LLMProvider] = self._instantiate_providers(self.config)
-        if not self.providers:
-            log.warning("llm_no_providers_enabled", path=str(self._config_path))
+    def __init__(
+        self,
+        config_path: Path | None = None,  # kept for backward compat tests
+        db: Session | None = None,
+    ):
+        """Construct an LLMClient.
+
+        Phase 10B: provider config is read from the ``llm_providers`` DB
+        table (via :mod:`app.llm.store`). ``config_path`` is preserved as
+        a fallback for tests that ship a fixture JSON.
+
+        Resolution order:
+          1. ``db`` if provided (preferred — DB is the source of truth).
+          2. ``config_path`` if provided.
+          3. Auto-resolve the legacy ``configs/llm_providers.json`` so
+             existing tests + dev workflows still work without changes.
+
+        If none of those resolve, the client starts with zero providers
+        and the next :meth:`generate` call raises :class:`RuntimeError`.
+        """
+        self._db = db
+        self._config_path = config_path
+        self.config: dict[str, Any] = {"providers": []}
+        self.providers: list[LLMProvider] = []
+        self._reload()
 
     def set_db(self, db: Session) -> None:
-        """Inject DB session for cost logging (call before generate)."""
-        self._db = db
+        """Inject DB session for cost logging + provider loading.
 
-    # ── Config loading ────────────────────────────────────────
+        Also triggers a reload so the new session's view of the
+        ``llm_providers`` table is used immediately.
+        """
+        self._db = db
+        self._reload()
+
+    def _reload(self) -> None:
+        """Refresh ``config`` + ``providers`` from DB (or fallback JSON).
+
+        Cheap — providers are stateless wrappers around config dicts, so
+        building them is just dict construction + class instantiation.
+        """
+        if self._db is not None:
+            from app.llm.store import load_all
+
+            try:
+                providers_cfg = load_all(self._db)
+            except Exception as e:  # noqa: BLE001 — DB errors must not crash callers
+                log.warning("llm_db_load_failed", error=str(e))
+                providers_cfg = []
+            self.config = {"providers": providers_cfg}
+        else:
+            # Fallback: explicit config_path, else auto-resolve the legacy
+            # JSON file. Preserves backward compat with the existing test
+            # suite + any workflow that hasn't been migrated yet.
+            path = self._config_path or self._resolve_config_path()
+            self.config = self._load_config(path)
+            self._config_path = path
+
+        self.providers = self._instantiate_providers(self.config)
+        if not self.providers:
+            log.warning("llm_no_providers_enabled")
+
+    # ── Config loading (JSON fallback only — primary path is DB) ───
     @staticmethod
     def _resolve_config_path() -> Path:
         """Resolve the llm_providers.json path.
@@ -174,13 +224,11 @@ class LLMClient:
             if not p.get("enabled", False):
                 continue
             kind = p.get("kind", "openai_compat")
-            api_key_env = p.get("api_key_env")
-            api_key = os.environ.get(api_key_env, "") if api_key_env else ""
             common = {
                 "id_": p["id"],
                 "name": p.get("name", p["id"]),
                 "base_url": p.get("base_url", ""),
-                "api_key": api_key,
+                "api_key": p.get("api_key", ""),  # already decrypted by store
                 "priority": p.get("priority", 99),
                 "enabled": p.get("enabled", False),
             }

@@ -1066,3 +1066,160 @@ BASE_PROFILE_SECTIONS: tuple[str, ...] = (
     "basics", "work", "education", "skills", "projects",
     "certificates", "languages",
 )
+
+
+# ── LLM Providers (Phase 10B) ──────────────────────────────────────
+# Valid task_type keys for ``models_json``. Mirrors ``TASK_TYPES`` in
+# ``app.llm.client`` but kept as a literal here so Pydantic can validate
+# the per-task model map at the schema layer.
+LLM_TASK_TYPES: tuple[str, ...] = (
+    "resume_parse",
+    "job_analyze",
+    "match",
+    "cv_generate",
+    "cv_score",
+    "cv_improve",
+    "cv_enhance",
+    "cover_letter",
+)
+LLM_PROVIDER_KINDS: tuple[str, ...] = ("openai_compat", "anthropic")
+
+
+class LLMProviderOut(BaseModel):
+    """Public representation of an ``LLMProvider`` row.
+
+    ``api_key`` is intentionally omitted — the FE renders ``api_key_set``
+    as a masked indicator. The actual key never leaves the server.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    display_name: str
+    kind: str
+    base_url: str
+    api_key_set: bool
+    enabled: bool
+    priority: int
+    models_json: dict[str, str]
+    max_tokens_default: int
+    temperature_default: float
+    created_at: datetime
+    updated_at: datetime
+
+
+class LLMProviderCreateIn(BaseModel):
+    """Payload for ``POST /api/llm-providers``.
+
+    ``id`` is the user-chosen slug (lowercase, kebab/snake). If the
+    slug collides with an existing row we return 409 — providers are
+    identified by id and we don't silently merge.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(
+        ...,
+        min_length=2,
+        max_length=40,
+        pattern=r"^[a-z0-9][a-z0-9_\-]*$",
+        description="lowercase slug — kebab/snake OK, must start alphanumeric",
+    )
+    display_name: str = Field(..., min_length=1, max_length=200)
+    kind: Literal["openai_compat", "anthropic"] = "openai_compat"
+    base_url: str = Field("", max_length=500)
+    api_key: str = Field("", max_length=4000)
+    enabled: bool = False
+    priority: int = Field(99, ge=1, le=999)
+    models_json: dict[str, str] = Field(default_factory=dict)
+    max_tokens_default: int = Field(4000, ge=64, le=128000)
+    temperature_default: float = Field(0.3, ge=0.0, le=2.0)
+
+    @field_validator("models_json")
+    @classmethod
+    def _check_models(cls, v: dict[str, str]) -> dict[str, str]:
+        unknown = set(v.keys()) - set(LLM_TASK_TYPES)
+        if unknown:
+            raise ValueError(
+                f"unknown task_type(s) in models_json: {sorted(unknown)}. "
+                f"Allowed: {LLM_TASK_TYPES}"
+            )
+        # Strip empty values — they break provider config (empty model name
+        # is invalid for any vendor).
+        return {k: m for k, m in v.items() if m}
+
+    @field_validator("base_url")
+    @classmethod
+    def _check_base_url(cls, v: str) -> str:
+        v = v.strip()
+        if v and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+
+class LLMProviderPatchIn(BaseModel):
+    """Payload for ``PATCH /api/llm-providers/{id}``.
+
+    All fields optional. To rotate an API key the client sends
+    ``api_key`` with the new plaintext value (the server encrypts on
+    write). To clear a key, send ``api_key=""``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    display_name: str | None = Field(None, min_length=1, max_length=200)
+    kind: Literal["openai_compat", "anthropic"] | None = None
+    base_url: str | None = Field(None, max_length=500)
+    api_key: str | None = Field(None, max_length=4000)
+    enabled: bool | None = None
+    priority: int | None = Field(None, ge=1, le=999)
+    models_json: dict[str, str] | None = None
+    max_tokens_default: int | None = Field(None, ge=64, le=128000)
+    temperature_default: float | None = Field(None, ge=0.0, le=2.0)
+
+    @field_validator("models_json")
+    @classmethod
+    def _check_models(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return v
+        unknown = set(v.keys()) - set(LLM_TASK_TYPES)
+        if unknown:
+            raise ValueError(
+                f"unknown task_type(s): {sorted(unknown)}. Allowed: {LLM_TASK_TYPES}"
+            )
+        return {k: m for k, m in v.items() if m}
+
+    @field_validator("base_url")
+    @classmethod
+    def _check_base_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if v and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+
+class LLMProviderTestIn(BaseModel):
+    """Payload for ``POST /api/llm-providers/{id}/test``.
+
+    The server uses the row's stored config to issue a cheap
+    ``/models`` listing (or a 1-token completion if ``/models`` isn't
+    supported by the provider). Override the model here to test a
+    specific one without changing the saved config.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    model: str | None = Field(None, max_length=200, description="optional model override")
+    prompt: str = Field(
+        "ping",
+        max_length=200,
+        description="prompt to send for the test completion (default: 'ping')",
+    )
+
+
+class LLMProviderTestOut(BaseModel):
+    """Result of a test connection."""
+
+    ok: bool
+    message: str
+    latency_ms: int | None = None
+    model: str | None = None
+    response_preview: str | None = None
