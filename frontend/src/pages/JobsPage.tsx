@@ -8,6 +8,19 @@ import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
 import JobMatchScoreDrawer from '../components/jobs/JobMatchScoreDrawer';
 import JobPostingSkeleton from '../components/jobs/JobPostingSkeleton';
+import JobFilterBar from '../components/jobs/JobFilterBar';
+import AdvancedJobFiltersDrawer from '../components/jobs/AdvancedJobFiltersDrawer';
+import {
+  type FilterState,
+  type AdvancedFilterState,
+  filterStateFromSearchParams,
+  advancedFromSearchParams,
+  searchParamsFromFilterState,
+  searchParamsFromAdvanced,
+  matchesAllFilters,
+  matchesAdvanced,
+  ALL_FILTER_CATEGORIES,
+} from '../components/jobs/jobFilters';
 
 type SortBy =
   | 'newest'
@@ -101,12 +114,26 @@ export default function JobsPage() {
   // Sync sort + page → URL. We don't sync jobs data itself —
   // the URL just remembers the user's chosen sort and page so they
   // can come back to the same view.
+  // Phase 10D (restored per user feedback): filter state + advanced
+  // state + drawer open. URL-synced so the user can return to the
+  // same filtered view.
+  const [filterState, setFilterState] = useState<FilterState>(() =>
+    filterStateFromSearchParams(searchParams),
+  );
+  const [advancedState, setAdvancedState] = useState<AdvancedFilterState>(() =>
+    advancedFromSearchParams(searchParams),
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Sync sort + page + filter state → URL. Single source of truth
+  // is in-memory state; URL is the persistence + shareable link layer.
   useEffect(() => {
-    const next = new URLSearchParams();
+    const next = searchParamsFromFilterState(filterState);
+    searchParamsFromAdvanced(advancedState, next);
     if (sortBy !== 'newest') next.set('sort', sortBy);
     if (page !== 1) next.set('page', String(page));
     setSearchParams(next, { replace: true });
-  }, [sortBy, page, setSearchParams]);
+  }, [filterState, advancedState]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -269,8 +296,22 @@ export default function JobsPage() {
 
   // Apply sort (in case BE doesn't honor ?sort=, we resort client-side
   // as a safety net). Pagination is BE-side via skip/limit.
+  // Apply quick + advanced filters in a 2-pass over `jobs` (the
+  // current page from the BE). Filter is client-side because the
+  // BE doesn't yet know about our filter shape — the filter
+  // categories live in the FE (jobFilters.ts).
+  const filteredJobs = useMemo(() => {
+    return jobs
+      .filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES))
+      .filter((j) => matchesAdvanced(j, advancedState));
+  }, [jobs, filterState, advancedState]);
+
+  // The current page is what the BE returned, and the filter
+  // applies client-side. With pagination, the filter may show
+  // fewer items than the page size when filters are active. The
+  // pagination controls still reflect the BE's `total` + `has_more`.
   const visibleJobs = useMemo(() => {
-    const sorted = [...jobs];
+    const sorted = [...filteredJobs];
     const scoreOf = (id: string) => summaryByJobId.get(id)?.match_score ?? -1;
     switch (sortBy) {
       case 'newest':
@@ -330,7 +371,7 @@ export default function JobsPage() {
         break;
     }
     return sorted;
-  }, [jobs, sortBy, summaryByJobId]);
+  }, [filteredJobs, sortBy, summaryByJobId]);
 
   // The job whose drawer is open. Null = closed.
   const drawerJob = useMemo(
@@ -396,27 +437,45 @@ export default function JobsPage() {
       )}
 
       {/* Sort dropdown (always visible) + total count */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-[12px] text-slate-600" data-testid="jobs-count">
-          {total === 0 && !loading ? 'No jobs' :
-           total === 0 ? '' :
-           `Showing ${pageStart}–${pageEnd} of ${total} ${total === 1 ? 'job' : 'jobs'}`}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-[12px] text-slate-600" data-testid="jobs-count">
+            {total === 0 && !loading ? 'No jobs' :
+             total === 0 ? '' :
+             `Showing ${pageStart}–${pageEnd} of ${total} ${total === 1 ? 'job' : 'jobs'}`}
+          </div>
+          <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            <select
+              value={sortBy}
+              onChange={(e) => handleSortChange(e.target.value as SortBy)}
+              data-testid="sort-select"
+              className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              {SORT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
-        <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
-          <ArrowUpDown className="w-3.5 h-3.5" />
-          <select
-            value={sortBy}
-            onChange={(e) => handleSortChange(e.target.value as SortBy)}
-            data-testid="sort-select"
-            className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
-          >
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+
+        {/* Phase 10D (restored): compact filter bar + All Filters drawer */}
+        <JobFilterBar
+          filterState={filterState}
+          jobs={jobs}
+          onChange={(next) => {
+            setFilterState(next);
+            setPage(1);  // reset to first page on filter change
+          }}
+          onClearAll={() => {
+            setFilterState({});
+            setAdvancedState({});
+            setPage(1);
+          }}
+          onOpenAdvanced={() => setAdvancedOpen(true)}
+        />
       </div>
 
       {/* Error banner */}
@@ -466,7 +525,7 @@ export default function JobsPage() {
       )}
 
       {/* Job grid */}
-      {!loading && total > 0 && (
+      {!loading && total > 0 && visibleJobs.length > 0 && (
         <div
           data-testid="jobs-grid"
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 lg:gap-6"
@@ -482,6 +541,29 @@ export default function JobsPage() {
               profilePreferences={profilePreferences ?? undefined}
             />
           ))}
+        </div>
+      )}
+
+      {/* Phase 10D (restored): empty-after-filter state. Shown when
+          the user has jobs but the active filter excludes all of
+          them in the current page. */}
+      {!loading && total > 0 && visibleJobs.length === 0 && (
+        <div className="card card-pad text-center py-12" data-testid="empty-filter">
+          <p className="text-[14px] text-slate-600">
+            No jobs match your current filters.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setFilterState({});
+              setAdvancedState({});
+              setPage(1);
+            }}
+            data-testid="empty-clear-filters"
+            className="mt-3 text-[13px] text-brand-600 hover:text-brand-700 font-medium"
+          >
+            Clear all filters
+          </button>
         </div>
       )}
 
@@ -537,6 +619,18 @@ export default function JobsPage() {
         onMatchUpdated={() => {
           fetchMatchSummaries();
         }}
+      />
+
+      {/* Phase 10D (restored): All Filters advanced drawer */}
+      <AdvancedJobFiltersDrawer
+        open={advancedOpen}
+        applied={advancedState}
+        quickState={filterState}
+        onApply={(next) => {
+          setAdvancedState(next);
+          setPage(1);
+        }}
+        onClose={() => setAdvancedOpen(false)}
       />
     </div>
   );
