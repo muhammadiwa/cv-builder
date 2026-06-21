@@ -1,32 +1,6 @@
 import { useState } from 'react';
 import clsx from 'clsx';
-import { Save, X, ChevronDown, ChevronRight, Loader2, AlertTriangle, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
-
-function ConfidenceBadge({ score }: { score: number }) {
-  // Color-code the parser confidence so users notice low-confidence parses
-  const pct = Math.round(score * 100);
-  const tone =
-    score >= 0.75 ? { icon: CheckCircle2, color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' } :
-    score >= 0.5  ? { icon: AlertCircle,   color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' } :
-                    { icon: AlertTriangle, color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200' };
-  const Icon = tone.icon;
-  const label =
-    score >= 0.75 ? 'High confidence' :
-    score >= 0.5  ? 'Medium confidence' :
-                    'Low confidence — review carefully';
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-medium',
-        tone.color, tone.bg, tone.border,
-      )}
-      title={label}
-    >
-      <Icon size={11} />
-      {pct}% confidence
-    </span>
-  );
-}
+import { Save, X, ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
 
 export interface ProfileData {
   id: string;
@@ -204,7 +178,6 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
               ? new Date(profile.updated_at).toLocaleString()
               : 'unknown'}
           </span>
-          <ConfidenceBadge score={profile.confidence_score} />
         </div>
         <div className="flex items-center gap-2">
           {dirty && (
