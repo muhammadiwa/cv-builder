@@ -224,7 +224,7 @@ export default function JobDetailPage() {
   const hasSalary = Boolean(salaryCurrency && (salaryMin || salaryMax));
 
   return (
-    <div className="space-y-5 lg:space-y-6">
+    <div className="page-narrow space-y-6 lg:space-y-8">
       {/* Back link */}
       <Link
         to="/jobs"

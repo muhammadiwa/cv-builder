@@ -23,6 +23,7 @@ import {
   type JobOut,
 } from '../lib/api';
 import { toast } from '../lib/toast';
+import PageHeader from '../components/PageHeader';
 
 const TONES: { value: CoverLetterTone; label: string; desc: string }[] = [
   { value: 'professional', label: 'Professional', desc: 'Polished, balanced — the safe default.' },
@@ -188,26 +189,22 @@ export default function CoverLettersPage() {
   }
 
   return (
-    <div className="space-y-5 lg:space-y-6">
-      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row pt-1 lg:pt-2">
-        <div className="min-w-0">
-          <h1 className="text-lg lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Mail className="w-5 h-5 lg:w-6 lg:h-6 text-brand-600 shrink-0" />
-            Cover Letters
-          </h1>
-          <p className="text-[13px] lg:text-sm text-slate-500 mt-1">
-            Targeted cover letters per job. Editable, scorable, exportable to PDF or DOCX.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowGenerate(true)}
-          className="btn-primary text-[13px] shrink-0"
-          data-testid="generate-btn"
-        >
-          <Plus className="w-4 h-4 mr-1.5" />
-          Generate Cover Letter
-        </button>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHeader
+        icon={Mail}
+        title="Cover Letters"
+        subtitle="Targeted cover letters per job. Editable, scorable, exportable to PDF or DOCX."
+        actions={
+          <button
+            onClick={() => setShowGenerate(true)}
+            className="btn-primary text-[13px]"
+            data-testid="generate-btn"
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Generate Cover Letter
+          </button>
+        }
+      />
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-md p-3">
@@ -215,10 +212,10 @@ export default function CoverLettersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
         {/* List */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="lg:col-span-4">
+          <div className="card">
             <div className="px-4 py-3 border-b border-slate-200">
               <h2 className="text-sm font-semibold text-slate-700">
                 {letters.length} cover letter{letters.length === 1 ? '' : 's'}
@@ -285,7 +282,7 @@ export default function CoverLettersPage() {
         </div>
 
         {/* Detail */}
-        <div className="lg:col-span-2">
+        <div className="lg:col-span-8">
           {selected ? (
             <CoverLetterDetail
               letter={selected}

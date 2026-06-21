@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import { profileApi, UploadStatus } from '../lib/api';
 import UploadZone from '../components/UploadZone';
 import ProfileEditForm, { ProfileData } from '../components/ProfileEditForm';
+import PageHeader from '../components/PageHeader';
 
 type UploadStatusState = 'idle' | 'uploading' | 'parsing' | 'parsed' | 'failed';
 
@@ -140,31 +141,22 @@ export default function ProfilePage() {
   const hasProfile = !!profile;
 
   return (
-    <div className="space-y-5 lg:space-y-6">
-      {/* Page header */}
-      <div className="flex items-baseline justify-between gap-4 flex-wrap pt-1 lg:pt-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-            <User size={18} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg lg:text-xl font-semibold text-slate-900 tracking-tight">
-              Base Profile
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              The structured resume data that powers every tailored CV.
-            </p>
-          </div>
-        </div>
-        {hasProfile && (
-          <button
-            onClick={() => qc.invalidateQueries({ queryKey: ['profile'] })}
-            className="btn btn-ghost text-xs"
-          >
-            <RefreshCw size={13} /> Refresh
-          </button>
-        )}
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHeader
+        icon={User}
+        title="Base Profile"
+        subtitle="The structured resume data that powers every tailored CV."
+        actions={
+          hasProfile ? (
+            <button
+              onClick={() => qc.invalidateQueries({ queryKey: ['profile'] })}
+              className="btn btn-ghost text-xs"
+            >
+              <RefreshCw size={13} /> Refresh
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* Save banner */}
       {saveBanner && (
@@ -204,7 +196,7 @@ export default function ProfilePage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           {/* Main editor */}
           <div className="lg:col-span-8 space-y-6">
             <ProfileEditForm profile={profile} onSave={handleSave} saving={saving} />

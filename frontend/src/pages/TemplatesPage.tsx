@@ -28,6 +28,7 @@ import type {
 } from '../lib/api';
 import { templatesApi } from '../lib/api';
 import { toast } from '../lib/toast';
+import PageHeader from '../components/PageHeader';
 
 const PRESET_IDS = new Set(['ats_classic', 'ats_modern', 'ats_compact']);
 
@@ -114,27 +115,24 @@ export default function TemplatesPage() {
   const userTemplates = templates?.filter((t) => !PRESET_IDS.has(t.id)) ?? [];
 
   return (
-    <div className="space-y-5 lg:space-y-6" data-testid="templates-page">
-      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row pt-1 lg:pt-2">
-        <div className="min-w-0">
-          <h1 className="text-lg lg:text-2xl font-bold text-slate-900">Templates</h1>
-          <p className="text-[13px] lg:text-sm text-slate-600 mt-1">
-            ATS-safe CV and cover letter templates. All single-column, no
-            graphics, selectable text.
-          </p>
-        </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="btn-primary text-[13px] shrink-0"
-          data-testid="new-template-btn"
-        >
-          <Plus className="w-4 h-4 mr-1.5" /> New template
-        </button>
-      </div>
+    <div className="space-y-6 lg:space-y-8" data-testid="templates-page">
+      <PageHeader
+        title="Templates"
+        subtitle="ATS-safe CV and cover letter templates. All single-column, no graphics, selectable text."
+        actions={
+          <button
+            onClick={() => setCreating(true)}
+            className="btn-primary text-[13px]"
+            data-testid="new-template-btn"
+          >
+            <Plus className="w-4 h-4 mr-1.5" /> New template
+          </button>
+        }
+      />
 
       {/* ── Built-in presets ────────────────────────────────────── */}
       <Section title="Built-in presets" count={builtins.length}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 lg:gap-6">
           {builtins.map((t) => (
             <TemplateCard
               key={t.id}
@@ -160,7 +158,7 @@ export default function TemplatesPage() {
             duplicate a built-in preset to start customizing.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 lg:gap-6">
             {userTemplates.map((t) => (
               <TemplateCard
                 key={t.id}

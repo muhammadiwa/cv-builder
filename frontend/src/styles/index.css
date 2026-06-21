@@ -8,27 +8,60 @@
 }
 
 @layer components {
-  /* ── Page shell ──────────────────────────────────────────────
-     Single source of truth for page-level width/padding.
-     Replaces ad-hoc max-w-{3xl,5xl,6xl} + px-6 py-8 wrappers
-     scattered across pages. Breakpoints:
-       - mobile:  full width, 16px gutter, 16px top, 24px bottom
-       - sm:      20px gutter
-       - lg:      24px gutter, 24px top, 32px bottom
-       - xl:      max-w-7xl (1280px), 32px gutter
-     Pages only need to wrap their content in <div className="page-shell">.
+  /* ── Page shell — 3 variants ─────────────────────────────────
+     The layout shell (App.tsx) gives every page a main scroll
+     container. Pages opt into ONE of three shells:
+
+     .page-shell      Default. Content fills the main column with
+                      padding only. Use for dashboards / wide grids
+                      where horizontal real estate matters.
+
+     .page-narrow     Centered, capped at 1024px. Use for content
+                      that's better read at constrained widths:
+                      settings forms, detail pages, single-column
+                      write-ups. Stays comfortable at any monitor
+                      size without leaving awkward gaps.
+
+     .page-wide       Same as page-shell but with no right-edge
+                      gutter reduction. Reserved for pages that
+                      genuinely need every pixel (canvas, tables).
+
+     Mobile-first gutters:
+       - <sm:   16px
+       - sm:    20px
+       - lg:    24px (24px top/bottom on lg+)
+       - 2xl:   32px
   */
+
   .page-shell {
-    @apply w-full mx-auto px-4 py-4 sm:px-5 lg:px-6 lg:py-8 xl:max-w-7xl xl:px-8;
+    @apply w-full px-4 py-4 sm:px-5 lg:px-6 lg:py-8 2xl:px-8;
   }
 
-  /* ── Generic cards / buttons / inputs (Phase 1 system) ───── */
+  /* Narrow variant — caps content width but does NOT add padding.
+     The outer page-shell wrapper provides gutters, so this just
+     narrows + centers the content area inside. */
+  .page-narrow {
+    @apply w-full max-w-5xl mx-auto;
+  }
+
+  /* Wide variant — same as page-shell but with extra 2xl padding
+     for canvas-style pages that want to use every pixel. */
+  .page-wide {
+    @apply w-full px-4 py-4 sm:px-5 lg:px-6 lg:py-8 2xl:px-10;
+  }
+
+  /* ── Cards ─────────────────────────────────────────────────── */
   .card {
     @apply bg-white border border-slate-200 rounded-xl;
   }
   .card-pad {
     @apply p-5;
   }
+  .card-pad-lg {
+    @apply p-6;
+  }
+
+  /* ── Buttons ───────────────────────────────────────────────── */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition;
   }
@@ -41,6 +74,11 @@
   .btn-ghost {
     @apply btn text-slate-600 hover:bg-slate-100;
   }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700;
+  }
+
+  /* ── Badges & form primitives ──────────────────────────────── */
   .badge {
     @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
   }

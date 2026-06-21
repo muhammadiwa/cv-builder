@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import {
-  Upload,
-  FileText,
   Briefcase,
   Sparkles,
   AlertCircle,
 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+
+// ── Sample data (Phase 2+ will wire to real API) ───────────────
 
 const SAMPLE_MATCHES = [
   { title: 'Senior Backend Engineer', company: 'Bukalapak', location: 'Jakarta', match: 87, tier: 'hot', days: 1 },
@@ -36,7 +37,7 @@ const TIER_BAR: Record<string, string> = {
 
 const SAMPLE_ACTIVITY = [
   { text: 'Applied to Senior Backend Engineer at Bukalapak', time: '2h ago', icon: Briefcase },
-  { text: 'CV draft v3 generated for Xendit', time: '4h ago', icon: FileText },
+  { text: 'CV draft v3 generated for Xendit', time: '4h ago', icon: Sparkles },
   { text: 'Resume parsed and Base Profile created', time: '1d ago', icon: Sparkles },
 ];
 
@@ -71,23 +72,19 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-5 lg:space-y-6">
-      {/* ── Header (greeting + date) ───────────────────── */}
-      <div className="flex items-baseline justify-between gap-4 flex-wrap pt-1 lg:pt-2">
-        <div className="min-w-0">
-          <h1 className="text-lg lg:text-xl font-semibold text-slate-900 tracking-tight">
-            Welcome back, Mohammad
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Build a tailored CV for each job in minutes, not hours.
-          </p>
-        </div>
-        <div className="text-xs text-slate-400 shrink-0">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </div>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      {/* ── Header ───────────────────────────────────── */}
+      <PageHeader
+        title="Welcome back, Mohammad"
+        subtitle="Build a tailored CV for each job in minutes, not hours."
+        actions={
+          <div className="text-xs text-slate-400 self-start sm:self-center hidden sm:block">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+        }
+      />
 
-      {/* ── Profile banner (single, compact) ──────────────────── */}
+      {/* ── Profile banner (single, compact) ──────────────── */}
       <div className="card card-pad flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
         <Avatar name="Mohammad Pratama" size={48} />
         <div className="flex-1 min-w-0">
@@ -111,7 +108,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Two-column: jobs (left, 8/12) + sidebar (right, 4/12) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
         {/* LEFT — Top job matches (the actual product) */}
         <section className="lg:col-span-8 space-y-3">
           <div className="flex items-center justify-between">
@@ -209,7 +206,7 @@ export default function DashboardPage() {
               </li>
             </ol>
             <button className="btn btn-primary w-full mt-4 text-xs">
-              <Upload size={13} /> Upload your first resume
+              Upload your first resume
             </button>
           </section>
 

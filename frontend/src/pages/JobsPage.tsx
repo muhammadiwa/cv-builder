@@ -3,6 +3,7 @@ import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-
 import clsx from 'clsx';
 import { jobsApi, type JobOut, type JobStatus } from '../lib/api';
 import { toast } from '../lib/toast';
+import PageHeader from '../components/PageHeader';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
 
@@ -155,51 +156,45 @@ export default function JobsPage() {
   }, [jobs]);
 
   return (
-    <div className="space-y-5 lg:space-y-6">
-      {/* Header */}
-      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
-        <div className="min-w-0">
-          <h1 className="text-lg lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Briefcase className="w-5 h-5 lg:w-6 lg:h-6 text-brand-600 shrink-0" />
-            Job Postings
-          </h1>
-          <p className="text-[13px] lg:text-sm text-slate-600 mt-1">
-            Paste a job URL or description. AI analyzes it, extracts skills and keywords, then we match it against your profile.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            data-testid="refresh-btn"
-            className="btn-secondary text-[13px]"
-            title="Refresh job list"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAdd(!showAdd)}
-            data-testid="add-job-btn"
-            className="btn-primary text-[13px]"
-          >
-            {showAdd ? (
-              <>
-                <X className="w-3.5 h-3.5 mr-1.5" />
-                Cancel
-              </>
-            ) : (
-              <>
-                <Plus className="w-3.5 h-3.5 mr-1.5" />
-                Add Job
-              </>
-            )}
-          </button>
-        </div>
-      </div>
+    <div className="space-y-6 lg:space-y-8">
+      <PageHeader
+        icon={Briefcase}
+        title="Job Postings"
+        subtitle="Paste a job URL or description. AI analyzes it, extracts skills and keywords, then we match it against your profile."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              data-testid="refresh-btn"
+              className="btn-secondary text-[13px]"
+              title="Refresh job list"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAdd(!showAdd)}
+              data-testid="add-job-btn"
+              className="btn-primary text-[13px]"
+            >
+              {showAdd ? (
+                <>
+                  <X className="w-3.5 h-3.5 mr-1.5" />
+                  Cancel
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                  Add Job
+                </>
+              )}
+            </button>
+          </>
+        }
+      />
 
       {/* Add form (inline, not modal — simpler) */}
       {showAdd && (
@@ -310,7 +305,7 @@ export default function JobsPage() {
       {!loading && jobs.length > 0 && (
         <div
           data-testid="jobs-grid"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 lg:gap-6"
         >
           {visibleJobs.map((job) => (
             <JobCard

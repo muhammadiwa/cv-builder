@@ -25,6 +25,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { toast } from '../lib/toast';
+import PageHeader from '../components/PageHeader';
 import {
   LLM_TASK_TYPES,
   llmProvidersApi,
@@ -91,21 +92,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-5 lg:space-y-6">
-      {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-start justify-between pt-1 lg:pt-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
-            <Brain size={20} />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg lg:text-2xl font-semibold">Settings</h1>
-            <p className="text-[13px] lg:text-sm text-slate-500 mt-0.5">
-              LLM providers, defaults, and app preferences.
-            </p>
-          </div>
-        </div>
-      </div>
+    <div className="page-narrow space-y-6 lg:space-y-8">
+      <PageHeader
+        icon={Brain}
+        title="Settings"
+        subtitle="LLM providers, defaults, and app preferences."
+      />
 
       {/* ── LLM Providers section ────────────────────────── */}
       <section className="card card-pad space-y-4">
