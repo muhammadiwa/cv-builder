@@ -348,6 +348,7 @@ function CreateCVModal({
             <TemplatePicker
               value={templateId}
               onChange={setTemplateId}
+              variant="card"
               testId="create-cv-template-picker"
             />
           </div>

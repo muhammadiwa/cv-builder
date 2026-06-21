@@ -767,6 +767,7 @@ export interface TemplateSummary {
   is_ats_friendly: boolean;
   is_default: boolean;
   created_at: string;
+  template_config_json: TemplateConfigJson;
 }
 
 export interface Template extends TemplateSummary {

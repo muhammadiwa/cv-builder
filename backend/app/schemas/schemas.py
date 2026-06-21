@@ -697,7 +697,17 @@ def _validate_ats_color(v: str | None) -> str | None:
 
 
 class TemplateListItem(BaseModel):
-    """Slim template summary for list endpoints (no full config)."""
+    """Template summary for list endpoints — includes the full config so the
+    FE can render thumbnails and metadata without N+1 fetches per card.
+
+    Config is duplicated here vs. :class:`TemplateOut` to keep the public
+    contract simple: every list response carries the data needed to
+    render the row (thumbnail + metadata pills) without a follow-up
+    GET call. The shape is the same dict stored in
+    ``template_config_json`` (id, name, type, sections, font_family,
+    accent_color, density, bullet_style, date_format, page_size,
+    ats_friendly, description).
+    """
 
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -707,6 +717,7 @@ class TemplateListItem(BaseModel):
     is_ats_friendly: bool
     is_default: bool
     created_at: datetime
+    template_config_json: dict[str, Any] = Field(default_factory=dict)
 
 
 class TemplateOut(BaseModel):

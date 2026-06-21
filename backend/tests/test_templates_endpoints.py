@@ -59,13 +59,35 @@ def test_list_filter_by_type(client):
         assert t["type"] == "cv"
 
 
-def test_list_slim_summary_no_config_blob(client):
-    """``TemplateListItem`` must not include the full config blob —
-    that's what the detail endpoint is for."""
+def test_list_includes_config_for_thumbnails(client):
+    """``TemplateListItem`` now includes ``template_config_json`` so the FE
+    can render schematic thumbnails and visual metadata pills (font,
+    density, accent color, section order, page size) without N+1 fetches
+    per card. The detail endpoint still returns the same data, so the FE
+    uses one source of truth.
+    """
     r = client.get("/api/templates")
     assert r.status_code == 200
     for t in r.json():
-        assert "template_config_json" not in t
+        assert "template_config_json" in t
+        cfg = t["template_config_json"]
+        # Every documented config key must be present (FE thumbnails rely
+        # on all of these).
+        for key in (
+            "id",
+            "name",
+            "type",
+            "sections",
+            "font_family",
+            "accent_color",
+            "density",
+            "bullet_style",
+            "date_format",
+            "page_size",
+            "ats_friendly",
+            "description",
+        ):
+            assert key in cfg, f"missing {key} in {t['id']} config"
 
 
 # ── Detail ──────────────────────────────────────────────────────────

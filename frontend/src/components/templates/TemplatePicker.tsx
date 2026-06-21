@@ -5,9 +5,14 @@
  *   - CreateCVModal (CvDraftsPage) — choose template when generating CV
  *   - CVEditor header — change template for an existing draft
  *
- * Fetches the list via templatesApi on mount. Shows a card-style
- * preview thumbnail (accent color swatch + density + font) so users
- * can tell presets apart at a glance.
+ * Two variants:
+ *   - "compact" — single dropdown button with searchable list
+ *   - "card" — grid of cards each showing a schematic thumbnail so the
+ *     visual differences between templates are obvious at a glance
+ *
+ * The card variant reuses :component:`TemplateThumbnail` so the picker
+ * cards are visually identical to the TemplatesPage cards — picking a
+ * template in either surface shows the same miniature preview.
  */
 import { useEffect, useState } from 'react';
 import { Check, ChevronDown, Loader2 } from 'lucide-react';
@@ -17,6 +22,7 @@ import type {
   Density,
 } from '../../lib/api';
 import { templatesApi } from '../../lib/api';
+import TemplateThumbnail from './TemplateThumbnail';
 
 interface TemplatePickerProps {
   value: string;
@@ -192,31 +198,47 @@ function TemplateCard({
       type="button"
       onClick={onSelect}
       disabled={disabled}
-      className={`text-left p-3 rounded border-2 transition-colors ${
+      className={`text-left p-2.5 rounded-lg border-2 transition-colors disabled:opacity-50 ${
         selected
-          ? 'border-indigo-500 bg-indigo-50'
+          ? 'border-indigo-500 bg-indigo-50/50 shadow-sm'
           : 'border-slate-200 hover:border-slate-300 bg-white'
-      } disabled:opacity-50`}
+      }`}
     >
-      <div className="flex items-center justify-between mb-1">
+      <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-md p-3 mb-2">
+        <TemplateThumbnail config={template.template_config_json} className="h-28" />
+      </div>
+      <div className="flex items-center justify-between gap-1.5 mb-1">
         <span className="font-medium text-sm text-slate-900 truncate">
           {template.name}
         </span>
         {template.is_default && (
-          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-brand-50 text-brand-700 rounded font-semibold flex-shrink-0">
             default
           </span>
         )}
       </div>
-      <div className="text-xs text-slate-500 line-clamp-2 mb-2">
+      <div className="text-[11px] text-slate-500 line-clamp-2 leading-snug mb-1.5">
         {template.description}
       </div>
-      <div className="flex items-center gap-2 text-[10px] text-slate-500">
+      <div className="flex items-center gap-1 flex-wrap">
         {template.is_ats_friendly && (
-          <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded">
+          <span className="text-[9px] px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-medium">
             ATS-safe
           </span>
         )}
+        <span
+          className="text-[9px] px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-600"
+          title={`Accent ${template.template_config_json.accent_color}`}
+        >
+          <span
+            className="inline-block w-2 h-2 rounded-sm border border-slate-300 mr-1 align-middle"
+            style={{
+              backgroundColor: template.template_config_json.accent_color,
+            }}
+          />
+          {template.template_config_json.font_family} ·{' '}
+          {template.template_config_json.density}
+        </span>
       </div>
     </button>
   );
