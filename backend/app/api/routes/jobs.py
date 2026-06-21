@@ -192,13 +192,26 @@ async def create_job(
         # Dedup: reject if the same URL was already submitted (and not soft-deleted).
         # The DB unique index is the source of truth — this is just a friendly
         # 409 that returns the existing job_id so the client can navigate to it.
-        existing = db.execute(
-            select(Job).where(
-                Job.user_id == user.id,
-                Job.source_url == payload.source_url,
-                Job.deleted_at.is_(None),
-            )
-        ).scalar_one_or_none()
+        #
+        # We compare on the NORMALIZED URL (tracking params stripped, fragment
+        # removed) so the same Jobstreet / LinkedIn posting doesn't create a
+        # new row every time the user copies the URL with different ``?ref=``
+        # or ``?trk=`` query params. See BUGFIX-PHASE-10F: paste with vs
+        # without tracking was creating silent duplicates.
+        from app.services.job_scraper import _normalize_url
+        normalized_incoming = _normalize_url(payload.source_url)
+        active_jobs = (
+            db.query(Job)
+            .filter(Job.user_id == user.id, Job.deleted_at.is_(None))
+            .all()
+        )
+        existing = next(
+            (
+                j for j in active_jobs
+                if _normalize_url(j.source_url) == normalized_incoming
+            ),
+            None,
+        )
         if existing is not None:
             raise HTTPException(
                 status_code=409,

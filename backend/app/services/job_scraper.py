@@ -176,7 +176,22 @@ def _strip_tracking_params(url: str) -> str:
 
 
 def _normalize_url(url: str) -> str:
-    """Validate + strip tracking params + SSRF guard. Raises InvalidURLError / SSRFBlockedError."""
+    """Validate + strip tracking params + SSRF guard. Raises InvalidURLError / SSRFBlockedError.
+
+    Phase 10F: also strips URL fragments (``#sol=abc``) AND most query
+    params so the dedup query in ``create_job`` matches regardless of
+    whether the user pasted the URL with or without tracking. The
+    dedup key is ``scheme://host/path`` — for job boards the unique
+    ID is in the path (e.g. Jobstreet ``/id/job/12345``, LinkedIn
+    ``/jobs/view/12345``), and everything in the query / fragment is
+    tracking / session / anchor info that varies per copy-paste.
+
+    Trade-off: this dedups more aggressively. If two different job
+    boards happen to host at the same host with the same path, we'd
+    dedup them. In practice this never happens (every board uses
+    its own host) and the alternative — per-board query param
+    policies — adds complexity for zero realistic benefit.
+    """
     if not isinstance(url, str) or not url.strip():
         raise InvalidURLError("url is empty")
     cleaned = url.strip()
@@ -192,7 +207,10 @@ def _normalize_url(url: str) -> str:
         raise InvalidURLError("url is missing host")
     # SSRF defense: refuse private/loopback/link-local/metadata IPs.
     _assert_public_address(host)
-    return _strip_tracking_params(cleaned)
+    # Dedup key: scheme + host + path. Drop query + fragment.
+    # (We still keep the SSRF guard above so an attacker can't sneak
+    # a private IP past via the path.)
+    return urlunparse(parsed._replace(query="", fragment="", params=""))
 
 
 # ── Extraction chain (tiered fallback) ─────────────────────────────

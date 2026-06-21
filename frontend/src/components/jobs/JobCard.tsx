@@ -59,7 +59,6 @@ export default function JobCard({
   hasTailoredCv = false,
   matchedSkillsCount,
   totalRequiredSkills,
-  profilePreferences,
 }: JobCardProps) {
   const isLoading = job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
   const isFailed = job.status === 'failed';

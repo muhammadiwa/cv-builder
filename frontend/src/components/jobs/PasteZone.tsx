@@ -5,7 +5,7 @@ import { jobsApi, type JobOut, type JobSourceType } from '../../lib/api';
 
 interface PasteZoneProps {
   onCreated: (job: JobOut) => void;
-  onError: (msg: string) => void;
+  onError: (msg: string, context?: { existingJobId?: string; kind?: 'duplicate' | 'generic' }) => void;
 }
 
 type Tab = 'url' | 'manual';
@@ -51,16 +51,52 @@ export default function PasteZone({ onCreated, onError }: PasteZoneProps) {
               title: title.trim() || undefined,
               company: company.trim() || undefined,
             };
-
       const job = await jobsApi.create(payload);
       onCreated(job);
       reset();
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-        (err as { message?: string })?.message ||
+      // Phase 10F: surface 409 (duplicate) as a friendly message + a
+      // button to open the existing row, instead of dumping
+      // "[object Object]" from a JSON detail object. Without this
+      // the user thought submission failed and deleted + retried the
+      // same URL, which created a soft-delete / re-add loop.
+      const axiosErr = err as {
+        response?: { status?: number; data?: { detail?: unknown } };
+        message?: string;
+      };
+      const detail = axiosErr?.response?.data?.detail;
+      const status = axiosErr?.response?.status;
+      if (status === 409 && typeof detail === 'object' && detail !== null) {
+        const d = detail as {
+          error?: string;
+          message?: string;
+          existing_job_id?: string;
+        };
+        if (d.error === 'duplicate_job') {
+          const existingId = d.existing_job_id;
+          const msg = [
+            d.message || 'This job is already in your list.',
+            existingId ? 'Click "Open" below to view it.' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
+          onError(msg, {
+            existingJobId: existingId,
+            kind: 'duplicate',
+          });
+          return;
+        }
+      }
+      // Fallback: stringify the detail object if it's an object, else
+      // use the raw string. Keeps the FE from showing [object Object].
+      const fallback =
+        (typeof detail === 'string' && detail) ||
+        (typeof detail === 'object' && detail
+          ? JSON.stringify(detail)
+          : '') ||
+        axiosErr?.message ||
         'Failed to submit job';
-      onError(msg);
+      onError(fallback);
     } finally {
       setSubmitting(false);
     }

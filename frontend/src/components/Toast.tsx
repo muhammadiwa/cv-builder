@@ -34,10 +34,10 @@ export default function Toast() {
     let nextId = 1;
     const handler = (e: Event) => {
       const ce = e as CustomEvent<ToastEvent>;
-      const { type, message, ttl = 4000 } = ce.detail;
+      const { type, message, ttl = 4000, action } = ce.detail;
       const id = nextId++;
       // Newest on top: unshift rather than push.
-      setToasts((prev) => [{ id, type, message, ttl }, ...prev]);
+      setToasts((prev) => [{ id, type, message, ttl, action }, ...prev]);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, ttl);
@@ -66,6 +66,22 @@ export default function Toast() {
           >
             <Icon className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <span className="text-sm flex-1">{t.message}</span>
+            {/* Phase 10F: optional action button. Triggers the
+                action's onClick and dismisses this toast. Used e.g.
+                on a 409 duplicate to offer "Open existing". */}
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  t.action!.onClick();
+                  setToasts((prev) => prev.filter((x) => x.id !== t.id));
+                }}
+                className="text-[12px] font-semibold underline underline-offset-2 hover:opacity-80 shrink-0"
+                data-testid={`toast-action-${t.type}`}
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               onClick={() =>
                 setToasts((prev) => prev.filter((x) => x.id !== t.id))

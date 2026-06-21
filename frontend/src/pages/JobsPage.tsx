@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { jobsApi, matchesApi, profileApi, type JobOut, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
@@ -45,6 +45,8 @@ function clearPollTimer() {
 
 export default function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  // Phase 10F: used by the "Open existing" toast action on duplicate.
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<JobOut[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -351,7 +353,24 @@ export default function JobsPage() {
         <div>
           <PasteZone
             onCreated={handleCreated}
-            onError={(msg) => toast.error(msg)}
+            onError={(msg, ctx) => {
+              // Phase 10F: when the BE rejects with 409 (duplicate),
+              // show a clear error + an "Open existing" action that
+              // navigates to the existing job's detail. Without this,
+              // users thought the submit failed and retried, creating
+              // a soft-delete + re-add loop that piled up duplicates.
+              if (ctx?.kind === 'duplicate' && ctx.existingJobId) {
+                toast.error(msg, {
+                  ttl: 7000,
+                  action: {
+                    label: 'Open existing',
+                    onClick: () => navigate(`/jobs/${ctx.existingJobId}`),
+                  },
+                });
+                return;
+              }
+              toast.error(msg);
+            }}
           />
         </div>
       )}
