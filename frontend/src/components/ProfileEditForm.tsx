@@ -13,6 +13,18 @@ import {
  * Other sections get a disabled Update button + tooltip explaining
  * inline editing isn't there yet (consistent visual pattern).
  */
+/**
+ * Section + BasicsUpdateButton were originally declared INSIDE
+ * ProfileEditForm. That meant every render created a new function
+ * reference, which React treats as a new component type — causing
+ * Placement (unmount + remount) on every state change. The Basics
+ * input lost focus on the first keystroke because the parent <section>
+ * was being torn down and rebuilt mid-edit.
+ *
+ * Both components are now declared at module level so the function
+ * reference is stable across renders.
+ */
+
 function BasicsUpdateButton({
   dirty,
   saving = false,
@@ -141,6 +153,41 @@ export interface ProfileData {
   updated_at?: string;
 }
 
+// Section is declared at module level (NOT inside ProfileEditForm) so
+// its function reference is stable across renders. An inline-declared
+// version would be a new function each render, which React treats as
+// a new component type and remounts the entire subtree — that was the
+// root cause of the Basics input losing focus after the first keystroke.
+function Section({
+  title,
+  open,
+  onToggle,
+  headerAction,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  headerAction?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="card card-pad">
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2 text-left flex-1 min-w-0"
+        >
+          <h3 className="section-title mb-0">{title}</h3>
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
+      </div>
+      {open && <div className="mt-4 space-y-4">{children}</div>}
+    </section>
+  );
+}
+
 interface ProfileEditFormProps {
   profile: ProfileData;
   /** Save the flat basics fields (name, email, etc). */
@@ -254,34 +301,6 @@ export default function ProfileEditForm({
     if (basicsSavedTimer.current) clearTimeout(basicsSavedTimer.current);
   };
 
-  const Section = ({
-    title,
-    open,
-    onToggle,
-    headerAction,
-    children,
-  }: {
-    title: string;
-    open: boolean;
-    onToggle: () => void;
-    headerAction?: React.ReactNode;
-    children: React.ReactNode;
-  }) => (
-    <section className="card card-pad">
-      <div className="flex items-center justify-between gap-3">
-        <button
-          onClick={onToggle}
-          className="flex items-center gap-2 text-left flex-1 min-w-0"
-        >
-          <h3 className="section-title mb-0">{title}</h3>
-          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </button>
-        {headerAction && <div className="shrink-0">{headerAction}</div>}
-      </div>
-      {open && <div className="mt-4 space-y-4">{children}</div>}
-    </section>
-  );
-
   const work = profile.base_profile_json.work ?? [];
   const edu = profile.base_profile_json.education ?? [];
   const skills = profile.base_profile_json.skills ?? [];
@@ -317,7 +336,14 @@ export default function ProfileEditForm({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Full name</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => {
+                console.log('[basics.name.onChange]', e.target.value);
+                setName(e.target.value);
+              }}
+            />
           </div>
           <div>
             <label className="label">Title / current role</label>
