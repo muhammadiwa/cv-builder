@@ -52,6 +52,70 @@ def _section_present(section_name: str, parsed: dict[str, Any]) -> bool:
     return isinstance(val, list) and len(val) > 0
 
 
+# Fields that legitimately live inside the JSON Resume ``basics`` block.
+# Used by ``_repair_basics_flatten`` to detect and fix a common LLM
+# mistake (see below).
+_BASICS_FIELDS: frozenset[str] = frozenset(
+    {"name", "label", "email", "phone", "url", "summary", "location", "profiles"}
+)
+
+
+def _repair_basics_flatten(parsed: dict[str, Any]) -> dict[str, Any]:
+    """Repair the most common LLM structural mistake on resume parses.
+
+    The MiniMax-M3 model (current default via tokenrouter) is
+    non-deterministic and occasionally returns:
+
+        {"basics": null, "name": "X", "email": "Y", "phone": "Z", ...}
+
+    instead of the spec-compliant
+
+        {"basics": {"name": "X", "email": "Y", "phone": "Z", ...}, ...}
+
+    The ``BaseProfileSchema`` allows ``extra='allow'`` so Pydantic
+    silently DROPS the top-level fields and stores ``basics: null``
+    — the parse "succeeds" but the profile comes out empty and the
+    confidence score lands at 0.0.
+
+    This function detects the flattened shape and rebuilds ``basics``
+    from the top-level fields. It is intentionally narrow:
+
+    - Only triggers when ``basics`` is None / empty / non-dict AND
+      at least 2 of the basics fields are at the top level (so we
+      don't accidentally wrap a single coincidental field).
+    - Never invents data — moves keys, doesn't synthesize.
+    - Returns the original dict unchanged if no repair is needed
+      (so we don't risk corrupting valid parses).
+
+    Why not just retry the LLM? Cost + latency. The user would
+    re-pay the LLM call for what is structurally a 5-line fix in
+    post-processing.
+    """
+    if not isinstance(parsed, dict):
+        return parsed
+    basics = parsed.get("basics")
+    basics_ok = isinstance(basics, dict) and len(basics) > 0
+    if basics_ok:
+        return parsed
+    # Count how many basics-shaped fields are sitting at top level.
+    top_level_hits = [k for k in _BASICS_FIELDS if k in parsed]
+    if len(top_level_hits) < 2:
+        return parsed
+    # Move them under a new basics object. We don't worry about
+    # double-keying — if parsed has both basics (as a partial dict)
+    # AND top-level fields, the partial basics wins and the orphans
+    # stay where they are (we only repair when basics is missing).
+    new_basics: dict[str, Any] = {}
+    for k in top_level_hits:
+        new_basics[k] = parsed.pop(k)
+    parsed["basics"] = new_basics
+    log.warning(
+        "parse_resume_repair_basics_flatten",
+        moved_fields=top_level_hits,
+    )
+    return parsed
+
+
 def compute_confidence(parsed: dict[str, Any]) -> float:
     """Return 0.0–1.0: fraction of expected sections that are non-empty.
 
@@ -318,6 +382,13 @@ async def parse_resume(upload_id: str, db: Session) -> dict[str, Any]:
         upload.error_message = f"llm_returned_non_object: {type(parsed_obj).__name__}"
         db.commit()
         raise RuntimeError(f"LLM returned non-object JSON: {type(parsed_obj).__name__}")
+
+    # Phase 10E (post-mortem): the LLM sometimes flattens basics
+    # fields to the top level (e.g. {"name": "X", "email": "Y"} with
+    # no "basics" wrapper). BaseProfileSchema's extra='allow' would
+    # silently drop those fields, leaving basics=null and the
+    # profile confidence at 0%. Repair before validation.
+    parsed_obj = _repair_basics_flatten(parsed_obj)
 
     # Validate against the Pydantic schema. If basics.email is missing,
     # this raises — we treat that as a parse failure, not a hard crash.
