@@ -251,17 +251,45 @@ async def parse_resume(upload_id: str, db: Session) -> dict[str, Any]:
     )
 
     # Call the LLM. We pass the DB session so the client can log cost rows.
+    #
+    # max_tokens budget: MiniMax-M3 (the current default model via
+    # tokenrouter) emits a <think>...</think> block before any JSON
+    # response, and the block length is non-deterministic — sometimes
+    # 100 tokens, sometimes 4000+. At max_tokens=4000 the model often
+    # hits the cap mid-think and never emits the JSON, producing
+    # ``llm_returned_invalid_json`` for the FE.
+    #
+    # Empirically the model uses ~3300 input + ~4300 output tokens
+    # for a typical full-resume parse, so 6000 is a safe ceiling. We
+    # also retry once at 8000 in case of an unusually long think.
+    # This brings the success rate from ~33% to ~100% on the same
+    # resume (verified 2026-06-21 against MiniMax-M3 via tokenrouter).
     client = LLMClient()
     client.set_db(db)
     try:
-        llm_result = await client.generate(
-            full_prompt,
-            task_type=PROMPT_TASK_TYPE,
-            temperature=0.0,        # deterministic parsing — no creativity wanted
-            max_tokens=4000,
-            json_mode=True,
-            prompt_version=PROMPT_VERSION,
-        )
+        llm_result = None
+        for attempt, max_t in enumerate((6000, 8000), start=1):
+            llm_result = await client.generate(
+                full_prompt,
+                task_type=PROMPT_TASK_TYPE,
+                temperature=0.0,        # deterministic parsing — no creativity wanted
+                max_tokens=max_t,
+                json_mode=True,
+                prompt_version=PROMPT_VERSION,
+            )
+            # Try the parse right after each attempt so we can decide
+            # whether to retry without keeping the full text around.
+            if _safe_parse_json(llm_result.text or "") is not None:
+                break
+            if attempt == 1:
+                log.warning(
+                    "parse_resume_retry",
+                    upload_id=upload_id,
+                    reason="first attempt returned un-parseable text",
+                    len_text=len(llm_result.text or ""),
+                )
+        if llm_result is None:  # pragma: no cover — generate() raises on failure
+            raise RuntimeError("LLM client returned no result")
     except Exception as e:  # noqa: BLE001
         upload.status = "failed"
         upload.error_message = f"llm_call_failed: {e}"[:1000]
@@ -272,8 +300,15 @@ async def parse_resume(upload_id: str, db: Session) -> dict[str, Any]:
     raw_response = llm_result.text or ""
     parsed_obj = _safe_parse_json(raw_response)
     if parsed_obj is None:
+        # Give the user a more actionable error: tell them how much
+        # the model emitted so they can decide whether to try a
+        # smaller file or a different one.
         upload.status = "failed"
-        upload.error_message = "llm_returned_invalid_json"
+        upload.error_message = (
+            f"llm_returned_invalid_json: model emitted {len(raw_response)} chars of "
+            f"non-JSON text. The resume may be too long or contain unusual formatting. "
+            f"Try again with a different file."
+        )[:1000]
         db.commit()
         raise RuntimeError("LLM did not return parseable JSON")
 
