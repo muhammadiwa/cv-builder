@@ -23,6 +23,7 @@ import {
   X,
   Loader2,
   ChevronDown,
+  Pencil,
 } from 'lucide-react';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
@@ -92,44 +93,40 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="page-narrow space-y-6 lg:space-y-8">
+    <div className="space-y-6 lg:space-y-8">
       <PageHeader
         icon={Brain}
         title="Settings"
         subtitle="LLM providers, defaults, and app preferences."
-      />
-
-      {/* ── LLM Providers section ────────────────────────── */}
-      <section className="card card-pad space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              LLM Providers
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Multi-provider, OpenAI-compatible. Toggle on/off at runtime.
-              API keys are encrypted at rest.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+        actions={
+          <>
             <button
               onClick={() => load()}
-              className="btn-secondary"
+              className="btn-secondary text-[13px]"
               data-testid="refresh-providers"
               aria-label="Refresh providers"
             >
               <RefreshCw className="w-4 h-4" />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="btn-primary"
+              className="btn-primary text-[13px]"
               data-testid="add-provider"
             >
               <Plus className="w-4 h-4 mr-1" />
               Add provider
             </button>
-          </div>
-        </div>
+          </>
+        }
+      />
+
+      {/* ── LLM Providers section ────────────────────────── */}
+      <section className="card card-pad space-y-4">
+        <p className="text-sm text-slate-500 -mt-2">
+          Multi-provider, OpenAI-compatible. Toggle on/off at runtime. API
+          keys are encrypted at rest.
+        </p>
 
         {providers.length === 0 ? (
           <div className="text-sm text-slate-500 py-6 text-center">
@@ -305,59 +302,71 @@ function ProviderRow({
   const canEnable = hasKey;
   return (
     <div
-      className="py-3 flex items-start justify-between gap-3"
+      className="py-4 flex items-start gap-4"
       data-testid={`provider-row-${provider.id}`}
     >
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-slate-900 truncate">
+        {/* Identity row: name + badges */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-slate-900 truncate">
             {provider.display_name}
           </span>
-          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">
             {KIND_LABEL[provider.kind]}
           </span>
-          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
+          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">
             priority {provider.priority}
           </span>
           {!hasKey && (
-            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded flex items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded font-medium flex items-center gap-1">
               <AlertCircle className="w-3 h-3" /> no key
             </span>
           )}
         </div>
-        <div className="text-xs text-slate-500 truncate mt-0.5">
-          {provider.base_url || <em className="text-slate-400">no base URL</em>}
+
+        {/* Base URL */}
+        <div className="text-xs text-slate-500 truncate mt-1 font-mono">
+          {provider.base_url || <em className="text-slate-400 font-sans">no base URL</em>}
         </div>
-        <div className="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+
+        {/* Model assignments — 2-col grid on lg+, 1-col on mobile */}
+        <div className="text-xs text-slate-600 mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-1">
           {LLM_TASK_TYPES.map((t) => {
             const m = provider.models_json[t];
-            if (!m) return null;
             return (
-              <span key={t} className="whitespace-nowrap">
-                <span className="text-slate-400">{TASK_LABEL[t]}:</span>{' '}
-                <span className="font-mono">{m}</span>
-              </span>
+              <div key={t} className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-slate-400 text-[11px] shrink-0">
+                  {TASK_LABEL[t]}:
+                </span>
+                <span className="font-mono truncate" title={m ?? 'unset'}>
+                  {m || <span className="text-slate-300 font-sans">—</span>}
+                </span>
+              </div>
             );
           })}
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+
+      {/* Action column */}
+      <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0 min-w-[120px]">
+        <label className="flex items-center justify-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none px-2 py-1 rounded hover:bg-slate-50">
           <input
             type="checkbox"
             checked={provider.enabled}
             disabled={!canEnable}
             onChange={(e) => onToggle(e.target.checked)}
-            className="w-4 h-4"
+            className="w-3.5 h-3.5"
             data-testid={`provider-toggle-${provider.id}`}
             aria-label={`Enable ${provider.display_name}`}
           />
-          <span>{provider.enabled ? 'On' : 'Off'}</span>
+          <span className="font-medium">
+            {provider.enabled ? 'On' : 'Off'}
+          </span>
         </label>
         <button
           onClick={onTest}
           disabled={isTesting || !hasKey || !provider.base_url}
-          className="btn-secondary text-xs"
+          className="btn-secondary text-xs justify-center"
           data-testid={`provider-test-${provider.id}`}
           aria-label={`Test ${provider.display_name}`}
         >
@@ -367,21 +376,23 @@ function ProviderRow({
             'Test'
           )}
         </button>
-        <button
-          onClick={onEdit}
-          className="btn-secondary text-xs"
-          data-testid={`provider-edit-${provider.id}`}
-        >
-          Edit
-        </button>
-        <button
-          onClick={onDelete}
-          className="btn-secondary text-xs text-rose-600"
-          data-testid={`provider-delete-${provider.id}`}
-          aria-label={`Delete ${provider.display_name}`}
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            onClick={onEdit}
+            className="btn-secondary text-xs flex-1 justify-center"
+            data-testid={`provider-edit-${provider.id}`}
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="btn-secondary text-xs flex-1 justify-center text-rose-600 hover:bg-rose-50 hover:border-rose-200"
+            data-testid={`provider-delete-${provider.id}`}
+            aria-label={`Delete ${provider.display_name}`}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
       </div>
     </div>
   );
