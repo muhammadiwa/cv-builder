@@ -9,8 +9,7 @@ import {
   RefreshCw,
   AlertCircle,
 } from 'lucide-react';
-import clsx from 'clsx';
-import type { JobOut, JobStatus, JobMatchSummary } from '../../lib/api';
+import type { JobOut, JobMatchSummary } from '../../lib/api';
 import JobMatchScorePanel from './JobMatchScorePanel';
 import JobMatchInsightRow from './JobMatchInsightRow';
 
@@ -38,14 +37,6 @@ interface JobCardProps {
   };
 }
 
-const statusStyles: Record<JobStatus, { label: string; cls: string }> = {
-  pending:    { label: 'Pending',    cls: 'bg-slate-100 text-slate-700 border-slate-200' },
-  scraping:   { label: 'Scraping…',  cls: 'bg-blue-50 text-blue-700 border-blue-200' },
-  parsing:    { label: 'Analyzing…', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  parsed:     { label: 'Analyzed',   cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  failed:     { label: 'Failed',     cls: 'bg-red-50 text-red-700 border-red-200' },
-};
-
 function formatRelative(iso: string): string {
   const d = new Date(iso);
   const diff = Date.now() - d.getTime();
@@ -72,7 +63,10 @@ export default function JobCard({
 }: JobCardProps) {
   const isLoading = job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
   const isFailed = job.status === 'failed';
-  const st = statusStyles[job.status] || statusStyles.pending;
+  // Phase 10D: status badge removed — the dark score panel already
+  // communicates state (score ring for analyzed, NO PROFILE pill for
+  // missing profile, PENDING for scraping/parsing, UNAVAILABLE for
+  // failed). Two badges was redundant noise.
 
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -170,15 +164,6 @@ export default function JobCard({
               profilePreferences,
             }}
           />
-          <span
-            data-testid="job-status-badge"
-            className={clsx(
-              'px-2 py-0.5 text-[10px] font-medium rounded-full border shrink-0',
-              st.cls
-            )}
-          >
-            {st.label}
-          </span>
         </div>
       </div>
 
