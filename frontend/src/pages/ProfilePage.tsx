@@ -136,6 +136,40 @@ export default function ProfilePage() {
     [qc],
   );
 
+  // Save a single section (skills / work / education / projects) in
+  // place. The BE handler accepts base_profile_json as a key and
+  // replaces the whole dict, so we read the current state, swap the
+  // one section, and PATCH the result.
+  const handleSectionSave = useCallback(
+    async <K extends 'work' | 'education' | 'skills' | 'projects'>(
+      section: K,
+      items: NonNullable<NonNullable<ProfileData['base_profile_json']>[K]>,
+    ) => {
+      if (saveInFlightRef.current) return;
+      saveInFlightRef.current = true;
+      setSaving(true);
+      setSaveBanner(null);
+      try {
+        const current = profileQuery.data?.base_profile_json ?? {};
+        const updated = { ...current, [section]: items };
+        await profileApi.patchProfile<ProfileData>({
+          base_profile_json: updated as ProfileData['base_profile_json'],
+        });
+        await qc.invalidateQueries({ queryKey: ['profile'] });
+        await qc.invalidateQueries({ queryKey: ['profile-versions'] });
+        setSaveBanner({ kind: 'ok', text: 'Profile saved.' });
+        setTimeout(() => setSaveBanner(null), 3000);
+      } catch (e: any) {
+        const detail = e?.response?.data?.detail ?? e?.message ?? 'Save failed';
+        setSaveBanner({ kind: 'err', text: typeof detail === 'string' ? detail : 'Save failed' });
+      } finally {
+        setSaving(false);
+        saveInFlightRef.current = false;
+      }
+    },
+    [qc, profileQuery.data],
+  );
+
   const profile = profileQuery.data;
   const isLoading = profileQuery.isLoading;
   const hasProfile = !!profile;
@@ -189,7 +223,12 @@ export default function ProfilePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
           {/* Main editor */}
           <div className="lg:col-span-8 space-y-6">
-            <ProfileEditForm profile={profile} onSave={handleSave} saving={saving} />
+            <ProfileEditForm
+              profile={profile}
+              onSave={handleSave}
+              onSectionSave={handleSectionSave}
+              saving={saving}
+            />
           </div>
 
           {/* Sidebar: re-upload + version history */}

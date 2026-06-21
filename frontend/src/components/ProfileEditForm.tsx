@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Save, X, ChevronDown, ChevronRight, Loader2, Plus, Check, Pencil } from 'lucide-react';
+import {
+  SkillsSection, ExperienceSection, EducationSection, ProjectsSection,
+} from './profile/sectionEditors';
 
 /**
  * Update button shown in the Basics section header. Three visual states:
@@ -140,11 +143,21 @@ export interface ProfileData {
 
 interface ProfileEditFormProps {
   profile: ProfileData;
+  /** Save the flat basics fields (name, email, etc). */
   onSave: (patch: Partial<ProfileData>) => Promise<void>;
+  /** Save one of the structured base_profile_json sections in
+   *  place — avoids overwriting the rest of the JSON when only
+   *  one section was edited. */
+  onSectionSave: <K extends 'work' | 'education' | 'skills' | 'projects'>(
+    section: K,
+    items: NonNullable<NonNullable<ProfileData['base_profile_json']>[K]>,
+  ) => Promise<void>;
   saving?: boolean;
 }
 
-export default function ProfileEditForm({ profile, onSave, saving }: ProfileEditFormProps) {
+export default function ProfileEditForm({
+  profile, onSave, onSectionSave, saving,
+}: ProfileEditFormProps) {
   const [basicsOpen, setBasicsOpen] = useState(true);
   const [workOpen, setWorkOpen] = useState(true);
   const [skillsOpen, setSkillsOpen] = useState(true);
@@ -397,128 +410,46 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
         </div>
       </Section>
 
-      {/* Work experience (read-only preview, edit Phase 3) */}
-      <Section
+      <ExperienceSection
         title={`Experience (${work.length})`}
         open={workOpen}
         onToggle={() => setWorkOpen(!workOpen)}
-      >
-        {work.length === 0 && (
-          <div className="text-xs text-slate-500 italic">No experience extracted yet.</div>
-        )}
-        <div className="space-y-4">
-          {work.map((w, i) => (
-            <div key={i} className="border-l-2 border-brand-200 pl-3">
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="font-medium text-sm text-slate-900">
-                  {w.position} · {w.name}
-                </div>
-                <div className="text-xs text-slate-500 tabular-nums shrink-0">
-                  {w.startDate ?? '?'} — {w.endDate ?? 'Present'}
-                </div>
-              </div>
-              {w.location && (
-                <div className="text-xs text-slate-500 mt-0.5">{w.location}</div>
-              )}
-              {w.highlights && w.highlights.length > 0 && (
-                <ul className="mt-2 space-y-1 text-xs text-slate-700">
-                  {w.highlights.map((h, j) => (
-                    <li key={j} className="leading-relaxed">
-                      · {h}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="text-xs text-slate-500 italic pt-2 border-t border-slate-100">
-          Inline editing for experience comes in Phase 3.
-        </div>
-      </Section>
+        initial={work}
+        onSave={(items) => onSectionSave('work', items)}
+        saving={saving}
+      />
 
-      {/* Skills (read-only) */}
-      <Section
+      <SkillsSection
         title={`Skills (${skills.length} ${skills.length === 1 ? 'category' : 'categories'}, ${
           skills.reduce((acc, s) => acc + s.keywords.length, 0)
         } ${skills.reduce((acc, s) => acc + s.keywords.length, 0) === 1 ? 'keyword' : 'keywords'})`}
         open={skillsOpen}
         onToggle={() => setSkillsOpen(!skillsOpen)}
-      >
-        {skills.length === 0 && (
-          <div className="text-xs text-slate-500 italic">No skills extracted yet.</div>
-        )}
-        <div className="space-y-3">
-          {skills.map((s, i) => (
-            <div key={i}>
-              <div className="flex items-baseline justify-between mb-1.5">
-                <div className="text-xs font-medium text-slate-700">{s.name}</div>
-                {s.level && (
-                  <div className="text-xs text-slate-500">{s.level}</div>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {s.keywords.map((k) => (
-                  <span
-                    key={k}
-                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs"
-                  >
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Section>
+        initial={skills}
+        onSave={(items) => onSectionSave('skills', items)}
+        saving={saving}
+      />
 
-      {/* Education (read-only) */}
       {edu.length > 0 && (
-        <Section
+        <EducationSection
           title={`Education (${edu.length})`}
           open={eduOpen}
           onToggle={() => setEduOpen(!eduOpen)}
-        >
-          <div className="space-y-2">
-            {edu.map((e, i) => (
-              <div key={i} className="flex items-baseline justify-between">
-                <div className="text-sm text-slate-900">
-                  {e.studyType && `${e.studyType}, `}
-                  {e.institution}
-                  {e.area && ` · ${e.area}`}
-                </div>
-                {e.endDate && <div className="text-xs text-slate-500">{e.endDate}</div>}
-              </div>
-            ))}
-          </div>
-        </Section>
+          initial={edu}
+          onSave={(items) => onSectionSave('education', items)}
+          saving={saving}
+        />
       )}
 
-      {/* Projects (read-only) */}
       {projects.length > 0 && (
-        <Section
+        <ProjectsSection
           title={`Projects (${projects.length})`}
           open={projOpen}
           onToggle={() => setProjOpen(!projOpen)}
-        >
-          <div className="space-y-3">
-            {projects.map((p, i) => (
-              <div key={i}>
-                <div className="text-sm font-medium text-slate-900">{p.name}</div>
-                {p.description && (
-                  <div className="text-xs text-slate-600 mt-1">{p.description}</div>
-                )}
-                {p.highlights && p.highlights.length > 0 && (
-                  <ul className="mt-1 space-y-0.5 text-xs text-slate-700">
-                    {p.highlights.map((h, j) => (
-                      <li key={j}>· {h}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        </Section>
+          initial={projects}
+          onSave={(items) => onSectionSave('projects', items)}
+          saving={saving}
+        />
       )}
     </div>
   );
