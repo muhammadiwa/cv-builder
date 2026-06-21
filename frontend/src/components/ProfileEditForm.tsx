@@ -46,9 +46,10 @@ export interface ProfileData {
       label?: string;
       email?: string;
       phone?: string;
+      url?: string;
       summary?: string;
       location?: { city?: string; country?: string };
-      profiles?: Array<{ network: string; url: string }>;
+      profiles?: Array<{ network?: string; username?: string; url?: string }>;
     };
     work?: Array<{
       name: string;
@@ -93,13 +94,45 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
   const [eduOpen, setEduOpen] = useState(false);
   const [projOpen, setProjOpen] = useState(false);
 
+  // Resolve each link field with a fallback chain:
+  //   1. The flat column (e.g. profile.linkedin)
+  //   2. The LLM-extracted basics.profiles[i] where network matches
+  //   3. A heuristic on basics.url (LinkedIn/GitHub/Portfolio by host)
+  //   4. Empty
+  // The LLM sometimes returns LinkedIn/GitHub only inside basics.profiles
+  // (with no flat column) so we can't rely on the flat column alone.
+  const profiles = profile.base_profile_json?.basics?.profiles ?? [];
+  const basicsUrl = profile.base_profile_json?.basics?.url ?? '';
+  const profileLink = (network: string): string => {
+    const hit = profiles.find(
+      (p) => p.network?.toLowerCase() === network.toLowerCase(),
+    );
+    if (hit?.url) return hit.url;
+    // Host-based heuristic: basics.url is the LLM's catch-all
+    // for "wherever you can find me online".
+    const host = (url: string) => {
+      try { return new URL(url).hostname.toLowerCase(); } catch { return ''; }
+    };
+    if (network === 'LinkedIn' && host(basicsUrl).includes('linkedin.com')) return basicsUrl;
+    if (network === 'GitHub'   && host(basicsUrl).includes('github.com'))   return basicsUrl;
+    if (network === 'Portfolio' && basicsUrl) {
+      // Treat as portfolio if it's NOT linkedin/github.
+      const h = host(basicsUrl);
+      if (h && !h.includes('linkedin.com') && !h.includes('github.com')) return basicsUrl;
+    }
+    return '';
+  };
+
   const [name, setName] = useState(profile.name);
   const [title, setTitle] = useState(profile.title ?? '');
   const [email, setEmail] = useState(profile.email);
   const [phone, setPhone] = useState(profile.phone ?? '');
   const [location, setLocation] = useState(profile.location ?? '');
-  const [linkedin, setLinkedin] = useState(profile.linkedin ?? '');
-  const [github, setGithub] = useState(profile.github ?? '');
+  const [linkedin, setLinkedin] = useState(profile.linkedin ?? profileLink('LinkedIn'));
+  const [github, setGithub] = useState(profile.github ?? profileLink('GitHub'));
+  const [portfolio, setPortfolio] = useState(
+    profile.portfolio ?? profileLink('Portfolio'),
+  );
   const [summary, setSummary] = useState(profile.summary ?? '');
 
   const dirty =
@@ -110,10 +143,14 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
     location !== (profile.location ?? '') ||
     linkedin !== (profile.linkedin ?? '') ||
     github !== (profile.github ?? '') ||
+    portfolio !== (profile.portfolio ?? '') ||
     summary !== (profile.summary ?? '');
 
   const handleSave = async () => {
-    await onSave({ name, title, email, phone, location, linkedin, github, summary });
+    await onSave({
+      name, title, email, phone, location,
+      linkedin, github, portfolio, summary,
+    });
   };
 
   const handleReset = () => {
@@ -124,6 +161,7 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
     setLocation(profile.location ?? '');
     setLinkedin(profile.linkedin ?? '');
     setGithub(profile.github ?? '');
+    setPortfolio(profile.portfolio ?? '');
     setSummary(profile.summary ?? '');
   };
 
@@ -254,6 +292,25 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
                 className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
               >
                 <Plus size={11} /> Add GitHub
+              </button>
+            )}
+          </div>
+          <div>
+            <label className="label">Portfolio URL</label>
+            <input
+              type="url"
+              className="input"
+              value={portfolio}
+              onChange={(e) => setPortfolio(e.target.value)}
+              placeholder="https://yourname.dev"
+            />
+            {!portfolio && (
+              <button
+                type="button"
+                onClick={() => setPortfolio('https://')}
+                className="mt-1 inline-flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700"
+              >
+                <Plus size={11} /> Add Portfolio
               </button>
             )}
           </div>
