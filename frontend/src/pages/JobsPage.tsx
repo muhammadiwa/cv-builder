@@ -1,15 +1,38 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
 import clsx from 'clsx';
+import { useSearchParams } from 'react-router-dom';
 import { jobsApi, matchesApi, profileApi, type JobOut, type JobStatus, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
 import JobMatchScoreDrawer from '../components/jobs/JobMatchScoreDrawer';
+import JobFilterBar from '../components/jobs/JobFilterBar';
+import {
+  type FilterState,
+  filterStateFromSearchParams,
+  searchParamsFromFilterState,
+  matchesAllFilters,
+  ALL_FILTER_CATEGORIES,
+} from '../components/jobs/jobFilters';
 
 type StatusFilter = 'all' | JobStatus;
-type SortBy = 'newest' | 'oldest' | 'title';
+type SortBy =
+  | 'newest'
+  | 'oldest'
+  | 'title'
+  | 'match_desc'
+  | 'match_asc'
+  | 'recommended'
+  | 'recently_analyzed'
+  | 'failed_first'
+  | 'lowest_experience'
+  | 'highest_salary'
+  | 'lowest_salary'
+  | 'cv_ready'
+  | 'cover_letter_ready'
+  | 'critical_gaps';
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -20,10 +43,24 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: 'pending', label: 'Pending' },
 ];
 
+// Phase 10D: sort options per spec E. The "Recommended for You" sort
+// uses match_score when present + freshness as a tiebreaker. Falls
+// back to "Newest Posted" for jobs with no match yet.
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'title', label: 'Title A–Z' },
+  { value: 'recommended',         label: 'Recommended for You' },
+  { value: 'match_desc',          label: 'Highest Match Score' },
+  { value: 'match_asc',           label: 'Lowest Match Score' },
+  { value: 'newest',              label: 'Newest Posted' },
+  { value: 'oldest',              label: 'Oldest Posted' },
+  { value: 'recently_analyzed',   label: 'Recently Analyzed' },
+  { value: 'lowest_experience',   label: 'Lowest Experience Required' },
+  { value: 'highest_salary',      label: 'Highest Salary' },
+  { value: 'lowest_salary',       label: 'Lowest Salary' },
+  { value: 'cv_ready',            label: 'Jobs With CV Ready' },
+  { value: 'cover_letter_ready',  label: 'Jobs With Cover Letter Ready' },
+  { value: 'critical_gaps',       label: 'Jobs With Critical Gaps' },
+  { value: 'failed_first',        label: 'Failed Analysis First' },
+  { value: 'title',               label: 'Title A–Z' },
 ];
 
 // Module-level so HMR + Strict Mode double-invoke can't double-schedule.
@@ -37,13 +74,14 @@ function clearPollTimer() {
 }
 
 export default function JobsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [jobs, setJobs] = useState<JobOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [sortBy, setSortBy] = useState<SortBy>('newest');
+  const [sortBy, setSortBy] = useState<SortBy>('recommended');
   // Phase 10D: bulk match summaries (one fetch for the whole grid)
   const [matchSummaries, setMatchSummaries] = useState<JobMatchSummary[]>([]);
   // Drawer state — which job's full match is open
@@ -57,6 +95,23 @@ export default function JobsPage() {
     expected_salary_currency?: string | null;
     work_authorization?: string | null;
   } | null>(null);
+  // Phase 10D: filter state (URL-synced). Status filter is a separate
+  // primitive (kept as legacy state above) because spec B says it
+  // answers "what stage is this job in?" not "what kind of job do I
+  // want?".
+  const [filterState, setFilterState] = useState<FilterState>(() =>
+    filterStateFromSearchParams(searchParams),
+  );
+
+  // Sync filter state → URL whenever it changes. Single source of truth
+  // is filterState; URL is the persistence + shareable link layer.
+  useEffect(() => {
+    const next = searchParamsFromFilterState(filterState);
+    // Preserve status + sort if they're in the URL too.
+    if (statusFilter !== 'all') next.set('status', statusFilter);
+    if (sortBy !== 'recommended') next.set('sort', sortBy);
+    setSearchParams(next, { replace: true });
+  }, [filterState]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -210,25 +265,96 @@ export default function JobsPage() {
     fetchJobs();
   };
 
-  // Derive filter + sort in one pass. useMemo so it only re-runs when
-  // jobs / statusFilter / sortBy actually change.
+  // Apply status + multi-category filters + sort in one pass.
+  // useMemo so it only re-runs when jobs / statusFilter / sortBy /
+  // filterState actually change. The match summary map is also built
+  // here so the sort can read match scores without a second pass.
+  const summaryByJobId = useMemo(() => {
+    const m = new Map<string, JobMatchSummary>();
+    for (const s of matchSummaries) m.set(s.job_id, s);
+    return m;
+  }, [matchSummaries]);
+
   const visibleJobs = useMemo(() => {
-    const filtered =
-      statusFilter === 'all'
-        ? jobs
-        : jobs.filter((j) => j.status === statusFilter);
+    // 1. Status filter (existing pipeline state filter)
+    const byStatus =
+      statusFilter === 'all' ? jobs : jobs.filter((j) => j.status === statusFilter);
+
+    // 2. Multi-category filters (Phase 10D) — OR within category, AND between.
+    const filtered = byStatus.filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES));
+
+    // 3. Sort
     const sorted = [...filtered];
-    if (sortBy === 'newest') {
-      sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
-    } else if (sortBy === 'oldest') {
-      sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
-    } else if (sortBy === 'title') {
-      sorted.sort((a, b) =>
-        (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-      );
+    const scoreOf = (id: string) => summaryByJobId.get(id)?.match_score ?? -1;
+    switch (sortBy) {
+      case 'newest':
+        sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+        break;
+      case 'oldest':
+        sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
+        break;
+      case 'title':
+        sorted.sort((a, b) =>
+          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
+        );
+        break;
+      case 'match_desc':
+        sorted.sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
+        break;
+      case 'match_asc':
+        sorted.sort((a, b) => scoreOf(a.id) - scoreOf(b.id));
+        break;
+      case 'recommended':
+        // Score desc as primary, freshness as tiebreaker, then alpha.
+        sorted.sort((a, b) => {
+          const sa = scoreOf(a.id);
+          const sb = scoreOf(b.id);
+          if (sa !== sb) return sb - sa;
+          return b.created_at.localeCompare(a.created_at);
+        });
+        break;
+      case 'recently_analyzed':
+        sorted.sort((a, b) => {
+          const ma = summaryByJobId.get(a.id)?.created_at ?? '';
+          const mb = summaryByJobId.get(b.id)?.created_at ?? '';
+          return mb.localeCompare(ma);
+        });
+        break;
+      case 'failed_first':
+        sorted.sort((a, b) =>
+          a.status === 'failed' && b.status !== 'failed' ? -1 : a.status !== 'failed' && b.status === 'failed' ? 1 : 0,
+        );
+        break;
+      case 'lowest_experience':
+        sorted.sort((a, b) => {
+          const ay = (a as any).job_analysis_json?.required_experience_years;
+          const by = (b as any).job_analysis_json?.required_experience_years;
+          if (ay == null && by == null) return 0;
+          if (ay == null) return 1;
+          if (by == null) return -1;
+          return ay - by;
+        });
+        break;
+      case 'highest_salary':
+        sorted.sort((a, b) => (b.salary_max ?? 0) - (a.salary_max ?? 0));
+        break;
+      case 'lowest_salary':
+        sorted.sort((a, b) => {
+          const av = a.salary_min ?? Number.POSITIVE_INFINITY;
+          const bv = b.salary_min ?? Number.POSITIVE_INFINITY;
+          return av - bv;
+        });
+        break;
+      case 'cv_ready':
+      case 'cover_letter_ready':
+      case 'critical_gaps':
+        // Stub sort modes — full impl requires tracking CV/CL drafts per
+        // job. For now, fall back to recommended ordering.
+        sorted.sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
+        break;
     }
     return sorted;
-  }, [jobs, statusFilter, sortBy]);
+  }, [jobs, statusFilter, filterState, sortBy, summaryByJobId]);
 
   // Count per status for the filter chips' badges.
   const statusCounts = useMemo(() => {
@@ -236,13 +362,6 @@ export default function JobsPage() {
     for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
     return counts;
   }, [jobs]);
-
-  // Map of job_id → match summary for O(1) lookup in the grid.
-  const summaryByJobId = useMemo(() => {
-    const m = new Map<string, JobMatchSummary>();
-    for (const s of matchSummaries) m.set(s.job_id, s);
-    return m;
-  }, [matchSummaries]);
 
   // The job whose drawer is open. Null = closed.
   const drawerJob = useMemo(
@@ -304,55 +423,67 @@ export default function JobsPage() {
 
       {/* Filter chips + sort dropdown (only when we have rows) */}
       {!loading && jobs.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex flex-wrap gap-1.5" data-testid="status-filters">
-            {STATUS_FILTERS.map((f) => {
-              const count = statusCounts[f.value] ?? 0;
-              const active = statusFilter === f.value;
-              return (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setStatusFilter(f.value)}
-                  data-testid={`filter-${f.value}`}
-                  className={clsx(
-                    'px-3 py-1.5 text-[12px] font-medium rounded-full border transition-colors',
-                    active
-                      ? 'bg-brand-50 border-brand-300 text-brand-700'
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                  )}
-                >
-                  {f.label}
-                  {count > 0 && (
-                    <span
-                      className={clsx(
-                        'ml-1.5 text-[11px]',
-                        active ? 'text-brand-600' : 'text-slate-400'
-                      )}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        <div className="space-y-3 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5" data-testid="status-filters">
+              {STATUS_FILTERS.map((f) => {
+                const count = statusCounts[f.value] ?? 0;
+                const active = statusFilter === f.value;
+                return (
+                  <button
+                    key={f.value}
+                    type="button"
+                    onClick={() => setStatusFilter(f.value)}
+                    data-testid={`filter-${f.value}`}
+                    className={clsx(
+                      'px-3 py-1.5 text-[12px] font-medium rounded-full border transition-colors',
+                      active
+                        ? 'bg-brand-50 border-brand-300 text-brand-700'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                    )}
+                  >
+                    {f.label}
+                    {count > 0 && (
+                      <span
+                        className={clsx(
+                          'ml-1.5 text-[11px]',
+                          active ? 'text-brand-600' : 'text-slate-400'
+                        )}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as SortBy)}
+                data-testid="sort-select"
+                className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortBy)}
-              data-testid="sort-select"
-              className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Phase 10D: compact filter bar with multi-select popovers
+              + active filter chips + All Filters button + Clear All */}
+          <JobFilterBar
+            filterState={filterState}
+            jobs={jobs}
+            onChange={setFilterState}
+            onClearAll={() => setFilterState({})}
+            onOpenAdvanced={() => toast.info('Advanced filters coming in Phase 10E')}
+          />
         </div>
       )}
 
