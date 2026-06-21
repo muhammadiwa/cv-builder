@@ -129,14 +129,31 @@ export interface JobIn {
   salary_currency?: string;
 }
 
+// Phase 10E: paginated wrapper for the /api/jobs list response.
+// Backend returns this shape (see backend/app/schemas/schemas.py
+// PaginatedJobsOut) so the FE can drive pagination without a second
+// round-trip to count jobs.
+export interface PaginatedJobsOut {
+  items: JobOut[];
+  total: number;
+  skip: number;
+  limit: number;
+  has_more: boolean;
+}
+
 export const jobsApi = {
-  create: async (payload: JobIn): Promise<JobOut> => {
-    const resp = await api.post<JobOut>('/jobs', payload);
+  // Phase 10E: paginated response. Returns { items, total, skip, limit,
+  // has_more }. Caller unwraps .items for the grid; the page component
+  // also reads .total + .has_more for the pagination UI.
+  list: async (skip = 0, limit = 24): Promise<PaginatedJobsOut> => {
+    const resp = await api.get<PaginatedJobsOut>('/jobs', {
+      params: { skip, limit },
+    });
     return resp.data;
   },
 
-  list: async (skip = 0, limit = 50): Promise<JobOut[]> => {
-    const resp = await api.get<JobOut[]>('/jobs', { params: { skip, limit } });
+  create: async (payload: JobIn): Promise<JobOut> => {
+    const resp = await api.post<JobOut>('/jobs', payload);
     return resp.data;
   },
 

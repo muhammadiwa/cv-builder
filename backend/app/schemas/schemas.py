@@ -199,6 +199,21 @@ class JobListItem(BaseModel):
     updated_at: datetime
 
 
+class PaginatedJobsOut(BaseModel):
+    """Phase 10E: paginated wrapper for GET /api/jobs.
+
+    The JobsPage grid consumes this (24 jobs per page by default).
+    `total` drives the pagination UI; `has_more` is a convenience
+    for the "Next" button's disabled state — same as
+    `skip + limit < total`.
+    """
+    items: list[JobListItem]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool
+
+
 # ── JSON Resume Job Description v1.0.0 (Phase 4) ─────────────────
 #
 # Industry-standard schema (https://jsonresume.org/job-description-schema/).

@@ -37,9 +37,10 @@ export default function CVEditor({ draft, onUpdate, onError, onSuccess }: Props)
   useEffect(() => {
     // Fetch parsed jobs for the ATS-keyword target selector
     jobsApi
-      .list()
+      .list(0, 100)
       .then((data) => {
-        const parsed = data.filter((j) => j.status === 'parsed');
+        // Phase 10E: read .items from paginated response.
+        const parsed = data.items.filter((j) => j.status === 'parsed');
         setJobs(parsed);
         if (parsed.length && !targetJobId) setTargetJobId(parsed[0].id);
       })

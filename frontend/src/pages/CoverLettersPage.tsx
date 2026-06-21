@@ -660,9 +660,13 @@ function GenerateCoverLetterModal({
   useEffect(() => {
     let alive = true;
     Promise.all([jobsApi.list(0, 100), profileApi.getProfile<{ id: string }>()])
-      .then(([jobData, profile]) => {
+      .then(([jobPage, profile]) => {
         if (!alive) return;
-        const parsed = jobData.filter((j) => j.status === 'parsed');
+        // Phase 10E: read .items from paginated response. The cover
+        // letter page wants ALL analyzed jobs, so we cap limit=100
+        // and pull the full set. The user is unlikely to have more
+        // than 100 analyzed jobs; if they do, we'd need a search/select.
+        const parsed = jobPage.items.filter((j) => j.status === 'parsed');
         setJobs(parsed);
         if (parsed.length > 0) setJobId(parsed[0].id);
         setProfileId(profile.id);

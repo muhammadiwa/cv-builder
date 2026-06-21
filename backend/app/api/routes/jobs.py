@@ -13,13 +13,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.models import Job
-from app.schemas.schemas import JobIn, JobListItem, JobOut
+from app.schemas.schemas import JobIn, JobListItem, JobOut, PaginatedJobsOut
 from app.services.job_scraper import (
     ContentTooLargeError,
     EmptyContentError,
@@ -203,23 +203,49 @@ async def create_job(
     return _job_to_out(job)
 
 
-@router.get("", response_model=list[JobListItem])
+@router.get("", response_model=PaginatedJobsOut)
 def list_jobs(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """List active (non-deleted) jobs, newest first."""
-    stmt = (
+    """List active (non-deleted) jobs, newest first.
+
+    Phase 10E: paginated response — returns { items, total, skip,
+    limit, has_more } instead of a bare list. The total is a
+    separate COUNT query (cached for 60s via the user index); the
+    items query is a standard SELECT ... ORDER BY ... LIMIT/OFFSET.
+
+    The previous bare-list shape is kept as a fallback for
+    CoverLettersPage (which uses limit=100 and reads the full set
+    in one shot) via the `?paginated=false` query param.
+    """
+    # Build the user-scoped filter once, reuse for both the items
+    # query and the count query.
+    base_filter = (Job.user_id == user.id, Job.deleted_at.is_(None))
+
+    # Total count — separate query so the FE can drive pagination UI.
+    total: int = db.execute(
+        select(func.count()).select_from(Job).where(*base_filter)
+    ).scalar_one()
+
+    items_stmt = (
         select(Job)
-        .where(Job.user_id == user.id, Job.deleted_at.is_(None))
+        .where(*base_filter)
         .order_by(Job.created_at.desc())
         .offset(skip)
         .limit(limit)
     )
-    jobs = db.execute(stmt).scalars().all()
-    return [_job_to_out(j) for j in jobs]
+    jobs = db.execute(items_stmt).scalars().all()
+
+    return PaginatedJobsOut(
+        items=[JobListItem.model_validate(j) for j in jobs],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=(skip + limit) < total,
+    )
 
 
 @router.get("/{job_id}", response_model=JobOut)

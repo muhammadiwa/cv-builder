@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { FileText, Plus, Trash2, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-import { cvsApi, jobsApi, type CVDraft, type JobOut } from '../lib/api';
+import { cvsApi, jobsApi, type CVDraft } from '../lib/api';
+// JobOut is no longer used directly in this file — the paginated
+// response shape (PaginatedJobsOut) is consumed via .items.map.
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import TemplatePicker from '../components/templates/TemplatePicker';
@@ -230,10 +232,11 @@ function CreateCVModal({
   useEffect(() => {
     let alive = true;
     jobsApi
-      .list()
-      .then((data: JobOut[]) => {
+      .list(0, 100)
+      .then((data) => {
         if (!alive) return;
-        const opts = data.map((j) => ({
+        // Phase 10E: read .items from paginated response.
+        const opts = data.items.map((j) => ({
           id: j.id,
           label: `${j.title || 'Untitled'}${j.company ? ` @ ${j.company}` : ''}`,
           parsed: j.status === 'parsed',
@@ -243,9 +246,11 @@ function CreateCVModal({
         if (firstParsed) setJobId(firstParsed.id);
         setLoadingJobs(false);
       })
-      .catch((e) => {
+      .catch((e: unknown) => {
         if (!alive) return;
-        onError((e as Error).message || 'Failed to load jobs');
+        const msg =
+          (e as { message?: string })?.message || 'Failed to load jobs';
+        toast.error(msg);
         setLoadingJobs(false);
       });
     return () => {
