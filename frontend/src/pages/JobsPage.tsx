@@ -8,11 +8,17 @@ import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
 import JobMatchScoreDrawer from '../components/jobs/JobMatchScoreDrawer';
 import JobFilterBar from '../components/jobs/JobFilterBar';
+import AdvancedJobFiltersDrawer from '../components/jobs/AdvancedJobFiltersDrawer';
+import JobPostingSkeleton from '../components/jobs/JobPostingSkeleton';
 import {
   type FilterState,
+  type AdvancedFilterState,
   filterStateFromSearchParams,
+  advancedFromSearchParams,
   searchParamsFromFilterState,
+  searchParamsFromAdvanced,
   matchesAllFilters,
+  matchesAdvanced,
   ALL_FILTER_CATEGORIES,
 } from '../components/jobs/jobFilters';
 
@@ -94,14 +100,24 @@ export default function JobsPage() {
   const [filterState, setFilterState] = useState<FilterState>(() =>
     filterStateFromSearchParams(searchParams),
   );
+  // Phase 10D: advanced filter state (URL-synced under 'adv' query
+  // param). Free-text + boolean fields that don't fit the chip
+  // pattern. Lives behind the All Filters drawer.
+  const [advancedState, setAdvancedState] = useState<AdvancedFilterState>(() =>
+    advancedFromSearchParams(searchParams),
+  );
+  // Phase 10D: All Filters drawer open state.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Sync filter state → URL whenever it changes. Single source of truth
-  // is filterState; URL is the persistence + shareable link layer.
+  // is filterState + advancedState; URL is the persistence + shareable
+  // link layer.
   useEffect(() => {
     const next = searchParamsFromFilterState(filterState);
+    searchParamsFromAdvanced(advancedState, next);
     if (sortBy !== 'recommended') next.set('sort', sortBy);
     setSearchParams(next, { replace: true });
-  }, [filterState]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterState, advancedState]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -266,10 +282,11 @@ export default function JobsPage() {
   }, [matchSummaries]);
 
   const visibleJobs = useMemo(() => {
-    // Multi-category filters (Phase 10D) — OR within category, AND between.
-    // Status filter no longer needed: the dark score panel on every
-    // card already shows the state.
-    const filtered = jobs.filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES));
+    // Quick filter categories (Phase 10D) — OR within category, AND between.
+    // Advanced filter state applied as a second pass.
+    const filtered = jobs
+      .filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES))
+      .filter((j) => matchesAdvanced(j, advancedState));
 
     // 3. Sort
     const sorted = [...filtered];
@@ -342,7 +359,7 @@ export default function JobsPage() {
         break;
     }
     return sorted;
-  }, [jobs, filterState, sortBy, summaryByJobId]);
+  }, [jobs, filterState, advancedState, sortBy, summaryByJobId]);
 
   // The job whose drawer is open. Null = closed.
   const drawerJob = useMemo(
@@ -431,8 +448,11 @@ export default function JobsPage() {
             filterState={filterState}
             jobs={jobs}
             onChange={setFilterState}
-            onClearAll={() => setFilterState({})}
-            onOpenAdvanced={() => toast.info('Advanced filters coming in Phase 10E')}
+            onClearAll={() => {
+              setFilterState({});
+              setAdvancedState({});
+            }}
+            onOpenAdvanced={() => setAdvancedOpen(true)}
           />
         </div>
       )}
@@ -448,10 +468,15 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading state — 6 skeleton cards in the real grid layout */}
       {loading && (
-        <div className="text-center py-16 text-slate-500 text-[13px]">
-          Loading jobs…
+        <div
+          data-testid="jobs-skeleton"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5 lg:gap-6"
+        >
+          {Array.from({ length: 6 }).map((_, i) => (
+            <JobPostingSkeleton key={i} />
+          ))}
         </div>
       )}
 
@@ -536,6 +561,15 @@ export default function JobsPage() {
           // Refresh the summary so the score reflects the new calculation
           fetchMatchSummaries();
         }}
+      />
+
+      {/* Phase 10D: All Filters advanced drawer (right-side slide-in) */}
+      <AdvancedJobFiltersDrawer
+        open={advancedOpen}
+        applied={advancedState}
+        quickState={filterState}
+        onApply={(next) => setAdvancedState(next)}
+        onClose={() => setAdvancedOpen(false)}
       />
     </div>
   );

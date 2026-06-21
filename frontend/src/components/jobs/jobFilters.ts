@@ -261,6 +261,145 @@ export const ADVANCED_FILTER_CATEGORIES: FilterCategory[] = [
   },
 ];
 
+// ── Advanced filter values (Phase 10D — spec C.12) ──────────────────
+// These don't fit the multi-select chip pattern (text inputs,
+// checkboxes, etc.) so they're handled separately by the
+// AdvancedJobFiltersDrawer instead of in QUICK_FILTER_CATEGORIES.
+
+/** Free-text fields. Match is case-insensitive substring against
+ *  the job's relevant field. Empty string = unset. */
+export interface AdvancedFilterState {
+  /** Required keyword — job title or summary must include this. */
+  requiredKeyword?: string;
+  /** Excluded keyword — job title or summary must NOT include this. */
+  excludedKeyword?: string;
+  /** Company name (substring match on job.company). */
+  companyInclude?: string;
+  /** Excluded company name. */
+  companyExclude?: string;
+  /** Job has any salary data. */
+  hasSalary?: boolean;
+  /** Job has remote work mode. */
+  hasRemote?: boolean;
+  /** A tailored CV exists for this job. */
+  hasTailoredCv?: boolean;
+  /** A cover letter exists for this job. */
+  hasCoverLetter?: boolean;
+  /** Show only saved jobs. */
+  savedOnly?: boolean;
+  /** Hide jobs the user marked as not-relevant. */
+  hideHidden?: boolean;
+}
+
+export const EMPTY_ADVANCED_FILTERS: AdvancedFilterState = {};
+
+/** Returns true when no advanced filter is set (i.e. drawer is in
+ *  its "empty" state — useful for the badge count on the All Filters
+ *  trigger). */
+export function isAdvancedEmpty(s: AdvancedFilterState): boolean {
+  return Object.values(s).every(
+    (v) => v === undefined || v === '' || v === false,
+  );
+}
+
+/** Count of active advanced filters. */
+export function advancedActiveCount(s: AdvancedFilterState): number {
+  return Object.values(s).filter(
+    (v) => v !== undefined && v !== '' && v !== false,
+  ).length;
+}
+
+/** URL serializer for the advanced filters. Stored under a single
+ *  `adv` query param as a JSON blob to avoid polluting the URL with
+ *  10 separate keys. */
+export function advancedFromSearchParams(
+  params: URLSearchParams,
+): AdvancedFilterState {
+  const raw = params.get('adv');
+  if (!raw) return {};
+  try {
+    const decoded = JSON.parse(
+      decodeURIComponent(escape(atob(raw))),
+    ) as AdvancedFilterState;
+    return decoded ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export function searchParamsFromAdvanced(
+  s: AdvancedFilterState,
+  params: URLSearchParams = new URLSearchParams(),
+): URLSearchParams {
+  if (isAdvancedEmpty(s)) {
+    params.delete('adv');
+  } else {
+    const json = JSON.stringify(s);
+    // base64-encode the JSON for URL safety
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    params.set('adv', b64);
+  }
+  return params;
+}
+
+/** Combine the two filter states into a single matcher-friendly dict
+ *  for the visibleJobs useMemo. The matcher itself only consumes
+ *  the simple category state; advanced values are checked separately
+ *  below via matchesAdvanced(). */
+export function matchesAdvanced(
+  job: JobOut,
+  adv: AdvancedFilterState,
+  hasTailoredCvFor?: (jobId: string) => boolean,
+  hasCoverLetterFor?: (jobId: string) => boolean,
+): boolean {
+  if (isAdvancedEmpty(adv)) return true;
+  const title = norm(job.title);
+  const summary = norm((job as any).job_analysis_json?.summary);
+  const company = norm(job.company);
+
+  // Required keyword
+  if (adv.requiredKeyword && adv.requiredKeyword.trim()) {
+    const kw = norm(adv.requiredKeyword);
+    if (!title.includes(kw) && !summary.includes(kw)) return false;
+  }
+  // Excluded keyword
+  if (adv.excludedKeyword && adv.excludedKeyword.trim()) {
+    const kw = norm(adv.excludedKeyword);
+    if (title.includes(kw) || summary.includes(kw)) return false;
+  }
+  // Company include
+  if (adv.companyInclude && adv.companyInclude.trim()) {
+    const kw = norm(adv.companyInclude);
+    if (!company.includes(kw)) return false;
+  }
+  // Company exclude
+  if (adv.companyExclude && adv.companyExclude.trim()) {
+    const kw = norm(adv.companyExclude);
+    if (company.includes(kw)) return false;
+  }
+  // Has salary
+  if (adv.hasSalary) {
+    if (job.salary_min == null && job.salary_max == null) return false;
+  }
+  // Has remote
+  if (adv.hasRemote) {
+    if (!job.remote && !norm(job.location).includes('remote')) return false;
+  }
+  // Has tailored CV
+  if (adv.hasTailoredCv) {
+    if (hasTailoredCvFor && !hasTailoredCvFor(job.id)) return false;
+  }
+  // Has cover letter
+  if (adv.hasCoverLetter) {
+    if (hasCoverLetterFor && !hasCoverLetterFor(job.id)) return false;
+  }
+  // savedOnly / hideHidden are user-state hooks, not data filters
+  // — they need a hook (user preferences) which we don't model here.
+  // The drawer's checkboxes for those will be a no-op until the
+  // user state is wired in a later commit.
+  return true;
+}
+
 export const ALL_FILTER_CATEGORIES: FilterCategory[] = [
   ...QUICK_FILTER_CATEGORIES,
   ...ADVANCED_FILTER_CATEGORIES,
