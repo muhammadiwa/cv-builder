@@ -1,12 +1,33 @@
 import { Link } from 'react-router-dom';
-import { Briefcase, MapPin, Building2, ExternalLink, Trash2, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import {
+  Briefcase,
+  MapPin,
+  Building2,
+  ExternalLink,
+  Trash2,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
+} from 'lucide-react';
 import clsx from 'clsx';
-import type { JobOut, JobStatus } from '../../lib/api';
+import type { JobOut, JobStatus, JobMatchSummary } from '../../lib/api';
+import JobMatchScoreBadge from './JobMatchScoreBadge';
+import JobMatchInsightRow from './JobMatchInsightRow';
 
 interface JobCardProps {
   job: JobOut;
   onDelete?: (id: string) => void;
   onRetry?: (id: string) => void;
+  /** Match summary for the Profile Match score badge (Phase 10D). */
+  match?: JobMatchSummary | null;
+  /** Click on the score badge — opens the Match Score Drawer. */
+  onScoreClick?: (jobId: string) => void;
+  /** True if a tailored CV exists for this job. */
+  hasTailoredCv?: boolean;
+  /** Optional count of matched skills (for the insight row). */
+  matchedSkillsCount?: number;
+  /** Optional count of total required skills. */
+  totalRequiredSkills?: number;
 }
 
 const statusStyles: Record<JobStatus, { label: string; cls: string }> = {
@@ -30,7 +51,16 @@ function formatRelative(iso: string): string {
   return d.toLocaleDateString();
 }
 
-export default function JobCard({ job, onDelete, onRetry }: JobCardProps) {
+export default function JobCard({
+  job,
+  onDelete,
+  onRetry,
+  match = null,
+  onScoreClick,
+  hasTailoredCv = false,
+  matchedSkillsCount,
+  totalRequiredSkills,
+}: JobCardProps) {
   const isLoading = job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
   const isFailed = job.status === 'failed';
   const st = statusStyles[job.status] || statusStyles.pending;
@@ -47,6 +77,17 @@ export default function JobCard({ job, onDelete, onRetry }: JobCardProps) {
     e.preventDefault();
     e.stopPropagation();
     onRetry?.(job.id);
+  };
+
+  // Score click handler — must stopPropagation AND preventDefault so
+  // the parent <Link> (which navigates to /jobs/:id) doesn't fire.
+  // The badge is a <button type="button">, but the browser's default
+  // <a> navigation is independent of React's event propagation, so
+  // both are needed.
+  const handleScoreClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    onScoreClick?.(job.id);
   };
 
   return (
@@ -91,17 +132,38 @@ export default function JobCard({ job, onDelete, onRetry }: JobCardProps) {
               <span className="truncate" title={job.location}>{job.location}</span>
             </div>
           )}
+
+          {/* Phase 10D: 1-line insight under card body */}
+          <JobMatchInsightRow
+            jobStatus={job.status}
+            match={match}
+            hasTailoredCv={hasTailoredCv}
+            matchedSkillsCount={matchedSkillsCount}
+            totalRequiredSkills={totalRequiredSkills}
+          />
         </div>
 
-        <span
-          data-testid="job-status-badge"
-          className={clsx(
-            'px-2 py-0.5 text-[11px] font-medium rounded-full border shrink-0',
-            st.cls
-          )}
-        >
-          {st.label}
-        </span>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          {/* Phase 10D: Match Score Badge in the top-right of the card,
+              per spec G.1. Sits above the status badge so the score is
+              the primary visual signal when the user scans the grid. */}
+          <JobMatchScoreBadge
+            jobStatus={job.status}
+            matchScore={match?.match_score ?? null}
+            confidenceScore={match?.confidence_score ?? null}
+            onClick={handleScoreClick}
+            compact
+          />
+          <span
+            data-testid="job-status-badge"
+            className={clsx(
+              'px-2 py-0.5 text-[11px] font-medium rounded-full border shrink-0',
+              st.cls
+            )}
+          >
+            {st.label}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between pt-3 border-t border-slate-100">

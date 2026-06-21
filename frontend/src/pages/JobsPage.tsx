@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
 import clsx from 'clsx';
-import { jobsApi, type JobOut, type JobStatus } from '../lib/api';
+import { jobsApi, matchesApi, type JobOut, type JobStatus, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
+import JobMatchScoreDrawer from '../components/jobs/JobMatchScoreDrawer';
 
 type StatusFilter = 'all' | JobStatus;
 type SortBy = 'newest' | 'oldest' | 'title';
@@ -43,6 +44,10 @@ export default function JobsPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('newest');
+  // Phase 10D: bulk match summaries (one fetch for the whole grid)
+  const [matchSummaries, setMatchSummaries] = useState<JobMatchSummary[]>([]);
+  // Drawer state — which job's full match is open
+  const [drawerJobId, setDrawerJobId] = useState<string | null>(null);
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -62,10 +67,24 @@ export default function JobsPage() {
     }
   }, []);
 
+  // Phase 10D: fetch match summaries in parallel with jobs. Failure is
+  // non-fatal — the grid just renders without scores. Silently swallow
+  // errors so a missing /api/matches/summaries doesn't break the page.
+  const fetchMatchSummaries = useCallback(async () => {
+    try {
+      const data = await matchesApi.listSummaries();
+      setMatchSummaries(data);
+    } catch {
+      // non-fatal — cards render without scores
+      setMatchSummaries([]);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchJobs();
-  }, [fetchJobs]);
+    fetchMatchSummaries();
+  }, [fetchJobs, fetchMatchSummaries]);
 
   // Poll if any job is still analyzing.
   // Pattern: clear + only re-arm when transitioning into "has pending".
@@ -154,6 +173,20 @@ export default function JobsPage() {
     for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
     return counts;
   }, [jobs]);
+
+  // Map of job_id → match summary for O(1) lookup in the grid.
+  const summaryByJobId = useMemo(() => {
+    const m = new Map<string, JobMatchSummary>();
+    for (const s of matchSummaries) m.set(s.job_id, s);
+    return m;
+  }, [matchSummaries]);
+
+  // The job whose drawer is open. Null = closed.
+  const drawerJob = useMemo(
+    () => (drawerJobId ? jobs.find((j) => j.id === drawerJobId) ?? null : null),
+    [drawerJobId, jobs],
+  );
+  const drawerSummary = drawerJobId ? summaryByJobId.get(drawerJobId) ?? null : null;
 
   return (
     <div className="space-y-6 lg:space-y-8">
@@ -311,6 +344,8 @@ export default function JobsPage() {
             <JobCard
               key={job.id}
               job={job}
+              match={summaryByJobId.get(job.id) ?? null}
+              onScoreClick={(id) => setDrawerJobId(id)}
               onDelete={handleDelete}
               onRetry={handleRetry}
             />
@@ -342,6 +377,20 @@ export default function JobsPage() {
             : `Showing ${visibleJobs.length} of ${jobs.length} jobs`}
         </p>
       )}
+
+      {/* Phase 10D: Match Score Detail Drawer (right-side slide-in) */}
+      <JobMatchScoreDrawer
+        open={drawerJobId !== null}
+        job={drawerJob}
+        summaryScore={drawerSummary?.match_score ?? null}
+        summaryRecommendation={drawerSummary?.recommendation ?? null}
+        summaryConfidence={drawerSummary?.confidence_score ?? null}
+        onClose={() => setDrawerJobId(null)}
+        onMatchUpdated={() => {
+          // Refresh the summary so the score reflects the new calculation
+          fetchMatchSummaries();
+        }}
+      />
     </div>
   );
 }

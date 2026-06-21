@@ -384,6 +384,25 @@ class JobMatchBrief(BaseModel):
     created_at: datetime
 
 
+class JobMatchSummary(BaseModel):
+    """Ultra-light match summary for the job listing grid.
+
+    Phase 10D: shown on every JobPostingCard so users can scan match
+    scores at a glance without opening each job's detail page. The full
+    match (with breakdown, matched/missing skills, LLM narrative) is
+    fetched separately via GET /api/jobs/{id}/match.
+
+    `confidence_score` is a 0-1 value the matcher assigns based on how
+    much profile + job data was available. Low confidence is shown as
+    'Low confidence' on the card without making the user dig.
+    """
+    job_id: str
+    match_score: float  # 0.0-1.0
+    recommendation: Literal["apply", "stretch", "skip"]
+    confidence_score: float | None = None
+    created_at: datetime
+
+
 # ── CV Draft ────────────────────────────────────────────────────────
 
 class CVDraftIn(BaseModel):

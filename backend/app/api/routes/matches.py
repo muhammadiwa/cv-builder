@@ -3,6 +3,10 @@
 POST /api/jobs/{job_id}/match  — compute/refresh a match for a parsed job.
 GET  /api/jobs/{job_id}/match  — read the latest match for a job.
 DELETE /api/jobs/{job_id}/match — clear the match record.
+GET  /api/matches/summaries     — ultra-light match summaries for the
+                                  listing grid (Phase 10D: no breakdown
+                                  or per-skill detail, just score +
+                                  recommendation + confidence per job).
 
 We store the match in the existing ``job_matches`` table; the columns were
 defined in Phase 2 as generic JSON containers. The mapping from the
@@ -29,7 +33,7 @@ from sqlalchemy.orm import Session
 from app.core.logging import get_logger
 from app.db.session import get_db
 from app.models.models import Job, JobMatch, Profile
-from app.schemas.schemas import JobMatchOut, SkillMatchDetail
+from app.schemas.schemas import JobMatchOut, JobMatchSummary, SkillMatchDetail
 from app.services.matcher import MatchResult, compute_match
 from app.services.match_narrator import narrate_match
 
@@ -359,3 +363,41 @@ def delete_match(
     db.delete(match)
     db.commit()
     return None
+
+# ── Phase 10D: bulk match summaries for the listing grid ──────────────
+
+
+@router.get("/matches/summaries", response_model=list[JobMatchSummary])
+def list_match_summaries(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Return one JobMatchSummary per job that has a match.
+
+    Scoped to jobs the current user owns (via user_id on Job). Jobs
+    without a match are simply absent from the response — the FE
+    uses the absence as the "no score yet" state.
+
+    This is intentionally a separate endpoint from /api/jobs so the
+    jobs list payload stays focused on job metadata. The summaries
+    endpoint is one query, one row per matched job, and the FE
+    indexes it by job_id in a Map for O(1) lookup per card.
+    """
+    stmt = (
+        select(JobMatch, Job)
+        .join(Job, JobMatch.job_id == Job.id)
+        .where(Job.user_id == user.id, Job.deleted_at.is_(None))
+    )
+    rows = db.execute(stmt).all()
+    out: list[JobMatchSummary] = []
+    for m, _j in rows:
+        out.append(
+            JobMatchSummary(
+                job_id=m.job_id,
+                match_score=m.match_score,
+                recommendation=m.risk_level,  # apply | stretch | skip
+                confidence_score=None,  # populated when we wire LLM confid
+                created_at=m.created_at,
+            )
+        )
+    return out

@@ -223,6 +223,18 @@ export interface JobMatch {
   updated_at: string | null;
 }
 
+// Phase 10D: ultra-light match summary for the job listing grid.
+// Returned by GET /api/matches/summaries. The full JobMatch (with
+// breakdown, matched/missing skills, LLM narrative) is fetched on
+// demand when the user opens the Match Score Drawer.
+export interface JobMatchSummary {
+  job_id: string;
+  match_score: number;        // 0.0 - 1.0
+  recommendation: 'apply' | 'stretch' | 'skip';
+  confidence_score: number | null;  // 0.0 - 1.0, null = unknown
+  created_at: string;
+}
+
 export const matchesApi = {
   compute: async (jobId: string, opts?: { fast?: boolean }): Promise<JobMatch> => {
     // M3 fix: ?fast=true skips the LLM narrator (instant deterministic
@@ -237,6 +249,13 @@ export const matchesApi = {
   },
   delete: async (jobId: string): Promise<void> => {
     await api.delete(`/jobs/${jobId}/match`);
+  },
+  // Phase 10D: bulk summary fetch for the job listing grid. Returns one
+  // lightweight entry per job that has a match. Jobs without a match
+  // are simply absent — the FE treats absence as "no score yet".
+  listSummaries: async (): Promise<JobMatchSummary[]> => {
+    const resp = await api.get<JobMatchSummary[]>('/matches/summaries');
+    return resp.data;
   },
 };
 
