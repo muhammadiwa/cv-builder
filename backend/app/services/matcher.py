@@ -184,13 +184,22 @@ _PUNCT_RE = re.compile(r"[^a-z0-9+#.\\s]")
 def _normalize(text: str) -> str:
     """Lowercase, strip punctuation/whitespace, collapse runs of spaces.
 
-    Keeps ``+`` and ``.`` because they're meaningful in tech names
-    (C++, Next.js, Node.js).
+    Keeps ``+``, ``#``, ``.`` because they're meaningful in tech names
+    (C++, C#, Next.js, Node.js). Specifically preserves the *integrity*
+    of a tech token by NOT splitting on these — e.g. 'C#/.NET' stays
+    as 'c#/.net', which lets the word-boundary matcher detect 'C#' as a
+    whole word inside it.
     """
     s = text.lower().strip()
     s = _PUNCT_RE.sub(" ", s)
     s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+
+# Regex that defines what a "word" is for substring matching purposes.
+# Tech tokens like "c#", "f#", "next.js", "node.js" contain non-letter
+# chars that are meaningful — so we treat [a-z0-9+#.]+ as a single word.
+_TECH_WORD_RE = re.compile(r"[a-z0-9+#.]+")
 
 
 def _apply_alias(name: str) -> str:
@@ -212,7 +221,10 @@ def _score_pair(a: str, b: str, config: MatcherConfig | None = None) -> tuple[fl
 
     Heuristic, in order:
       1. Alias-canonicalized exact match → 1.0 ("exact")
-      2. One canonical string contains the other → 0.9 ("substring")
+      2. One canonical string contains the other AS A WHOLE WORD
+         → substring_strength ("substring"). Phase 10E fix: word-boundary
+         match so 'go' doesn't substring-match 'mongodb' and 'java'
+         doesn't substring-match 'javascript'.
       3. difflib ratio > threshold → ratio × multiplier ("fuzzy")
       4. Otherwise → 0.0, "" (no match)
     """
@@ -225,8 +237,48 @@ def _score_pair(a: str, b: str, config: MatcherConfig | None = None) -> tuple[fl
     ca, cb = _apply_alias(a), _apply_alias(b)
     if ca == cb:
         return 1.0, "exact"
-    if ca in cb or cb in ca:
-        return cfg.substring_strength, "substring"
+    # Tech-aware substring match: extract "tech words" from each side
+    # using the tech alphabet (a-z0-9+#.), then check whether any word
+    # on one side equals, or is a word-edge prefix/suffix of, a word
+    # on the other side.
+    #
+    # "Word edge" means the char right after a prefix match (or right
+    # before a suffix match) must NOT be another tech-word char.
+    # Otherwise we'd accept false positives like 'java' matching
+    # 'javascript' (chars 0-3 + 's' is still a tech char) or 'rest'
+    # matching 'restore' (chars 0-3 + 'o' is still a tech char). Real
+    # substring matches like 'ms sql' inside 'ms sql server' have a
+    # non-tech char (space) right after the prefix, which satisfies
+    # the boundary check.
+    if len(ca) >= 2 and len(cb) >= 2:
+        # Include both the raw strings AND the extracted words so that
+        # single-word techs ("c#", "go") also get a fair chance — the
+        # raw string is the only candidate when the word has no internal
+        # whitespace.
+        wa = list({ca} | set(_TECH_WORD_RE.findall(ca)))
+        wb = list({cb} | set(_TECH_WORD_RE.findall(cb)))
+        for ax in wa:
+            for bx in wb:
+                if len(ax) < 2 or len(bx) < 2:
+                    continue
+                if ax == bx:
+                    return cfg.substring_strength, "substring"
+                # Word-edge prefix: ax is at the START of bx AND the
+                # char immediately after ax in bx is NOT a tech-word
+                # char (or bx ends right at ax). Prevents 'java' from
+                # matching 'javascript' (next char 's' is a tech char).
+                if len(bx) > len(ax) and bx.startswith(ax):
+                    nxt = bx[len(ax):len(ax) + 1]
+                    if not nxt or not _TECH_WORD_RE.fullmatch(nxt):
+                        return cfg.substring_strength, "substring"
+                # Word-edge suffix: ax is at the END of bx AND the char
+                # immediately before ax in bx is NOT a tech-word char.
+                # Prevents 'sql' from matching 'nosql' (preceding 'o' is
+                # a tech char).
+                if len(bx) > len(ax) and bx.endswith(ax):
+                    prv = bx[len(ax) - len(bx) - 1:len(ax) - len(bx)]
+                    if not prv or not _TECH_WORD_RE.fullmatch(prv):
+                        return cfg.substring_strength, "substring"
     ratio = SequenceMatcher(None, na, nb).ratio()
     if ratio >= cfg.fuzzy_ratio_threshold:
         return ratio * cfg.fuzzy_strength_multiplier, "fuzzy"
