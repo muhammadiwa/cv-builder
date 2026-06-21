@@ -302,26 +302,53 @@ async def compute_or_refresh_match(
             f"job is not yet parsed (status={job.status!r}) — analyze first",
         )
 
-    profile_dict, profile_id = _load_profile(db, user.id)
+    row = await _compute_and_persist_match(db, job, user.id, fast=fast)
+    return _match_to_out(row)
 
-    # 1) Deterministic engine — pure Python, instant.
-    result = compute_match(profile_dict, job.job_analysis_json)
 
-    # 2) LLM narrator — runs inline because POST is synchronous. Latency
-    # is typically 2–10s; if it fails we still return the deterministic
-    # result with llm=null. We don't 5xx on LLM failure.
-    if fast:
-        llm = None
-        log.info("match_fast_path", job_id=job_id)
-    else:
+async def _compute_and_persist_match(
+    db: Session,
+    job: Job,
+    user_id: str,
+    fast: bool = False,
+) -> JobMatch | None:
+    """Pipeline-friendly match computation: deterministic score + LLM
+    narrative, persisted to the JobMatch table.
+
+    Returns the JobMatch row on success, None when:
+      - the user has no profile yet (skipped silently — the job is
+        still useful without a score; the FE shows "Profile needed")
+      - the deterministic match raised (very rare — logged)
+
+    Used by:
+      1. POST /api/matches/jobs/{id}/match (synchronous endpoint)
+      2. The job-create background task `_safe_scrape_and_analyze`
+         so every new job gets scored automatically after analysis.
+
+    Errors that bubble up here are the caller's problem; we don't
+    swallow them.
+    """
+    try:
+        profile_dict, profile_id = _load_profile(db, user_id)
+    except Exception as e:  # noqa: BLE001
+        log.info("match_skipped_no_profile", job_id=job.id, error=str(e)[:200])
+        return None
+
+    try:
+        result = compute_match(profile_dict, job.job_analysis_json)
+    except Exception as e:  # noqa: BLE001
+        log.warning("compute_match_unexpected", job_id=job.id, error=str(e)[:200])
+        return None
+
+    llm = None
+    if not fast:
         try:
             llm = await narrate_match(result, db)
         except Exception as e:  # noqa: BLE001
             log.warning("narrate_match_unexpected", error=str(e)[:200])
-            llm = None
+            # llm stays None — deterministic score is still persisted
 
-    row = _persist_match(db, job_id, profile_id, result, llm)
-    return _match_to_out(row)
+    return _persist_match(db, job.id, profile_id, result, llm)
 
 
 @router.get("/jobs/{job_id}/match", response_model=JobMatchOut)

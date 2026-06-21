@@ -76,16 +76,27 @@ def _fail_job(db: Session, job_id: str, stage: str, exc: Exception) -> None:
 
 
 async def _safe_scrape_and_analyze_async(job_id: str) -> None:
-    """Async core: scrape URL → update raw_description → analyze.
+    """Async core: scrape URL → analyze → score.
 
     Split out from the BackgroundTasks-compatible sync wrapper so we can
     avoid ``asyncio.run`` in a sync context (B13). The wrapper below just
     bridges to this coroutine via a single ``asyncio.run`` call.
 
-    Errors are swallowed into the Job row so the client can see them
-    via GET /jobs/{id}. Raises are logged but never propagated.
+    Errors are swallowed into the Job / JobMatch rows so the client can
+    see them via GET /jobs/{id} or the match summaries endpoint. Raises
+    are logged but never propagated.
+
+    Phase 10E: the deterministic match score is now computed as part of
+    the same background task, right after analysis completes. The user
+    no longer has to trigger a separate "compute match" call — the
+    JobCard just polls /matches/summaries and the score shows up
+    automatically once this task finishes.
     """
     from app.db.session import SessionLocal
+    # Imported inside the function so the route module doesn't create a
+    # circular import (matches imports from jobs via _safe_scrape helper
+    # below, which is fine, but the OTHER way around would loop).
+    from app.api.routes.matches import _compute_and_persist_match
 
     db = SessionLocal()
     try:
@@ -122,6 +133,26 @@ async def _safe_scrape_and_analyze_async(job_id: str) -> None:
                 _fail_job(db, job_id, "analyze_unexpected", e)
             else:
                 log.error("safe_analyze_unexpected", job_id=job_id, error=str(e))
+            return  # ← no match if analysis failed
+
+        # 3) Score (deterministic + LLM narrative) — runs in the same
+        # task so the FE just polls one endpoint and gets both analysis
+        # AND score. Skipped silently when there's no profile yet (the
+        # job is still useful without a score; the FE shows "Profile
+        # needed").
+        job = db.get(Job, job_id)
+        if job and job.status == "parsed" and job.job_analysis_json:
+            try:
+                await _compute_and_persist_match(db, job, job.user_id, fast=False)
+            except Exception as e:  # noqa: BLE001
+                log.warning(
+                    "auto_match_unexpected", job_id=job_id, error=str(e)[:200],
+                )
+                # Don't fail the job — just log and move on. The user
+                # can still hit POST /api/matches/jobs/{id}/match
+                # manually to retry.
+        else:
+            log.info("auto_match_skipped", job_id=job_id, status=job.status if job else "missing")
     finally:
         db.close()
 

@@ -204,9 +204,32 @@ export default function JobsPage() {
 
   const handleCreated = (job: JobOut) => {
     setShowAdd(false);
-    toast.success('Job submitted — analyzing in background');
+    toast.success('Job submitted — analyzing + scoring');
     setJobs((prev) => [job, ...prev]);
     setTotal((t) => t + 1);
+    // Phase 10E: the BE pipeline now does scrape → analyze → score
+    // in one background task. We poll /matches/summaries every 2s
+    // for up to ~60s. Once the new job's match lands, fetchMatchSummaries
+    // picks it up and the dark score panel renders automatically.
+    let cancelled = false;
+    let attempts = 0;
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      await fetchMatchSummaries();
+      const hasMatch = (await matchesApi.listSummaries()).some(
+        (m) => m.job_id === job.id,
+      );
+      if (hasMatch) return;  // done — score is visible
+      if (attempts >= 30) {
+        toast.info('Still scoring — refresh the page in a moment');
+        return;
+      }
+      setTimeout(tick, 2000);
+    };
+    setTimeout(tick, 1500);
+    // Cleanup if user navigates away mid-poll
+    return () => { cancelled = true; };
   };
 
   const handleDelete = async (id: string) => {
