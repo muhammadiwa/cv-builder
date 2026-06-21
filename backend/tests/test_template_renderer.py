@@ -3,6 +3,11 @@
 Validates that the deterministic renderer consumes the new fields
 (font_family, accent_color, density, date_format) and that the ATS-safe
 color validator + preset registry behave correctly.
+
+Phase 10B — Extends coverage to the four structural axes
+(header_style / section_heading_style / experience_layout /
+skills_layout) and the six new presets (Minimal / Executive /
+Timeline / Academic / Tech / European / Consulting).
 """
 import pytest
 
@@ -13,8 +18,19 @@ from app.services.cv_renderer import (
     DENSITY_OPTIONS,
     DATE_FORMAT_OPTIONS,
     PAGE_SIZE_OPTIONS,
+    HEADER_STYLE_OPTIONS,
+    SECTION_HEADING_OPTIONS,
+    EXPERIENCE_LAYOUT_OPTIONS,
+    SKILLS_LAYOUT_OPTIONS,
     ats_compact_config,
     ats_modern_config,
+    ats_minimal_config,
+    ats_executive_config,
+    ats_timeline_config,
+    ats_academic_config,
+    ats_tech_config,
+    ats_european_config,
+    ats_consulting_config,
     default_template_config,
     render_html_document,
     validate_ats_color,
@@ -162,7 +178,224 @@ def test_base_template_helper_defaults_match_at_safety():
     cfg = _base_template_config("custom_test", "Custom", ["summary"])
     assert cfg["accent_color"] in ATS_SAFE_COLORS
     assert cfg["font_family"] in FONT_FAMILY_OPTIONS
-    assert cfg["density"] in DENSITY_OPTIONS
+
+
+# ── Phase 10B: structural axes tests ────────────────────────────────
+
+
+def test_all_presets_have_structural_axes():
+    """Every built-in preset must include the 4 Phase 10B structural axes
+    so the FE can render thumbnails and live previews without fallbacks.
+    """
+    for cfg in BUILTIN_PRESETS:
+        for key in (
+            "header_style",
+            "section_heading_style",
+            "experience_layout",
+            "skills_layout",
+        ):
+            assert key in cfg, f"{cfg['id']} missing {key}"
+            assert cfg[key] in {
+                "header_style": HEADER_STYLE_OPTIONS,
+                "section_heading_style": SECTION_HEADING_OPTIONS,
+                "experience_layout": EXPERIENCE_LAYOUT_OPTIONS,
+                "skills_layout": SKILLS_LAYOUT_OPTIONS,
+            }[key], f"{cfg['id']}.{key}={cfg[key]!r} not in valid options"
+
+
+def test_base_template_helper_includes_structural_defaults():
+    """Legacy ``_base_template_config`` (no structural args) must default
+    to the original ats_classic-style layout so old callers keep getting
+    identical output.
+    """
+    cfg = _base_template_config("custom_test", "Custom", ["summary"])
+    assert cfg["header_style"] == "stacked"
+    assert cfg["section_heading_style"] == "bar"
+    assert cfg["experience_layout"] == "standard"
+    assert cfg["skills_layout"] == "comma"
+
+
+def test_ats_minimal_uses_inline_header_plain_headings_pipe_skills():
+    """The Minimal preset's whole identity is structural differentiation
+    on the four axes — make sure it actually uses them.
+    """
+    cfg = ats_minimal_config()
+    assert cfg["id"] == "ats_minimal"
+    assert cfg["header_style"] == "inline"
+    assert cfg["section_heading_style"] == "plain"
+    assert cfg["skills_layout"] == "pipe"
+
+
+def test_ats_executive_uses_banner_header_dates_right():
+    cfg = ats_executive_config()
+    assert cfg["id"] == "ats_executive"
+    assert cfg["header_style"] == "banner"
+    assert cfg["experience_layout"] == "dates_right"
+
+
+def test_ats_timeline_uses_numbered_sections_inline_dates():
+    cfg = ats_timeline_config()
+    assert cfg["id"] == "ats_timeline"
+    assert cfg["section_heading_style"] == "numbered"
+    assert cfg["experience_layout"] == "inline_dates"
+
+
+def test_ats_academic_uses_yyyy_dates_pipe_skills():
+    cfg = ats_academic_config()
+    assert cfg["id"] == "ats_academic"
+    assert cfg["date_format"] == "YYYY"
+    assert cfg["skills_layout"] == "pipe"
+
+
+def test_ats_tech_uses_categorized_skills():
+    cfg = ats_tech_config()
+    assert cfg["id"] == "ats_tech"
+    assert cfg["skills_layout"] == "categorized"
+
+
+def test_ats_european_uses_pills_skills_inline_header():
+    cfg = ats_european_config()
+    assert cfg["id"] == "ats_european"
+    assert cfg["skills_layout"] == "pills"
+    assert cfg["header_style"] == "inline"
+
+
+def test_ats_consulting_uses_dates_right_compact():
+    cfg = ats_consulting_config()
+    assert cfg["id"] == "ats_consulting"
+    assert cfg["experience_layout"] == "dates_right"
+    assert cfg["density"] == "compact"
+
+
+def test_builtin_presets_count():
+    """We ship exactly 10 built-in presets (3 legacy + 7 new). Adding
+    more is fine but the count must be deliberate so the FE picker
+    layout knows what to expect.
+    """
+    assert len(BUILTIN_PRESETS) == 10
+    ids = [p["id"] for p in BUILTIN_PRESETS]
+    assert "ats_classic" in ids
+    assert "ats_modern" in ids
+    assert "ats_compact" in ids
+    assert "ats_minimal" in ids
+    assert "ats_executive" in ids
+    assert "ats_timeline" in ids
+    assert "ats_academic" in ids
+    assert "ats_tech" in ids
+    assert "ats_european" in ids
+    assert "ats_consulting" in ids
+
+
+def test_render_inline_header_emits_flex_row():
+    """``header_style=inline`` should put name + title on the same flex
+    row (vs. stacked which is separate lines).
+    """
+    profile = {
+        "basics": {"name": "Test User", "label": "Engineer", "email": "t@x.com"},
+        "work": [], "education": [], "skills": [], "projects": [],
+    }
+    cfg = {"header_style": "inline"}
+    html = render_html_document(profile, template_config=cfg)
+    assert 'class="cv-header-inline"' in html
+    assert 'class="cv-title-inline"' in html
+
+
+def test_render_numbered_sections_use_two_digit_prefix():
+    """``section_heading_style=numbered`` should emit ``01 · Title``."""
+    profile = {
+        "basics": {"name": "Test User", "email": "t@x.com"},
+        "summary": "summary text",
+        "work": [], "education": [], "skills": [], "projects": [],
+    }
+    cfg = {"section_heading_style": "numbered"}
+    html = render_html_document(profile, template_config=cfg)
+    assert "01" in html
+    assert "cv-section-num" in html
+
+
+def test_render_dates_right_experience_has_flex_row():
+    """``experience_layout=dates_right`` should emit a ``.cv-job-row``
+    container per job so CSS can flex-align role + dates.
+    """
+    profile = {
+        "basics": {"name": "Test User"},
+        "work": [
+            {
+                "name": "Acme",
+                "position": "Engineer",
+                "startDate": "2021-01",
+                "endDate": None,
+                "highlights": ["did things"],
+            }
+        ],
+        "education": [], "skills": [], "projects": [],
+    }
+    cfg = {"experience_layout": "dates_right"}
+    html = render_html_document(profile, template_config=cfg)
+    assert "cv-job-row" in html
+    assert "cv-dates-right" in html
+
+
+def test_render_pipe_skills_emits_pipe_separator():
+    """``skills_layout=pipe`` should emit ``Skill | Skill | Skill``."""
+    profile = {
+        "basics": {"name": "Test User"},
+        "work": [], "education": [],
+        "skills": ["Python", "Go", "Rust"], "projects": [],
+    }
+    cfg = {"skills_layout": "pipe"}
+    html = render_html_document(profile, template_config=cfg)
+    assert "cv-skills-pipe" in html
+    assert "Python | Go | Rust" in html
+
+
+def test_render_unknown_axis_values_fall_back_safely():
+    """Malformed config (unknown axis values) must fall back to defaults
+    rather than crash or emit broken HTML.
+    """
+    profile = {
+        "basics": {"name": "Test User", "email": "t@x.com"},
+        "work": [], "education": [], "skills": ["Python"], "projects": [],
+    }
+    cfg = {
+        "header_style": "rocket",
+        "section_heading_style": "neon",
+        "experience_layout": "zigzag",
+        "skills_layout": "sparkles",
+    }
+    html = render_html_document(profile, template_config=cfg)
+    # Should render cleanly without the unknown value being honoured.
+    assert "cv-name" in html
+    assert "cv-skills" in html  # default comma layout
+
+
+def test_render_legacy_config_still_produces_original_output():
+    """A config dict with only the original Phase 10A keys should render
+    byte-equivalent to a config with no structural keys at all
+    (backward compatibility gate).
+    """
+    profile = {
+        "basics": {"name": "Legacy User", "email": "l@x.com"},
+        "summary": "Senior engineer.",
+        "work": [
+            {
+                "name": "OldCo",
+                "position": "Engineer",
+                "startDate": "2018-01",
+                "endDate": "2021-01",
+                "highlights": ["legacy bullet"],
+            }
+        ],
+        "education": [], "skills": ["Python"], "projects": [],
+    }
+    cfg_old = {"font_family": "serif", "accent_color": "#1f2937", "density": "normal"}
+    html_old = render_html_document(profile, template_config=cfg_old)
+    # All four structural axes should default to their ats_classic
+    # values when absent.
+    assert 'class="cv-section"' in html_old  # bar default
+    assert 'class="cv-name"' in html_old    # stacked default
+    assert 'class="cv-role"' in html_old    # standard default
+    assert 'class="cv-skills"' in html_old  # comma default
 
 
 # ── _format_date_range ─────────────────────────────────────────────

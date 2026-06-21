@@ -64,6 +64,40 @@ BULLET_STYLE_OPTIONS: tuple[str, ...] = ("dash", "bullet", "arrow")
 DATE_FORMAT_OPTIONS: tuple[str, ...] = ("Mon YYYY", "MM/YYYY", "YYYY")
 PAGE_SIZE_OPTIONS: tuple[str, ...] = ("A4", "Letter")
 
+# ── Structural axes (Phase 10B) ─────────────────────────────────────
+# These drive LAYOUT, not just typography — they're how a CV template
+# is recognisably different from another. All four have safe defaults
+# that reproduce the original ats_classic rendering for any draft that
+# predates these keys.
+
+# Header layout — where name + title + contact line sit on the page.
+HEADER_STYLE_OPTIONS: tuple[str, ...] = (
+    "stacked",   # name (h1) on top, title (p) below, contact line below
+    "inline",    # name + title on same row (name larger), contact below
+    "banner",    # name fills more space, contact on a single right-aligned line
+)
+# Section heading style — how the <h2> for each section looks.
+SECTION_HEADING_OPTIONS: tuple[str, ...] = (
+    "bar",       # uppercase, thin bottom border (original ATS look)
+    "underline", # title-case, thick bottom border
+    "plain",     # title-case, no border, just bold
+    "numbered",  # "01 · EXPERIENCE" with numeric prefix
+)
+# Experience item layout — how each job block is structured.
+EXPERIENCE_LAYOUT_OPTIONS: tuple[str, ...] = (
+    "standard",     # role line, meta line, bullet list (original)
+    "dates_right",  # flex row: role+company on left, dates on right
+    "inline_dates", # role line includes dates in parentheses
+    "compact",      # smaller fonts, tighter spacing
+)
+# Skills presentation — how the skills list is visualised.
+SKILLS_LAYOUT_OPTIONS: tuple[str, ...] = (
+    "comma",        # comma-separated inline list (original)
+    "pipe",         # pipe-separated inline list
+    "categorized",  # grouped by category with bold subheadings
+    "pills",        # each skill in a bordered inline-block pill
+)
+
 # ATS-safe color palette. Reject anything outside this set so
 # recruiters/ATS scanners never see a CV in red Comic Sans.
 # Each entry maps a config key to its accepted hex values.
@@ -85,6 +119,10 @@ DEFAULT_STYLING: dict[str, Any] = {
     "bullet_style": "dash",
     "date_format": "Mon YYYY",
     "page_size": "A4",
+    "header_style": "stacked",
+    "section_heading_style": "bar",
+    "experience_layout": "standard",
+    "skills_layout": "comma",
     "margins": {
         "top": "18mm",
         "right": "16mm",
@@ -239,8 +277,26 @@ class CVDoc:
 
 
 # ── Section renderers ───────────────────────────────────────────────
-def _render_header(profile: dict[str, Any]) -> tuple[str, str]:
-    """Render the header block (name + title + contact line)."""
+def _render_header(
+    profile: dict[str, Any],
+    header_style: str = "stacked",
+) -> tuple[str, str]:
+    """Render the header block (name + title + contact line).
+
+    ``header_style`` (Phase 10B) drives the layout:
+      - ``"stacked"`` (default, original ATS look):
+        ``<h1>Name</h1>`` + ``<p>Title</p>`` + ``<p>Contact</p>``
+      - ``"inline"``:
+        flex row with name on the left (larger) and title on the right
+      - ``"banner"``:
+        name fills the row, contact line below centered
+
+    Unknown styles silently fall back to ``"stacked"`` so malformed
+    template configs never produce broken HTML.
+    """
+    if header_style not in HEADER_STYLE_OPTIONS:
+        header_style = "stacked"
+
     basics = profile.get("basics") or {}
     name = _strip_text(basics.get("name")) or "Untitled"
     title = _strip_text(basics.get("label"))
@@ -276,15 +332,36 @@ def _render_header(profile: dict[str, Any]) -> tuple[str, str]:
         if "linkedin" in net:
             contact = (contact + " · " + url) if contact else url
 
-    # HTML
-    html_parts = [f'<h1 class="cv-name">{_esc(name)}</h1>']
-    if title:
-        html_parts.append(f'<p class="cv-title">{_esc(title)}</p>')
-    if contact:
-        html_parts.append(f'<p class="cv-contact">{_esc(contact)}</p>')
-    header_html = "\n".join(html_parts)
+    # HTML — branch on header_style
+    if header_style == "inline":
+        # Name on the left, title on the right (still ATS-safe: no
+        # tables/floats, just flex which modern ATS extractors handle).
+        html_parts = [
+            f'<div class="cv-header-inline">'
+            f'<h1 class="cv-name">{_esc(name)}</h1>'
+            + (f'<p class="cv-title-inline">{_esc(title)}</p>' if title else '')
+            + '</div>'
+        ]
+        if contact:
+            html_parts.append(f'<p class="cv-contact">{_esc(contact)}</p>')
+        header_html = "\n".join(html_parts)
+    elif header_style == "banner":
+        # Name fills the row, contact line below.
+        html_parts = [f'<h1 class="cv-name cv-name-banner">{_esc(name)}</h1>']
+        if title:
+            html_parts.append(f'<p class="cv-title">{_esc(title)}</p>')
+        if contact:
+            html_parts.append(f'<p class="cv-contact cv-contact-banner">{_esc(contact)}</p>')
+        header_html = "\n".join(html_parts)
+    else:  # stacked (default — original ATS look)
+        html_parts = [f'<h1 class="cv-name">{_esc(name)}</h1>']
+        if title:
+            html_parts.append(f'<p class="cv-title">{_esc(title)}</p>')
+        if contact:
+            html_parts.append(f'<p class="cv-contact">{_esc(contact)}</p>')
+        header_html = "\n".join(html_parts)
 
-    # Markdown
+    # Markdown — all variants collapse to the same MD representation
     md_parts = [f"# {name}"]
     if title:
         md_parts.append(f"**{title}**")
@@ -307,7 +384,27 @@ def _render_summary(profile: dict[str, Any]) -> CVSection:
 def _render_experience(
     work: list[dict[str, Any]],
     date_format: str = "Mon YYYY",
+    layout: str = "standard",
 ) -> CVSection:
+    """Render the Experience section.
+
+    ``layout`` (Phase 10B) drives how each job block is structured:
+      - ``"standard"`` (default, original ATS look):
+        ``<h3>Role — Company</h3>`` + ``<p>dates · location</p>`` + ``<ul>``
+      - ``"dates_right"``:
+        flex row: ``<h3>Role — Company</h3>`` on left,
+        ``<span>dates</span>`` right-aligned; meta + bullets below
+      - ``"inline_dates"``:
+        ``<h3>Role — Company (Mar 2021 – Present)</h3>`` + meta + bullets
+      - ``"compact"``:
+        tighter spacing, slightly smaller font, condensed meta line
+
+    Unknown layouts silently fall back to ``"standard"`` so malformed
+    template configs never produce broken HTML.
+    """
+    if layout not in EXPERIENCE_LAYOUT_OPTIONS:
+        layout = "standard"
+
     if not work:
         return CVSection(kind=SECTION_EXPERIENCE, title="Experience", body_html="", body_md="")
     items_html: list[str] = []
@@ -333,18 +430,55 @@ def _render_experience(
 
         meta_line = _contact_line(dates, location)
 
-        # HTML
+        # HTML — branch on layout
         item_html_parts: list[str] = []
-        if role_line:
-            item_html_parts.append(f'<h3 class="cv-role">{role_line}</h3>')
-        if meta_line:
-            item_html_parts.append(f'<p class="cv-meta">{_esc(meta_line)}</p>')
-        if highlights:
-            li_html = "\n".join(f"    <li>{_esc(h)}</li>" for h in highlights)
-            item_html_parts.append(f"<ul class=\"cv-bullets\">\n{li_html}\n  </ul>")
+
+        if layout == "dates_right":
+            # Row 1: role on the left, dates on the right.
+            item_html_parts.append(
+                f'<div class="cv-job-row">'
+                f'<h3 class="cv-role">{role_line or "&nbsp;"}</h3>'
+                f'<span class="cv-dates-right">{_esc(dates) if dates else "&nbsp;"}</span>'
+                f'</div>'
+            )
+            if location:
+                item_html_parts.append(f'<p class="cv-meta">{_esc(location)}</p>')
+            if highlights:
+                li_html = "\n".join(f"    <li>{_esc(h)}</li>" for h in highlights)
+                item_html_parts.append(f"<ul class=\"cv-bullets\">\n{li_html}\n  </ul>")
+        elif layout == "inline_dates":
+            # Dates inline in the role heading.
+            role_with_dates = role_line
+            if dates:
+                role_with_dates = f"{role_line} <span class=\"cv-dates-inline\">({_esc(dates)})</span>" if role_line else f'<span class="cv-dates-inline">{_esc(dates)}</span>'
+            if role_with_dates:
+                item_html_parts.append(f'<h3 class="cv-role">{role_with_dates}</h3>')
+            if meta_line:
+                item_html_parts.append(f'<p class="cv-meta">{_esc(meta_line)}</p>')
+            if highlights:
+                li_html = "\n".join(f"    <li>{_esc(h)}</li>" for h in highlights)
+                item_html_parts.append(f"<ul class=\"cv-bullets\">\n{li_html}\n  </ul>")
+        elif layout == "compact":
+            # Tighter: smaller heading, condensed meta, tighter bullets.
+            if role_line:
+                item_html_parts.append(f'<h3 class="cv-role cv-role-compact">{role_line}</h3>')
+            if meta_line:
+                item_html_parts.append(f'<p class="cv-meta cv-meta-compact">{_esc(meta_line)}</p>')
+            if highlights:
+                li_html = "\n".join(f"    <li>{_esc(h)}</li>" for h in highlights)
+                item_html_parts.append(f"<ul class=\"cv-bullets cv-bullets-compact\">\n{li_html}\n  </ul>")
+        else:  # standard (default — original ATS look)
+            if role_line:
+                item_html_parts.append(f'<h3 class="cv-role">{role_line}</h3>')
+            if meta_line:
+                item_html_parts.append(f'<p class="cv-meta">{_esc(meta_line)}</p>')
+            if highlights:
+                li_html = "\n".join(f"    <li>{_esc(h)}</li>" for h in highlights)
+                item_html_parts.append(f"<ul class=\"cv-bullets\">\n{li_html}\n  </ul>")
+
         items_html.append("  <div class=\"cv-job\">\n" + "\n".join(item_html_parts) + "\n  </div>")
 
-        # Markdown
+        # Markdown — all variants collapse to the same MD representation
         item_md_parts: list[str] = []
         if role_line:
             item_md_parts.append(f"### {role_line.replace(' — ', ' — ', 1)}")
@@ -423,10 +557,29 @@ def _render_education(
     )
 
 
-def _render_skills(skills: list[Any]) -> CVSection:
+def _render_skills(
+    skills: list[Any],
+    layout: str = "comma",
+) -> CVSection:
+    """Render the Skills section.
+
+    ``layout`` (Phase 10B) drives how skills are visualised:
+      - ``"comma"`` (default, original ATS look): ``Skill, Skill, Skill``
+      - ``"pipe"``: ``Skill | Skill | Skill``
+      - ``"categorized"``: ``<strong>Backend</strong>: a, b. <strong>Frontend</strong>: x, y``
+        (groups from JSON-Resume-style ``[{"name": "...", "keywords": [...]}]``)
+      - ``"pills"``: each skill in a bordered inline-block ``<span>``
+
+    All layouts stay single-paragraph + ATS-friendly (no tables, no
+    images). Unknown layouts fall back to ``"comma"``.
+    """
+    if layout not in SKILLS_LAYOUT_OPTIONS:
+        layout = "comma"
+
     # Flatten JSON Resume skills shape: [{"name": "Backend", "keywords": [...]}]
     # Also accept a flat list of strings.
     keywords: list[str] = []
+    categorized_entries: list[tuple[str, list[str]]] = []
     if not skills:
         return CVSection(kind=SECTION_SKILLS, title="Skills", body_html="", body_md="")
     for entry in skills:
@@ -436,15 +589,18 @@ def _render_skills(skills: list[Any]) -> CVSection:
                 keywords.append(kw)
         elif isinstance(entry, dict):
             kw_list = entry.get("keywords") or []
+            cat_kws: list[str] = []
             for kw in kw_list:
                 s = _strip_text(kw)
                 if s:
+                    cat_kws.append(s)
                     keywords.append(s)
-            # Also include the category name itself if no keywords
             name = _strip_text(entry.get("name"))
-            if name and not kw_list:
+            if name and cat_kws:
+                categorized_entries.append((name, cat_kws))
+            elif name and not cat_kws:
                 keywords.append(name)
-    # Dedupe while preserving order
+    # Dedupe flat keywords while preserving order (for non-categorized layouts)
     seen: set[str] = set()
     unique: list[str] = []
     for k in keywords:
@@ -452,12 +608,56 @@ def _render_skills(skills: list[Any]) -> CVSection:
         if lk not in seen:
             seen.add(lk)
             unique.append(k)
-    if not unique:
+    if not unique and not categorized_entries:
         return CVSection(kind=SECTION_SKILLS, title="Skills", body_html="", body_md="")
-    li_html = "\n".join(f"    <li>{_esc(k)}</li>" for k in unique)
-    body_html = f'<ul class="cv-skills">\n{li_html}\n  </ul>'
-    body_md = ", ".join(unique)
-    return CVSection(kind=SECTION_SKILLS, title="Skills", body_html=body_html, body_md=body_md)
+
+    body_html = ""
+    body_md = ""
+
+    if layout == "pipe":
+        body_html = f'<p class="cv-skills-pipe">' + " | ".join(_esc(k) for k in unique) + "</p>"
+        body_md = " | ".join(unique)
+    elif layout == "categorized" and categorized_entries:
+        # Dedupe categories preserving first-seen order of categories AND
+        # keywords within each category.
+        seen_cat: set[str] = set()
+        seen_kw: set[str] = set()
+        parts_html: list[str] = []
+        parts_md: list[str] = []
+        for cat_name, kws in categorized_entries:
+            if cat_name.lower() in seen_cat:
+                continue
+            seen_cat.add(cat_name.lower())
+            deduped_kws: list[str] = []
+            for k in kws:
+                if k.lower() not in seen_kw:
+                    seen_kw.add(k.lower())
+                    deduped_kws.append(k)
+            if not deduped_kws:
+                continue
+            parts_html.append(
+                f'<span class="cv-skill-cat"><strong>{_esc(cat_name)}</strong>: '
+                + ", ".join(_esc(k) for k in deduped_kws)
+                + "</span>"
+            )
+            parts_md.append(f"**{cat_name}**: {', '.join(deduped_kws)}")
+        body_html = f'<div class="cv-skills-categorized">{" · ".join(parts_html)}</div>'
+        body_md = " · ".join(parts_md)
+    elif layout == "pills":
+        pills_html = "\n".join(f'    <span class="cv-skill-pill">{_esc(k)}</span>' for k in unique)
+        body_html = f'<p class="cv-skills-pills">\n{pills_html}\n  </p>'
+        body_md = ", ".join(unique)
+    else:  # comma (default — original ATS look)
+        li_html = "\n".join(f"    <li>{_esc(k)}</li>" for k in unique)
+        body_html = f'<ul class="cv-skills">\n{li_html}\n  </ul>'
+        body_md = ", ".join(unique)
+
+    return CVSection(
+        kind=SECTION_SKILLS,
+        title="Skills",
+        body_html=body_html,
+        body_md=body_md,
+    )
 
 
 def _render_projects(projects: list[dict[str, Any]]) -> CVSection:
@@ -556,7 +756,24 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
     to cache, snapshot, and diff.
     """
     p = _coerce_profile(profile)
-    header_html, header_md = _render_header(p)
+
+    # Phase 10B: resolve structural axes with safe defaults so legacy
+    # configs (which predate these keys) keep rendering identically.
+    cfg = template_config or {}
+    header_style = cfg.get("header_style") or "stacked"
+    if header_style not in HEADER_STYLE_OPTIONS:
+        header_style = "stacked"
+    section_heading_style = cfg.get("section_heading_style") or "bar"
+    if section_heading_style not in SECTION_HEADING_OPTIONS:
+        section_heading_style = "bar"
+    experience_layout = cfg.get("experience_layout") or "standard"
+    if experience_layout not in EXPERIENCE_LAYOUT_OPTIONS:
+        experience_layout = "standard"
+    skills_layout = cfg.get("skills_layout") or "comma"
+    if skills_layout not in SKILLS_LAYOUT_OPTIONS:
+        skills_layout = "comma"
+
+    header_html, header_md = _render_header(p, header_style=header_style)
 
     sections_cfg = (template_config or {}).get("sections") or [
         SECTION_SUMMARY,
@@ -586,18 +803,38 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
 
     section_renderers = {
         SECTION_SUMMARY: lambda: _render_summary(p),
-        SECTION_EXPERIENCE: lambda: _render_experience(work, date_format),
+        SECTION_EXPERIENCE: lambda: _render_experience(
+            work, date_format, layout=experience_layout
+        ),
         SECTION_EDUCATION: lambda: _render_education(education, date_format),
-        SECTION_SKILLS: lambda: _render_skills(skills),
+        SECTION_SKILLS: lambda: _render_skills(skills, layout=skills_layout),
         SECTION_PROJECTS: lambda: _render_projects(projects),
     }
 
     rendered: list[CVSection] = []
-    for kind in valid_order:
+    for idx, kind in enumerate(valid_order):
         sec = section_renderers[kind]()
         if sec.body_html:
-            # Wrap with an <h2> heading
-            sec.body_html = f'<h2 class="cv-section">{_esc(sec.title)}</h2>\n' + sec.body_html
+            # Wrap with an <h2> heading whose style reflects
+            # section_heading_style. Numbered variant prefixes "01 · ".
+            if section_heading_style == "numbered":
+                heading_html = (
+                    f'<h2 class="cv-section cv-section-numbered">'
+                    f'<span class="cv-section-num">{idx + 1:02d}</span>'
+                    f'<span class="cv-section-title">{_esc(sec.title)}</span>'
+                    f"</h2>"
+                )
+            elif section_heading_style == "plain":
+                heading_html = (
+                    f'<h2 class="cv-section cv-section-plain">{_esc(sec.title)}</h2>'
+                )
+            elif section_heading_style == "underline":
+                heading_html = (
+                    f'<h2 class="cv-section cv-section-underline">{_esc(sec.title)}</h2>'
+                )
+            else:  # bar (default)
+                heading_html = f'<h2 class="cv-section">{_esc(sec.title)}</h2>'
+            sec.body_html = heading_html + "\n" + sec.body_html
             if sec.body_md:
                 sec.body_md = f"## {sec.title}\n\n{sec.body_md}"
             rendered.append(sec)
@@ -664,15 +901,28 @@ def _wrap_html(
         body_close = ""
 
     # Resolve styling with safe defaults.
-    font_family = (template_config or {}).get("font_family") or "sans"
+    cfg = template_config or {}
+    font_family = cfg.get("font_family") or "sans"
     if font_family not in FONT_FAMILY_OPTIONS:
         font_family = "sans"
-    accent_color = (template_config or {}).get("accent_color") or "#111111"
+    accent_color = cfg.get("accent_color") or "#111111"
     if accent_color not in ATS_SAFE_COLORS:
         accent_color = "#111111"
-    density = (template_config or {}).get("density") or "normal"
+    density = cfg.get("density") or "normal"
     if density not in DENSITY_OPTIONS:
         density = "normal"
+    header_style = cfg.get("header_style") or "stacked"
+    if header_style not in HEADER_STYLE_OPTIONS:
+        header_style = "stacked"
+    section_heading_style = cfg.get("section_heading_style") or "bar"
+    if section_heading_style not in SECTION_HEADING_OPTIONS:
+        section_heading_style = "bar"
+    experience_layout = cfg.get("experience_layout") or "standard"
+    if experience_layout not in EXPERIENCE_LAYOUT_OPTIONS:
+        experience_layout = "standard"
+    skills_layout = cfg.get("skills_layout") or "comma"
+    if skills_layout not in SKILLS_LAYOUT_OPTIONS:
+        skills_layout = "comma"
 
     # Map density -> concrete CSS values.
     line_height = {"compact": "1.25", "normal": "1.45", "spacious": "1.6"}[density]
@@ -687,6 +937,93 @@ def _wrap_html(
         "sans": "Arial, Helvetica, sans-serif",
         "mono": "'Courier New', Courier, monospace",
     }[font_family]
+
+    # Per-axis CSS fragments. Each fragment is empty string when the
+    # axis is at its default — keeps the legacy ats_classic output
+    # byte-identical to before Phase 10B.
+    extra_css: list[str] = []
+
+    # ── Header layout ────────────────────────────────────────────
+    if header_style == "inline":
+        extra_css.append(
+            f"  {prefix} .cv-header-inline {{ display: flex; align-items: baseline; "
+            f"justify-content: space-between; gap: 16px; margin: 0 0 8px; flex-wrap: wrap; }}\n"
+            f"  {prefix} .cv-header-inline .cv-name {{ font-size: 26px; margin: 0; }}\n"
+            f"  {prefix} .cv-title-inline {{ margin: 0; color: {accent_color}; "
+            f"font-weight: 600; font-size: 15px; opacity: 0.85; }}\n"
+        )
+    elif header_style == "banner":
+        extra_css.append(
+            f"  {prefix} .cv-name-banner {{ font-size: 34px; letter-spacing: -0.5px; "
+            f"margin: 0 0 6px; }}\n"
+            f"  {prefix} .cv-contact-banner {{ text-align: right; "
+            f"margin: 4px 0 16px; }}\n"
+        )
+
+    # ── Section heading style ────────────────────────────────────
+    if section_heading_style == "plain":
+        extra_css.append(
+            f"  {prefix} h2.cv-section {{ border-bottom: none; padding-bottom: 0; "
+            f"text-transform: none; letter-spacing: normal; font-size: 17px; "
+            f"opacity: 1; }}\n"
+            f"  {prefix} h2.cv-section-plain {{ font-weight: 700; }}\n"
+        )
+    elif section_heading_style == "underline":
+        extra_css.append(
+            f"  {prefix} h2.cv-section-underline {{ border-bottom-width: 2px; "
+            f"text-transform: none; letter-spacing: normal; font-size: 17px; "
+            f"padding-bottom: 4px; opacity: 1; }}\n"
+        )
+    elif section_heading_style == "numbered":
+        extra_css.append(
+            f"  {prefix} h2.cv-section-numbered {{ border-bottom: none; "
+            f"padding-bottom: 0; text-transform: none; letter-spacing: normal; "
+            f"font-size: 16px; opacity: 1; display: flex; align-items: baseline; "
+            f"gap: 8px; }}\n"
+            f"  {prefix} .cv-section-num {{ color: {accent_color}; "
+            f"font-weight: 700; opacity: 0.55; font-size: 14px; }}\n"
+            f"  {prefix} .cv-section-title {{ font-weight: 700; }}\n"
+        )
+
+    # ── Experience layout ────────────────────────────────────────
+    if experience_layout == "dates_right":
+        extra_css.append(
+            f"  {prefix} .cv-job-row {{ display: flex; justify-content: space-between; "
+            f"align-items: baseline; gap: 12px; }}\n"
+            f"  {prefix} .cv-job-row .cv-role {{ margin: 0; }}\n"
+            f"  {prefix} .cv-dates-right {{ font-size: 13px; color: {accent_color}; "
+            f"opacity: 0.75; white-space: nowrap; }}\n"
+        )
+    elif experience_layout == "inline_dates":
+        extra_css.append(
+            f"  {prefix} .cv-dates-inline {{ font-size: 13px; font-weight: 500; "
+            f"color: {accent_color}; opacity: 0.75; }}\n"
+        )
+    elif experience_layout == "compact":
+        extra_css.append(
+            f"  {prefix} .cv-role-compact {{ font-size: 14px; margin: 6px 0 1px; }}\n"
+            f"  {prefix} .cv-meta-compact {{ font-size: 12px; margin: 0 0 2px; }}\n"
+            f"  {prefix} .cv-bullets-compact {{ margin: 2px 0 4px; padding-left: 18px; }}\n"
+            f"  {prefix} .cv-bullets-compact li {{ margin: 1px 0; font-size: 13px; }}\n"
+        )
+
+    # ── Skills layout ────────────────────────────────────────────
+    if skills_layout == "pipe":
+        extra_css.append(
+            f"  {prefix} .cv-skills-pipe {{ margin: 4px 0 8px; line-height: {line_height}; }}\n"
+        )
+    elif skills_layout == "categorized":
+        extra_css.append(
+            f"  {prefix} .cv-skills-categorized {{ margin: 4px 0 8px; line-height: {line_height}; }}\n"
+            f"  {prefix} .cv-skill-cat {{ display: inline-block; margin-right: 14px; }}\n"
+        )
+    elif skills_layout == "pills":
+        extra_css.append(
+            f"  {prefix} .cv-skills-pills {{ margin: 4px 0 8px; line-height: 2; }}\n"
+            f"  {prefix} .cv-skill-pill {{ display: inline-block; padding: 2px 8px; "
+            f"margin: 2px 4px 2px 0; border: 1px solid {accent_color}55; "
+            f"border-radius: 3px; font-size: 13px; color: {accent_color}; }}\n"
+        )
 
     style = (
         "<style>\n"
@@ -703,7 +1040,8 @@ def _wrap_html(
         f"  {prefix} .cv-summary {{ margin: 0 0 8px; }}\n"
         f"  {prefix} .cv-skills {{ margin: 4px 0 8px; padding-left: 20px; }}\n"
         f"  {prefix} .cv-score {{ margin: 0 0 6px; font-size: 13px; color: {accent_color}; opacity: 0.75; }}\n"
-        "</style>\n"
+        + "".join(extra_css)
+        + "</style>\n"
     )
 
     return (
@@ -822,6 +1160,10 @@ def _base_template_config(
     bullet_style: str = "dash",
     date_format: str = "Mon YYYY",
     page_size: str = "A4",
+    header_style: str = "stacked",
+    section_heading_style: str = "bar",
+    experience_layout: str = "standard",
+    skills_layout: str = "comma",
     description: str = "",
 ) -> dict[str, Any]:
     """Build a template config dict shared across all presets.
@@ -841,6 +1183,10 @@ def _base_template_config(
         "bullet_style": bullet_style,
         "date_format": date_format,
         "page_size": page_size,
+        "header_style": header_style,
+        "section_heading_style": section_heading_style,
+        "experience_layout": experience_layout,
+        "skills_layout": skills_layout,
         "ats_friendly": True,
         "description": description,
     }
@@ -894,7 +1240,7 @@ def ats_modern_config() -> dict[str, Any]:
 def ats_compact_config() -> dict[str, Any]:
     """``ats_compact`` preset — dense, mono-ish, US-style MM/YYYY dates.
 
-    Aimed at senior ICs / consultants / academics who need to fit 20+ "
+    Aimed at senior ICs / consultants / academics who need to fit 20+
     "years of experience on 1–2 pages. MM/YYYY dates are the US standard.
     """
     return _base_template_config(
@@ -916,11 +1262,248 @@ def ats_compact_config() -> dict[str, Any]:
     )
 
 
+# ── Phase 10B presets: structural differentiation ───────────────────
+# Each new preset differs from the originals on at least ONE structural
+# axis (header_style / section_heading_style / experience_layout /
+# skills_layout) so they're visually recognisable, not just typography.
+
+
+def ats_minimal_config() -> dict[str, Any]:
+    """``ats_minimal`` preset — sans-serif, generous whitespace, plain
+    section headings, pipe-separated skills.
+
+    Targets design-conscious startups, agencies, and product roles where
+    restraint reads as confidence. Closer to a "tech portfolio" feel
+    than a corporate CV.
+    """
+    return _base_template_config(
+        "ats_minimal",
+        "ATS Minimal",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#475569",  # slate-600 — softer than black
+        density="spacious",
+        bullet_style="dash",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="inline",          # ← name + title on same row
+        section_heading_style="plain",  # ← no underline, just bold
+        experience_layout="standard",
+        skills_layout="pipe",           # ← Python | Go | Rust
+        description=(
+            "Minimal sans-serif, inline header (name + title side by side), "
+            "plain section headings, pipe-separated skills. "
+            "Restraint reads as confidence — best for design-conscious "
+            "startups, agencies, and product roles."
+        ),
+    )
+
+
+def ats_executive_config() -> dict[str, Any]:
+    """``ats_executive`` preset — serif, banner header, dates right of
+    role line, larger name.
+
+    For senior managers, directors, VPs. The banner header gives the
+    page a confident top-weight; the dates-right layout keeps each role
+    visually scannable for time-spent.
+    """
+    return _base_template_config(
+        "ats_executive",
+        "ATS Executive",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_EDUCATION,
+         SECTION_SKILLS, SECTION_PROJECTS],
+        font_family="serif",
+        accent_color="#0f172a",  # slate-900 — strongest dark
+        density="spacious",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="banner",            # ← big name, banner feel
+        section_heading_style="underline",
+        experience_layout="dates_right",  # ← role left, dates right
+        skills_layout="comma",
+        description=(
+            "Serif banner header (large name), generous spacing, dates "
+            "right-aligned next to each role. Conveys seniority and "
+            "composure. Best for director / VP / executive applications."
+        ),
+    )
+
+
+def ats_timeline_config() -> dict[str, Any]:
+    """``ats_timeline`` preset — sans-serif, inline-dates experience,
+    numbered section headings.
+
+    Each role's dates sit in parentheses next to the title — readers
+    see time-spent at a glance. Numbered sections ("01 · EXPERIENCE") "
+    "give a portfolio / project-log feel that suits engineering and
+    research-heavy CVs.
+    """
+    return _base_template_config(
+        "ats_timeline",
+        "ATS Timeline",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_PROJECTS,
+         SECTION_SKILLS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#1e293b",  # slate-800 variant
+        density="normal",
+        bullet_style="dash",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="numbered",  # ← "01 · EXPERIENCE"
+        experience_layout="inline_dates",  # ← dates in parentheses
+        skills_layout="comma",
+        description=(
+            "Numbered sections (01 · EXPERIENCE), inline dates in each "
+            "role heading, sans-serif. Reads like a project log — best "
+            "for engineering, research, and PM roles where the chronology "
+            "is the story."
+        ),
+    )
+
+
+def ats_academic_config() -> dict[str, Any]:
+    """``ats_academic`` preset — serif, YYYY-only dates, plain headings,
+    pipe-separated skills.
+
+    Built for academic CVs, post-docs, grant applications, and research
+    positions where the year (not month) matters. Plain section headings
+    keep the focus on content; pipe-separated skills match the dense
+    bibliographic feel.
+    """
+    return _base_template_config(
+        "ats_academic",
+        "ATS Academic",
+        [SECTION_SUMMARY, SECTION_EDUCATION, SECTION_EXPERIENCE,
+         SECTION_PROJECTS, SECTION_SKILLS],
+        font_family="serif",
+        accent_color="#1f2937",
+        density="compact",
+        bullet_style="dash",
+        date_format="YYYY",  # ← year only
+        page_size="A4",
+        header_style="inline",
+        section_heading_style="plain",
+        experience_layout="compact",
+        skills_layout="pipe",
+        description=(
+            "Serif, year-only dates (YYYY), compact spacing, plain "
+            "section headings, pipe-separated skills. Built for academic "
+            "and research CVs where the year is what matters."
+        ),
+    )
+
+
+def ats_tech_config() -> dict[str, Any]:
+    """``ats_tech`` preset — sans-serif, categorized skills (when
+    structured data is available), bold underline headings.
+
+    Optimised for engineering resumes where skills come in clusters "
+    "(Backend / Frontend / DevOps / Data). Categorized layout needs
+    skills in JSON-Resume-style ``[{"name": "Backend", "keywords": [...]}]``
+    shape; otherwise falls back to comma-separated.
+    """
+    return _base_template_config(
+        "ats_tech",
+        "ATS Tech",
+        [SECTION_SUMMARY, SECTION_SKILLS, SECTION_EXPERIENCE,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#334155",  # slate-700
+        density="normal",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="underline",  # ← thicker underline
+        experience_layout="standard",
+        skills_layout="categorized",         # ← grouped by category
+        description=(
+            "Sans-serif, categorized skills (Backend / Frontend / DevOps "
+            "when JSON-Resume structured), bold underline headings. "
+            "Optimised for engineering resumes where skills cluster by "
+            "domain."
+        ),
+    )
+
+
+def ats_european_config() -> dict[str, Any]:
+    """``ats_european`` preset — sans-serif, inline header, pills skills,
+    plain headings.
+
+    Common pattern on European CVs (Europass-adjacent without being
+    literally Europass): name + title inline, skills shown as discrete
+    pills for quick scanning, no decoration on section headings.
+    """
+    return _base_template_config(
+        "ats_european",
+        "ATS European",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_EDUCATION, SECTION_PROJECTS],
+        font_family="sans",
+        accent_color="#0f172a",
+        density="normal",
+        bullet_style="dash",
+        date_format="MM/YYYY",
+        page_size="A4",
+        header_style="inline",
+        section_heading_style="plain",
+        experience_layout="standard",
+        skills_layout="pills",  # ← each skill as a bordered pill
+        description=(
+            "Inline header (name + title side by side), pills for skills "
+            "(each skill in a bordered box), MM/YYYY dates, plain section "
+            "headings. Europass-adjacent style — clean and scannable."
+        ),
+    )
+
+
+def ats_consulting_config() -> dict[str, Any]:
+    """``ats_consulting`` preset — sans-serif, dates right of role,
+    arrow bullets, compact density.
+
+    Tailored for consultants / contractors / freelancers. Tight layout
+    fits many short engagements on 2 pages; dates-right makes "
+    time-spent obvious at a glance; arrow bullets feel slightly more "
+    "active than dashes.
+    """
+    return _base_template_config(
+        "ats_consulting",
+        "ATS Consulting",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#1e293b",
+        density="compact",
+        bullet_style="arrow",
+        date_format="MM/YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="dates_right",
+        skills_layout="comma",
+        description=(
+            "Sans-serif, dates right-aligned next to each role, arrow "
+            "bullets, compact density. Tailored for consultants and "
+            "contractors — fits many short engagements on 2 pages."
+        ),
+    )
+
+
 # Preset registry — single source of truth for seeding.
 BUILTIN_PRESETS: tuple[Any, ...] = (
     default_template_config(),
     ats_modern_config(),
     ats_compact_config(),
+    ats_minimal_config(),
+    ats_executive_config(),
+    ats_timeline_config(),
+    ats_academic_config(),
+    ats_tech_config(),
+    ats_european_config(),
+    ats_consulting_config(),
 )
 
 
@@ -1204,14 +1787,17 @@ def seed_default_templates(db: Any) -> None:
                 )
             )
         else:
-            # Phase 10A: idempotent upgrade — if the row was seeded with
-            # a legacy config (pre-font_family / pre-accent_color), merge
-            # the new keys in without nuking any user customizations that
-            # may have been patched on top. We only add missing keys.
+            # Phase 10A/10B: idempotent upgrade — if the row was seeded
+            # with a legacy config (pre-font_family / pre-accent_color /
+            # pre-structural-axes), merge the new keys in without nuking
+            # any user customizations that may have been patched on top.
+            # We only add missing keys.
             stored = dict(existing.template_config_json or {})
             merged = {**cfg, **stored}  # stored wins (user patches).
             # Ensure the canonical defaults are present even if stored had
-            # them deleted.
+            # them deleted. Includes the four Phase 10B structural axes
+            # (header_style / section_heading_style / experience_layout /
+            # skills_layout) so existing presets get upgraded in place.
             for key in (
                 "font_family",
                 "accent_color",
@@ -1219,6 +1805,10 @@ def seed_default_templates(db: Any) -> None:
                 "bullet_style",
                 "date_format",
                 "page_size",
+                "header_style",
+                "section_heading_style",
+                "experience_layout",
+                "skills_layout",
             ):
                 if key not in stored:
                     merged[key] = cfg[key]

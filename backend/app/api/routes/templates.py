@@ -60,11 +60,17 @@ def _config_from_payload(
     bullet_style: str | None,
     date_format: str | None,
     page_size: str | None,
+    header_style: str | None = None,
+    section_heading_style: str | None = None,
+    experience_layout: str | None = None,
+    skills_layout: str | None = None,
 ) -> dict[str, Any]:
     """Build a template_config_json blob from styled fields.
 
     Validates the color against the ATS-safe palette so a custom
-    template can never sneak in Comic-Sans red.
+    template can never sneak in Comic-Sans red. Phase 10B adds the
+    four structural axes (header_style / section_heading_style /
+    experience_layout / skills_layout).
     """
     cfg: dict[str, Any] = {}
     if sections is not None:
@@ -82,6 +88,14 @@ def _config_from_payload(
         cfg["date_format"] = date_format
     if page_size is not None:
         cfg["page_size"] = page_size
+    if header_style is not None:
+        cfg["header_style"] = header_style
+    if section_heading_style is not None:
+        cfg["section_heading_style"] = section_heading_style
+    if experience_layout is not None:
+        cfg["experience_layout"] = experience_layout
+    if skills_layout is not None:
+        cfg["skills_layout"] = skills_layout
     return cfg
 
 
@@ -193,6 +207,10 @@ def create_template(
         "bullet_style": payload.bullet_style,
         "date_format": payload.date_format,
         "page_size": payload.page_size,
+        "header_style": payload.header_style,
+        "section_heading_style": payload.section_heading_style,
+        "experience_layout": payload.experience_layout,
+        "skills_layout": payload.skills_layout,
         "ats_friendly": payload.is_ats_friendly,
         "description": payload.description,
     }
@@ -258,6 +276,10 @@ def patch_template(
         bullet_style=payload.bullet_style,
         date_format=payload.date_format,
         page_size=payload.page_size,
+        header_style=payload.header_style,
+        section_heading_style=payload.section_heading_style,
+        experience_layout=payload.experience_layout,
+        skills_layout=payload.skills_layout,
     )
     cfg.update(style_updates)
 

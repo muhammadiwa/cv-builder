@@ -744,6 +744,12 @@ export type BulletStyle = 'dash' | 'bullet' | 'arrow';
 export type DateFormat = 'Mon YYYY' | 'MM/YYYY' | 'YYYY';
 export type PageSize = 'A4' | 'Letter';
 
+// Phase 10B: structural axes — drive LAYOUT, not just typography.
+export type HeaderStyle = 'stacked' | 'inline' | 'banner';
+export type SectionHeadingStyle = 'bar' | 'underline' | 'plain' | 'numbered';
+export type ExperienceLayout = 'standard' | 'dates_right' | 'inline_dates' | 'compact';
+export type SkillsLayout = 'comma' | 'pipe' | 'categorized' | 'pills';
+
 export interface TemplateConfigJson {
   id: string;
   name: string;
@@ -755,6 +761,10 @@ export interface TemplateConfigJson {
   bullet_style: BulletStyle;
   date_format: DateFormat;
   page_size: PageSize;
+  header_style: HeaderStyle;
+  section_heading_style: SectionHeadingStyle;
+  experience_layout: ExperienceLayout;
+  skills_layout: SkillsLayout;
   ats_friendly: boolean;
   description: string;
 }
@@ -802,6 +812,10 @@ export const templatesApi = {
     bullet_style?: BulletStyle;
     date_format?: DateFormat;
     page_size?: PageSize;
+    header_style?: HeaderStyle;
+    section_heading_style?: SectionHeadingStyle;
+    experience_layout?: ExperienceLayout;
+    skills_layout?: SkillsLayout;
     is_ats_friendly?: boolean;
   }): Promise<Template> => {
     const resp = await api.post<Template>('/templates', payload);
@@ -819,6 +833,10 @@ export const templatesApi = {
       bullet_style: BulletStyle;
       date_format: DateFormat;
       page_size: PageSize;
+      header_style: HeaderStyle;
+      section_heading_style: SectionHeadingStyle;
+      experience_layout: ExperienceLayout;
+      skills_layout: SkillsLayout;
       is_ats_friendly: boolean;
     }>,
   ): Promise<Template> => {

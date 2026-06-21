@@ -187,10 +187,34 @@ def _render_draft_to_html(draft: CVDraft) -> str:
     Delegates to the shared ``render_html_document`` and uses the draft's
     id as the CSS scope prefix so multiple drafts can coexist on one page
     (FE compares two CVs side-by-side without style collisions).
+
+    Resolves the draft's ``template_id`` → template config so the
+    rendered HTML honours the full styling of whichever template the
+    user picked (header style, section heading, experience layout,
+    skills layout, etc). Falls back to ``ats_classic`` defaults if the
+    template is missing or unknown — keeps old drafts that predate
+    Phase 10A templates rendering.
     """
+    from app.db.session import SessionLocal
+    from app.models.models import Template
     from app.services.cv_renderer import render_html_document
+
+    template_config: dict[str, Any] = {}
+    if draft.template_id:
+        db = SessionLocal()
+        try:
+            tpl = db.get(Template, draft.template_id)
+            if tpl is not None and isinstance(tpl.template_config_json, dict):
+                template_config = tpl.template_config_json
+        finally:
+            db.close()
+
     profile_like = draft.cv_json or {}
-    return render_html_document(profile_like, scope_id=draft.id)
+    return render_html_document(
+        profile_like,
+        template_config=template_config,
+        scope_id=draft.id,
+    )
 
 
 def _with_front_matter(md: str, draft: CVDraft) -> str:

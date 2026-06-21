@@ -679,6 +679,12 @@ BulletStyleLiteral = Literal["dash", "bullet", "arrow"]
 DateFormatLiteral = Literal["Mon YYYY", "MM/YYYY", "YYYY"]
 PageSizeLiteral = Literal["A4", "Letter"]
 
+# Phase 10B: structural axes that drive LAYOUT (not just typography).
+HeaderStyleLiteral = Literal["stacked", "inline", "banner"]
+SectionHeadingLiteral = Literal["bar", "underline", "plain", "numbered"]
+ExperienceLayoutLiteral = Literal["standard", "dates_right", "inline_dates", "compact"]
+SkillsLayoutLiteral = Literal["comma", "pipe", "categorized", "pills"]
+
 
 def _validate_ats_color(v: str | None) -> str | None:
     """M1 fix: validate accent_color at the Pydantic layer so callers
@@ -735,7 +741,12 @@ class TemplateOut(BaseModel):
 class TemplateCreateIn(BaseModel):
     """Create a new custom template. Built-in presets are read-only —
     POST always creates a new ``user:*`` id. Idempotent on (id) — if
-    a row already exists with that id we return 409."""
+    a row already exists with that id we return 409.
+
+    Phase 10B: added four structural axes (header_style /
+    section_heading_style / experience_layout / skills_layout). All
+    default to the safe legacy values so old API clients keep working.
+    """
 
     model_config = ConfigDict(extra="forbid")
     id: str = Field(..., min_length=3, max_length=40, pattern=r"^[a-z0-9_\-]+$")
@@ -749,6 +760,10 @@ class TemplateCreateIn(BaseModel):
     bullet_style: BulletStyleLiteral = "dash"
     date_format: DateFormatLiteral = "Mon YYYY"
     page_size: PageSizeLiteral = "A4"
+    header_style: HeaderStyleLiteral = "stacked"
+    section_heading_style: SectionHeadingLiteral = "bar"
+    experience_layout: ExperienceLayoutLiteral = "standard"
+    skills_layout: SkillsLayoutLiteral = "comma"
     is_ats_friendly: bool = True
 
     @field_validator("accent_color")
@@ -759,7 +774,12 @@ class TemplateCreateIn(BaseModel):
 
 class TemplatePatchIn(BaseModel):
     """Partial template update. All fields optional. ``id`` is NOT
-    patchable — create a new template instead."""
+    patchable — create a new template instead.
+
+    Phase 10B: includes the four structural axes so users can upgrade
+    an existing custom template to a new layout style without
+    recreating it.
+    """
 
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(None, min_length=1, max_length=200)
@@ -771,6 +791,10 @@ class TemplatePatchIn(BaseModel):
     bullet_style: BulletStyleLiteral | None = None
     date_format: DateFormatLiteral | None = None
     page_size: PageSizeLiteral | None = None
+    header_style: HeaderStyleLiteral | None = None
+    section_heading_style: SectionHeadingLiteral | None = None
+    experience_layout: ExperienceLayoutLiteral | None = None
+    skills_layout: SkillsLayoutLiteral | None = None
     is_ats_friendly: bool | None = None
 
     @field_validator("accent_color")

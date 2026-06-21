@@ -42,7 +42,22 @@ import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import TemplateThumbnail from '../components/templates/TemplateThumbnail';
 
-const PRESET_IDS = new Set(['ats_classic', 'ats_modern', 'ats_compact']);
+// Built-in preset IDs (read-only). Includes all 10 presets shipped by
+// cv_renderer.BUILTIN_PRESETS so the FE groups them correctly under
+// "Built-in presets" rather than "Your templates".
+const PRESET_IDS = new Set([
+  'ats_classic',
+  'ats_modern',
+  'ats_compact',
+  // Phase 10B: seven new structural presets.
+  'ats_minimal',
+  'ats_executive',
+  'ats_timeline',
+  'ats_academic',
+  'ats_tech',
+  'ats_european',
+  'ats_consulting',
+]);
 
 const COLOR_OPTIONS = [
   { value: '#111111', label: 'Default' },
@@ -477,6 +492,19 @@ function TemplateFormModal({
     'Mon YYYY'
   );
   const [pageSize, setPageSize] = useState<'A4' | 'Letter'>('A4');
+  // Phase 10B: four structural axes that drive layout (not just typography).
+  const [headerStyle, setHeaderStyle] = useState<'stacked' | 'inline' | 'banner'>(
+    'stacked'
+  );
+  const [sectionHeadingStyle, setSectionHeadingStyle] = useState<
+    'bar' | 'underline' | 'plain' | 'numbered'
+  >('bar');
+  const [experienceLayout, setExperienceLayout] = useState<
+    'standard' | 'dates_right' | 'inline_dates' | 'compact'
+  >('standard');
+  const [skillsLayout, setSkillsLayout] = useState<
+    'comma' | 'pipe' | 'categorized' | 'pills'
+  >('comma');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(mode === 'edit');
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -501,6 +529,12 @@ function TemplateFormModal({
         setBulletStyle(cfg.bullet_style);
         setDateFormat(cfg.date_format);
         setPageSize(cfg.page_size);
+        // Phase 10B: load structural axes with safe defaults if missing
+        // (legacy presets saved before Phase 10B don't have these keys).
+        setHeaderStyle(cfg.header_style ?? 'stacked');
+        setSectionHeadingStyle(cfg.section_heading_style ?? 'bar');
+        setExperienceLayout(cfg.experience_layout ?? 'standard');
+        setSkillsLayout(cfg.skills_layout ?? 'comma');
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -527,6 +561,11 @@ function TemplateFormModal({
           date_format: dateFormat,
           page_size: pageSize,
           sections,
+          // Phase 10B: structural axes drive the rendered layout.
+          header_style: headerStyle,
+          section_heading_style: sectionHeadingStyle,
+          experience_layout: experienceLayout,
+          skills_layout: skillsLayout,
         };
         const out = await templatesApi.preview({
           cv_json: {
@@ -587,6 +626,11 @@ function TemplateFormModal({
     dateFormat,
     pageSize,
     sections,
+    // Phase 10B: structural axes must retrigger live preview too.
+    headerStyle,
+    sectionHeadingStyle,
+    experienceLayout,
+    skillsLayout,
   ]);
 
   const handleSave = async () => {
@@ -607,6 +651,10 @@ function TemplateFormModal({
           bullet_style: bulletStyle,
           date_format: dateFormat,
           page_size: pageSize,
+          header_style: headerStyle,
+          section_heading_style: sectionHeadingStyle,
+          experience_layout: experienceLayout,
+          skills_layout: skillsLayout,
         });
       } else {
         await templatesApi.patch(templateId!, {
@@ -619,6 +667,10 @@ function TemplateFormModal({
           bullet_style: bulletStyle,
           date_format: dateFormat,
           page_size: pageSize,
+          header_style: headerStyle,
+          section_heading_style: sectionHeadingStyle,
+          experience_layout: experienceLayout,
+          skills_layout: skillsLayout,
         });
       }
       onSaved();
@@ -901,6 +953,95 @@ function TemplateFormModal({
                       {c.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* ── Structural layout (Phase 10B) ────────────────────── */}
+              <div className="border-t border-slate-200 pt-3 mt-1">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Layout
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    structural axes
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Header layout
+                    </label>
+                    <select
+                      value={headerStyle}
+                      onChange={(e) =>
+                        setHeaderStyle(e.target.value as typeof headerStyle)
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="header-style-select"
+                    >
+                      <option value="stacked">Stacked (name on top)</option>
+                      <option value="inline">Inline (name + title)</option>
+                      <option value="banner">Banner (large name)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Section headings
+                    </label>
+                    <select
+                      value={sectionHeadingStyle}
+                      onChange={(e) =>
+                        setSectionHeadingStyle(
+                          e.target.value as typeof sectionHeadingStyle
+                        )
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="section-heading-select"
+                    >
+                      <option value="bar">Bar (uppercase)</option>
+                      <option value="underline">Underline</option>
+                      <option value="plain">Plain</option>
+                      <option value="numbered">Numbered (01 · Title)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Experience layout
+                    </label>
+                    <select
+                      value={experienceLayout}
+                      onChange={(e) =>
+                        setExperienceLayout(
+                          e.target.value as typeof experienceLayout
+                        )
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="experience-layout-select"
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="dates_right">Dates right</option>
+                      <option value="inline_dates">Inline dates</option>
+                      <option value="compact">Compact</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Skills layout
+                    </label>
+                    <select
+                      value={skillsLayout}
+                      onChange={(e) =>
+                        setSkillsLayout(e.target.value as typeof skillsLayout)
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="skills-layout-select"
+                    >
+                      <option value="comma">Comma list</option>
+                      <option value="pipe">Pipe list (A | B | C)</option>
+                      <option value="categorized">Categorized</option>
+                      <option value="pills">Pills</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

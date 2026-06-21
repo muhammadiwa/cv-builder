@@ -5,20 +5,22 @@
  * glance what makes each template different. All visual differences from
  * `TemplateConfigJson` are reflected:
  *
- *   - page_size:      A4 (taller) vs Letter (wider) aspect ratio
- *   - font_family:    serif vs sans vs mono on header + body lines
- *   - accent_color:   applied to the name underline + section underline
- *   - density:        compact (tight) / normal / spacious (airy)
- *   - sections:       shown in the template's actual order
- *   - bullet_style:   tiny indicator glyph on one bullet
- *   - date_format:    not visualised (text-level), reflected via the bullet glyph
+ *   - page_size:           A4 (taller) vs Letter (wider) aspect ratio
+ *   - font_family:         serif vs sans vs mono on header + body lines
+ *   - accent_color:        applied to the name underline + section underline
+ *   - density:             compact (tight) / normal / spacious (airy)
+ *   - sections:            shown in the template's actual order
+ *   - bullet_style:        tiny indicator glyph on one bullet
  *
- * The thumbnail is intentionally schematic — it shows STRUCTURE and
- * STYLING, not pixel-accurate rendering. Users can click "Preview" on the
- * card to open the actual rendered HTML iframe if they want pixel truth.
+ * Phase 10B: also reflects the four structural axes so the visual
+ *   difference between "ATS Classic" and "ATS Minimal" is obvious:
+ *   - header_style:        stacked vs inline vs banner
+ *   - section_heading_style: bar / underline / plain / numbered
+ *   - experience_layout:   standard / dates_right / inline_dates / compact
+ *   - skills_layout:       comma / pipe / categorized / pills
  *
  * Why CSS instead of an iframe? Each card would otherwise need its own
- * `<iframe srcDoc>` which means 3-4 separate document contexts, ~30+ KB
+ * `<iframe srcDoc>` which means 10 separate document contexts, ~30+ KB
  * of inline HTML/CSS each, sandbox-isolated but still costly. A schematic
  * thumbnail is <1 KB and renders instantly.
  */
@@ -64,18 +66,6 @@ const DENSITY_PAD: Record<string, string> = {
   spacious: 'space-y-2',
 };
 
-const DENSITY_NAME: Record<string, string> = {
-  compact: 'A',
-  normal: 'B',
-  spacious: 'C',
-};
-
-const DENSITY_BAR_W: Record<string, string> = {
-  compact: 'w-3/4',
-  normal: 'w-2/3',
-  spacious: 'w-1/2',
-};
-
 export default function TemplateThumbnail({
   config,
   className = 'h-44',
@@ -88,6 +78,18 @@ export default function TemplateThumbnail({
   // Cap to 5 so the thumbnail stays readable on small cards.
   const visibleSections = sections.slice(0, 5);
   const bulletGlyph = BULLET_GLYPH[config.bullet_style] ?? BULLET_GLYPH.dash;
+  const headerStyle = config.header_style ?? 'stacked';
+  const sectionHeadingStyle = config.section_heading_style ?? 'bar';
+  const experienceLayout = config.experience_layout ?? 'standard';
+  const skillsLayout = config.skills_layout ?? 'comma';
+
+  // The skills row visualises skills_layout (pipe | pills | categorized |
+  // comma fallback). Renders below the section list as a single row of
+  // bars with separators OR bordered pills — the most visible cue that
+  // distinguishes, e.g., ATS Minimal from ATS Classic.
+  const skillsIdx = sections.indexOf('skills');
+  const visibleSkillsIdx = skillsIdx >= 0 && skillsIdx < 5 ? skillsIdx : -1;
+  const skillNames = ['Python', 'Go', 'Rust'];
 
   return (
     <div
@@ -100,86 +102,505 @@ export default function TemplateThumbnail({
         className="absolute inset-0 rounded-[3px] shadow-sm border border-slate-200/80 overflow-hidden flex flex-col"
         style={{ backgroundColor: '#ffffff' }}
       >
-        {/* Header: 2 lines (name + title) with accent underline */}
-        <div
-          className="px-2.5 pt-2 pb-1.5"
-          style={{
-            borderBottom: `1px solid ${accentColor}22`,
-          }}
-        >
+        {/* ── Header ─────────────────────────────────────────────── */}
+        {headerStyle === 'inline' ? (
+          // Inline: name on left, title on right (flex row)
           <div
-            className="h-1.5 rounded-sm"
-            style={{
-              backgroundColor: accentColor,
-              width: '55%',
-              opacity: 0.92,
-            }}
-          />
+            className="flex items-baseline justify-between px-2.5 pt-2 pb-1.5"
+            style={{ borderBottom: `1px solid ${accentColor}22` }}
+          >
+            <div
+              className="h-1.5 rounded-sm"
+              style={{ backgroundColor: accentColor, width: '50%', opacity: 0.92 }}
+            />
+            <div
+              className="h-1 rounded-sm"
+              style={{ backgroundColor: accentColor, width: '25%', opacity: 0.55 }}
+            />
+          </div>
+        ) : headerStyle === 'banner' ? (
+          // Banner: large name fills width, contact line below
           <div
-            className="h-1 mt-1 rounded-sm"
-            style={{
-              backgroundColor: accentColor,
-              width: '35%',
-              opacity: 0.55,
-            }}
-          />
+            className="px-2.5 pt-2 pb-1.5"
+            style={{ borderBottom: `1px solid ${accentColor}22` }}
+          >
+            <div
+              className="h-2.5 rounded-sm"
+              style={{ backgroundColor: accentColor, width: '70%', opacity: 0.95 }}
+            />
+            <div
+              className="h-1 mt-1 rounded-sm ml-auto"
+              style={{ backgroundColor: accentColor, width: '60%', opacity: 0.45 }}
+            />
+            <div
+              className="h-[3px] mt-1.5 rounded-sm"
+              style={{ backgroundColor: accentColor, opacity: 0.3, width: '90%' }}
+            />
+          </div>
+        ) : (
+          // Stacked (default): name + title + contact
           <div
-            className="h-[3px] mt-1.5 rounded-sm"
-            style={{ backgroundColor: accentColor, opacity: 0.3 }}
-          />
-        </div>
+            className="px-2.5 pt-2 pb-1.5"
+            style={{ borderBottom: `1px solid ${accentColor}22` }}
+          >
+            <div
+              className="h-1.5 rounded-sm"
+              style={{ backgroundColor: accentColor, width: '55%', opacity: 0.92 }}
+            />
+            <div
+              className="h-1 mt-1 rounded-sm"
+              style={{ backgroundColor: accentColor, width: '35%', opacity: 0.55 }}
+            />
+            <div
+              className="h-[3px] mt-1.5 rounded-sm"
+              style={{ backgroundColor: accentColor, opacity: 0.3 }}
+            />
+          </div>
+        )}
 
-        {/* Section rows */}
+        {/* ── Section rows ────────────────────────────────────────── */}
         <div
           className={`flex-1 px-2.5 py-2 ${DENSITY_PAD[config.density] ?? DENSITY_PAD.normal}`}
         >
-          {visibleSections.map((s, idx) => (
-            <div key={`${s}-${idx}`} className="leading-none">
-              <div className="flex items-baseline gap-1 mb-1">
-                <span
-                  className="text-[7px] font-semibold uppercase tracking-wider"
-                  style={{
-                    color: accentColor,
-                    fontFamily,
-                    opacity: 0.85,
-                  }}
-                >
-                  {SECTION_LABELS[s] ?? s}
+          {visibleSections.map((s, idx) => {
+            const isSkills = idx === visibleSkillsIdx;
+            // Section heading style — visible difference:
+            // - "bar": uppercase + bottom border (default)
+            // - "underline": title-case + thicker bottom border
+            // - "plain": title-case, no border, bold
+            // - "numbered": "01 · Title" with numeric prefix
+            const headingBase =
+              'text-[7px] font-semibold uppercase tracking-wider';
+            const headingStyle: React.CSSProperties = {
+              color: accentColor,
+              fontFamily,
+            };
+            let headingEl: React.ReactNode;
+            if (sectionHeadingStyle === 'numbered') {
+              headingEl = (
+                <span className="flex items-baseline gap-1 mb-1">
+                  <span
+                    className={`${headingBase}`}
+                    style={{ ...headingStyle, opacity: 0.55 }}
+                  >
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                  <span className={`${headingBase}`} style={headingStyle}>
+                    {SECTION_LABELS[s] ?? s}
+                  </span>
+                  <span
+                    className="flex-1 h-[1px] mt-[3px]"
+                    style={{ backgroundColor: accentColor, opacity: 0.18 }}
+                  />
                 </span>
-                <span
-                  className="flex-1 h-[1px] mt-[3px]"
-                  style={{ backgroundColor: accentColor, opacity: 0.18 }}
-                />
+              );
+            } else if (sectionHeadingStyle === 'plain') {
+              headingEl = (
+                <span className="flex items-baseline gap-1 mb-1">
+                  <span
+                    className={`${headingBase}`}
+                    style={{
+                      ...headingStyle,
+                      opacity: 1,
+                      textTransform: 'none',
+                      letterSpacing: 'normal',
+                      fontSize: '8px',
+                    }}
+                  >
+                    {SECTION_LABELS[s] ?? s}
+                  </span>
+                </span>
+              );
+            } else if (sectionHeadingStyle === 'underline') {
+              headingEl = (
+                <span className="mb-1 block">
+                  <span
+                    className={`${headingBase}`}
+                    style={{
+                      ...headingStyle,
+                      textTransform: 'none',
+                      letterSpacing: 'normal',
+                      fontSize: '8px',
+                    }}
+                  >
+                    {SECTION_LABELS[s] ?? s}
+                  </span>
+                  <span
+                    className="block h-[2px] mt-1"
+                    style={{ backgroundColor: accentColor, opacity: 0.35 }}
+                  />
+                </span>
+              );
+            } else {
+              // bar (default)
+              headingEl = (
+                <span className="flex items-baseline gap-1 mb-1">
+                  <span className={`${headingBase}`} style={headingStyle}>
+                    {SECTION_LABELS[s] ?? s}
+                  </span>
+                  <span
+                    className="flex-1 h-[1px] mt-[3px]"
+                    style={{ backgroundColor: accentColor, opacity: 0.18 }}
+                  />
+                </span>
+              );
+            }
+            return (
+              <div key={`${s}-${idx}`} className="leading-none">
+                {headingEl}
+                {isSkills && skillsLayout !== 'comma' ? (
+                  // Skills gets its own visualisation, not body bullets
+                  <SkillsRow
+                    accentColor={accentColor}
+                    fontFamily={fontFamily}
+                    layout={skillsLayout}
+                    names={skillNames}
+                  />
+                ) : isSkills ? (
+                  // Default comma: show 2-3 thin body lines
+                  <DefaultSkillsRow
+                    accentColor={accentColor}
+                  />
+                ) : (
+                  // Experience / Education / Projects: body lines per layout
+                  <ExperienceBody
+                    accentColor={accentColor}
+                    fontFamily={fontFamily}
+                    bulletGlyph={bulletGlyph}
+                    density={config.density ?? 'normal'}
+                    layout={experienceLayout}
+                  />
+                )}
               </div>
-              {/* 2-3 body lines per section (varies by density) */}
-              <div className={`${DENSITY_PAD[config.density] ?? DENSITY_PAD.normal} pl-1`}>
-                {[0, 1].map((i) => (
-                  <div key={i} className="flex items-baseline gap-1">
-                    <span
-                      className="text-[7px] flex-shrink-0"
-                      style={{
-                        color: accentColor,
-                        fontFamily,
-                        opacity: 0.7,
-                      }}
-                    >
-                      {bulletGlyph}
-                    </span>
-                    <span
-                      className={`h-[3px] rounded-sm ${i === 0 ? DENSITY_BAR_W[config.density] : 'w-2/5'}`}
-                      style={{ backgroundColor: accentColor, opacity: 0.22 }}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-// Re-export the density helper so other components (e.g. TemplateCard)
-// can show a small "A/B/C" pill next to the density name if desired.
-export { DENSITY_NAME };
+// Skills row variants — make skills_layout visible at a glance.
+function SkillsRow({
+  accentColor,
+  fontFamily,
+  layout,
+  names,
+}: {
+  accentColor: string;
+  fontFamily: string;
+  layout: string;
+  names: string[];
+}) {
+  if (layout === 'pills') {
+    // Bordered pill per skill — clearly different from any other layout
+    return (
+      <div className="flex flex-wrap gap-[2px] pl-0.5">
+        {names.map((n) => (
+          <span
+            key={n}
+            className="inline-block px-1 py-[1px] rounded-sm border text-[6px]"
+            style={{
+              borderColor: `${accentColor}55`,
+              color: accentColor,
+              fontFamily,
+            }}
+          >
+            {n}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (layout === 'pipe') {
+    // Pipe-separated, inline
+    return (
+      <div className="flex items-baseline gap-1 pl-0.5 leading-tight">
+        <span
+          className="text-[6px]"
+          style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+        >
+          {names.join(' | ')}
+        </span>
+      </div>
+    );
+  }
+  if (layout === 'categorized') {
+    // Bold category + comma list — 2 groups
+    return (
+      <div className="flex flex-col gap-[2px] pl-0.5 leading-tight">
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[6px] font-bold"
+            style={{ color: accentColor, fontFamily }}
+          >
+            Backend:
+          </span>
+          <span
+            className="text-[6px]"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            Python, Go
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[6px] font-bold"
+            style={{ color: accentColor, fontFamily }}
+          >
+            Infra:
+          </span>
+          <span
+            className="text-[6px]"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            K8s, AWS
+          </span>
+        </div>
+      </div>
+    );
+  }
+  // comma fallback
+  return <DefaultSkillsRow accentColor={accentColor} />;
+}
+
+function DefaultSkillsRow({ accentColor }: { accentColor: string }) {
+  return (
+    <div className="space-y-[2px] pl-1">
+      <div className="flex items-baseline gap-1">
+        <span
+          className="text-[7px] flex-shrink-0"
+          style={{ color: accentColor, opacity: 0.7 }}
+        >
+          •
+        </span>
+        <span
+          className="h-[3px] rounded-sm w-3/4"
+          style={{ backgroundColor: accentColor, opacity: 0.22 }}
+        />
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span
+          className="text-[7px] flex-shrink-0"
+          style={{ color: accentColor, opacity: 0.7 }}
+        >
+          •
+        </span>
+        <span
+          className="h-[3px] rounded-sm w-2/5"
+          style={{ backgroundColor: accentColor, opacity: 0.22 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Experience body — visualise experience_layout.
+function ExperienceBody({
+  accentColor,
+  fontFamily,
+  bulletGlyph,
+  density,
+  layout,
+}: {
+  accentColor: string;
+  fontFamily: string;
+  bulletGlyph: string;
+  density: string;
+  layout: string;
+}) {
+  const rowCls = DENSITY_PAD[density] ?? DENSITY_PAD.normal;
+
+  if (layout === 'dates_right') {
+    // Flex row: title on left, dates on right
+    return (
+      <div className={`${rowCls} pl-1`}>
+        <div className="flex items-baseline justify-between gap-1">
+          <span
+            className="h-[3px] rounded-sm"
+            style={{
+              backgroundColor: accentColor,
+              opacity: 0.55,
+              width: '60%',
+            }}
+          />
+          <span
+            className="h-[3px] rounded-sm"
+            style={{
+              backgroundColor: accentColor,
+              opacity: 0.35,
+              width: '22%',
+            }}
+          />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[7px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[3px] rounded-sm w-3/4"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[7px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[3px] rounded-sm w-2/5"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+      </div>
+    );
+  }
+  if (layout === 'inline_dates') {
+    // Title row includes "(dates)" inline
+    return (
+      <div className={`${rowCls} pl-1`}>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="h-[3px] rounded-sm"
+            style={{
+              backgroundColor: accentColor,
+              opacity: 0.55,
+              width: '50%',
+            }}
+          />
+          <span
+            className="text-[6px]"
+            style={{ color: accentColor, fontFamily, opacity: 0.55 }}
+          >
+            (2021)
+          </span>
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[7px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[3px] rounded-sm w-3/4"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[7px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[3px] rounded-sm w-2/5"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+      </div>
+    );
+  }
+  if (layout === 'compact') {
+    // Tighter: smaller bars, less spacing
+    return (
+      <div className="space-y-[1px] pl-1">
+        <span
+          className="block h-[2px] rounded-sm"
+          style={{
+            backgroundColor: accentColor,
+            opacity: 0.5,
+            width: '45%',
+          }}
+        />
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[6px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[2px] rounded-sm w-3/4"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span
+            className="text-[6px] flex-shrink-0"
+            style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+          >
+            {bulletGlyph}
+          </span>
+          <span
+            className="h-[2px] rounded-sm w-2/5"
+            style={{ backgroundColor: accentColor, opacity: 0.22 }}
+          />
+        </div>
+      </div>
+    );
+  }
+  // standard (default)
+  return (
+    <div className={`${rowCls} pl-1`}>
+      <div className="flex items-baseline gap-1">
+        <span
+          className="text-[7px] flex-shrink-0"
+          style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+        >
+          {bulletGlyph}
+        </span>
+        <span
+          className="h-[3px] rounded-sm w-3/4"
+          style={{ backgroundColor: accentColor, opacity: 0.22 }}
+        />
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span
+          className="text-[7px] flex-shrink-0"
+          style={{ color: accentColor, fontFamily, opacity: 0.7 }}
+        >
+          {bulletGlyph}
+        </span>
+        <span
+          className="h-[3px] rounded-sm w-2/5"
+          style={{ backgroundColor: accentColor, opacity: 0.22 }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Section heading style labels (used by form dropdowns) ──────────
+export const SECTION_HEADING_LABELS: Record<string, string> = {
+  bar: 'Bar',
+  underline: 'Underline',
+  plain: 'Plain',
+  numbered: 'Numbered',
+};
+
+export const HEADER_STYLE_LABELS: Record<string, string> = {
+  stacked: 'Stacked',
+  inline: 'Inline',
+  banner: 'Banner',
+};
+
+export const EXPERIENCE_LAYOUT_LABELS: Record<string, string> = {
+  standard: 'Standard',
+  dates_right: 'Dates right',
+  inline_dates: 'Inline dates',
+  compact: 'Compact',
+};
+
+export const SKILLS_LAYOUT_LABELS: Record<string, string> = {
+  comma: 'Comma list',
+  pipe: 'Pipe list',
+  categorized: 'Categorized',
+  pills: 'Pills',
+};
