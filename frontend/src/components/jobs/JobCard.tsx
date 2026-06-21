@@ -146,23 +146,15 @@ export default function JobCard({
           />
         </div>
 
-        {/* Phase 10D: dark score panel (Jobright-style) on the right of
-            the card. Click → opens Match Score Drawer. Status badge
-            stays below the panel (spec G.2: status must remain visible). */}
+        {/* Phase 10E: clean colored badge (no dark bg, no supporting
+            tags) on the right of the card. Click → opens Match Score
+            Drawer for the full breakdown. */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           <JobMatchScorePanel
-            job={job}
-            match={match}
             jobStatus={job.status}
             matchScore={match?.match_score ?? null}
             confidenceScore={match?.confidence_score ?? null}
             onClick={handleScoreClick}
-            supportingTagsProps={{
-              hasTailoredCv,
-              matchedSkillsCount,
-              totalRequiredSkills,
-              profilePreferences,
-            }}
           />
         </div>
       </div>
@@ -171,7 +163,23 @@ export default function JobCard({
         <div className="flex items-center gap-2 text-[12px] text-slate-500">
           <span>{job.source_type === 'url' ? 'From URL' : 'Manual paste'}</span>
           <span>·</span>
-          <span>{formatRelative(job.created_at)}</span>
+          {/* Phase 10E: show the SOURCE posting time when we have it
+              (extracted from JSON-LD datePosted / Jobstreet listedAt
+              during scrape). Falls back to "Added Xh ago" using our
+              own created_at when the source didn't expose a date. The
+              label changes so the user knows which clock they're
+              looking at — these can differ by days. */}
+          <span
+            title={
+              job.posted_at
+                ? `Posted on source: ${new Date(job.posted_at).toLocaleString()}`
+                : `Added to JobFind: ${new Date(job.created_at).toLocaleString()}`
+            }
+          >
+            {job.posted_at
+              ? `Posted ${formatRelative(job.posted_at)}`
+              : `Added ${formatRelative(job.created_at)}`}
+          </span>
         </div>
 
         <div className="flex items-center gap-1">

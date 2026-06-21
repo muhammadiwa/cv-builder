@@ -158,6 +158,11 @@ class JobIn(BaseModel):
     salary_currency: str | None = None
     job_analysis_json: dict[str, Any] = Field(default_factory=dict)
     ats_keywords_json: dict[str, Any] = Field(default_factory=dict)
+    # When the source job board published the role (NOT when the user
+    # added it to JobFind). For 'url' intake the scraper may set/override
+    # this; for 'manual' the user can paste the date or leave it null
+    # (the FE will fall back to created_at).
+    posted_at: datetime | None = None
 
 
 class JobOut(JobIn):
@@ -197,6 +202,7 @@ class JobListItem(BaseModel):
     parsed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    posted_at: datetime | None = None
 
 
 class PaginatedJobsOut(BaseModel):

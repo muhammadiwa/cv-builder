@@ -112,6 +112,10 @@ export interface JobOut {
   parsed_at?: string | null;
   created_at: string;
   updated_at: string;
+  // When the source job board published the role. Preferred over
+  // created_at for "Posted X ago" display. Null if the source didn't
+  // expose a date (manual paste without user-supplied date).
+  posted_at?: string | null;
 }
 
 export interface JobIn {
@@ -127,6 +131,10 @@ export interface JobIn {
   salary_min?: number;
   salary_max?: number;
   salary_currency?: string;
+  // Optional: client-supplied posting date for the 'manual' path.
+  // The 'url' path usually leaves this null — the scraper will
+  // override it from the source HTML if available.
+  posted_at?: string | null;
 }
 
 // Phase 10E: paginated wrapper for the /api/jobs list response.

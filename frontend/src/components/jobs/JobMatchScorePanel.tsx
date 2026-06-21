@@ -1,23 +1,17 @@
 /**
- * JobMatchScorePanel — dark "score panel" inspired by Jobright AI's
- * right-side score block (85% / GOOD MATCH / checkmark tags).
+ * JobMatchScorePanel — clean colored badge with score + level label.
  *
- * Phase 10D: gives the match score dedicated visual real estate so
- * users can scan match quality at a glance. The dark background
- * contrasts with the white card body, making the score the page's
- * primary signal.
+ * Phase 10E redesign: dropped the dark slate-900 background and the
+ * stacked SupportingTags row. The card now reads as:
  *
- * Visual stack (top → bottom):
- *   1. Circular progress ring with score number inside
- *   2. Match label (Strong / Good / Partial / Low / etc)
- *   3. Supporting checkmark tags (CV ready, Remote, Within range, etc)
+ *   ┌─────────┐
+ *   │   49    │   ← big score number, colored by band
+ *   │  Low    │   ← small label below
+ *   └─────────┘
  *
- * Spec coverage:
- *   - G.1: circular ring + score + label, compact
- *   - G.2: status "Analyzed" still visible — parent renders it
- *          adjacent to this panel
- *   - H.6: low confidence state shows confidence indicator
- *   - O: supporting tags are evidence-based only, never fabricated
+ * Click → opens the Match Score Detail Drawer (existing behavior).
+ * Supporting tags (CV ready, Remote, Salary shown, etc.) are no
+ * longer rendered here — they're available in the drawer.
  */
 import clsx from 'clsx';
 import {
@@ -29,7 +23,6 @@ import {
 import type { JobStatus } from '../../lib/api';
 import type { MatchLabel } from './JobMatchScoreBadge';
 import { matchLabelFromScore } from './JobMatchScoreBadge';
-import SupportingTags, { type SupportingTagsProps } from './SupportingTags';
 
 interface JobMatchScorePanelProps {
   jobStatus: JobStatus;
@@ -39,10 +32,12 @@ interface JobMatchScorePanelProps {
   confidenceScore?: number | null;
   /** Click opens the Match Score Detail Drawer. */
   onClick?: (e?: React.MouseEvent) => void;
-  /** Supporting tags props (evidence-based only). */
-  supportingTagsProps?: Omit<SupportingTagsProps, 'job' | 'match'>;
-  job: SupportingTagsProps['job'];
-  match: SupportingTagsProps['match'];
+  // Note: supportingTagsProps was dropped (Phase 10E). The signature
+  // intentionally still accepts unknown extras so callers don't break —
+  // they're just ignored.
+  supportingTagsProps?: unknown;
+  job?: unknown;
+  match?: unknown;
 }
 
 type PanelState = 'analyzed' | 'no-profile' | 'low-confidence' | 'pending' | 'failed';
@@ -73,9 +68,6 @@ export default function JobMatchScorePanel({
   matchScore,
   confidenceScore,
   onClick,
-  job,
-  match,
-  supportingTagsProps,
 }: JobMatchScorePanelProps) {
   const { state, label, ringScore } = resolvePanelState(
     jobStatus,
@@ -83,33 +75,54 @@ export default function JobMatchScorePanel({
     confidenceScore,
   );
 
-  const RING_SIZE = 44;
-  const RING_STROKE = 3.5;
-  const RADIUS = (RING_SIZE - RING_STROKE) / 2;
-  const CIRC = 2 * Math.PI * RADIUS;
-  const dash = ringScore != null ? Math.max(0, Math.min(1, ringScore)) * CIRC : 0;
+  // Color band (used for the score number AND the label pill so they
+  // read as one unit). Bands mirror the deterministic matcher's
+  // recommendation thresholds:
+  //   >= 0.70  → green (apply)
+  //   >= 0.40  → amber (stretch)
+  //   <  0.40  → red   (skip)
+  //   null     → slate (no profile / pending / failed)
+  const bandColor = (() => {
+    if (state === 'analyzed' || state === 'low-confidence') {
+      if (ringScore == null) return 'slate';
+      if (ringScore >= 0.70) return 'emerald';
+      if (ringScore >= 0.40) return 'amber';
+      return 'red';
+    }
+    return 'slate';
+  })();
 
-  // Color: emerald/amber/red on the ring
-  const colorCls =
-    state === 'analyzed' || state === 'low-confidence'
-      ? ringScore != null && ringScore >= 0.7
-        ? 'text-emerald-400'
-        : ringScore != null && ringScore >= 0.5
-        ? 'text-amber-400'
-        : 'text-red-400'
-      : 'text-slate-500';
-
-  // Label color (light teal on dark for readability)
-  const labelCls =
-    state === 'analyzed' && label
-      ? label === 'Excellent' || label === 'Strong' || label === 'Good'
-        ? 'text-emerald-300 border-emerald-400/30 bg-emerald-500/10'
-        : label === 'Partial'
-        ? 'text-amber-300 border-amber-400/30 bg-amber-500/10'
-        : 'text-red-300 border-red-400/30 bg-red-500/10'
-      : 'text-slate-400 border-slate-600 bg-slate-700/40';
+  const palette: Record<string, { bg: string; text: string; ring: string; label: string }> = {
+    emerald: {
+      bg: 'bg-emerald-50 border-emerald-200',
+      text: 'text-emerald-700',
+      ring: '',
+      label: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    },
+    amber: {
+      bg: 'bg-amber-50 border-amber-200',
+      text: 'text-amber-700',
+      ring: '',
+      label: 'bg-amber-100 text-amber-700 border-amber-200',
+    },
+    red: {
+      bg: 'bg-red-50 border-red-200',
+      text: 'text-red-700',
+      ring: '',
+      label: 'bg-red-100 text-red-700 border-red-200',
+    },
+    slate: {
+      bg: 'bg-slate-50 border-slate-200',
+      text: 'text-slate-500',
+      ring: '',
+      label: 'bg-slate-100 text-slate-500 border-slate-200',
+    },
+  };
+  const colors = palette[bandColor];
 
   const interactive = !!onClick && state === 'analyzed';
+  const displayLabel =
+    state === 'low-confidence' ? 'Low conf.' : label;
 
   return (
     <button
@@ -120,108 +133,75 @@ export default function JobMatchScorePanel({
       data-state={state}
       data-score={ringScore != null ? Math.round(ringScore * 100) : null}
       className={clsx(
-        'inline-flex flex-col items-center justify-center gap-1 px-2.5 py-2.5 rounded-lg shrink-0',
-        'bg-slate-900 border border-slate-700 shadow-sm transition-shadow',
-        interactive && 'hover:shadow-md cursor-pointer group',
+        'inline-flex flex-col items-center justify-center min-w-[58px] px-2 py-1.5 rounded-md border',
+        colors.bg,
+        interactive && 'hover:shadow-sm cursor-pointer transition-shadow',
       )}
       title={titleFor(state, ringScore)}
     >
-      {/* Ring + number */}
       {state === 'analyzed' || state === 'low-confidence' ? (
-        <span
-          className="relative inline-flex items-center justify-center"
-          style={{ width: RING_SIZE, height: RING_SIZE }}
-        >
-          <svg width={RING_SIZE} height={RING_SIZE} className="-rotate-90">
-            <circle
-              cx={RING_SIZE / 2}
-              cy={RING_SIZE / 2}
-              r={RADIUS}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={RING_STROKE}
-              className="text-slate-700"
-            />
-            <circle
-              cx={RING_SIZE / 2}
-              cy={RING_SIZE / 2}
-              r={RADIUS}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={RING_STROKE}
-              strokeLinecap="round"
-              strokeDasharray={`${dash} ${CIRC}`}
-              className={colorCls}
-            />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[15px] font-bold tabular-nums text-white">
+        <>
+          <span
+            className={clsx(
+              'text-[20px] font-bold tabular-nums leading-none',
+              colors.text,
+            )}
+          >
             {Math.round((ringScore ?? 0) * 100)}
           </span>
-        </span>
+          {displayLabel && (
+            <span
+              className={clsx(
+                'mt-1 inline-flex items-center gap-0.5 px-1.5 py-0 text-[9px] font-semibold uppercase tracking-wider border rounded',
+                colors.label,
+              )}
+            >
+              {state === 'low-confidence' || displayLabel === 'Low' ? (
+                <XCircle className="w-2.5 h-2.5" />
+              ) : displayLabel === 'Partial' ? (
+                <AlertTriangle className="w-2.5 h-2.5" />
+              ) : (
+                <CheckCircle2 className="w-2.5 h-2.5" />
+              )}
+              {displayLabel}
+            </span>
+          )}
+        </>
       ) : state === 'no-profile' ? (
         <span
           data-testid="match-panel-no-profile"
-          className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center leading-tight"
+          className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider text-center leading-tight"
         >
           No profile
         </span>
       ) : state === 'failed' ? (
         <span
           data-testid="match-panel-failed"
-          className="text-[10px] font-semibold text-red-400 uppercase tracking-wider text-center leading-tight"
+          className="text-[10px] font-semibold text-red-600 uppercase tracking-wider text-center leading-tight"
         >
           Unavailable
         </span>
       ) : (
         <span
           data-testid="match-panel-pending"
-          className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-center leading-tight animate-pulse"
+          className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider text-center leading-tight animate-pulse"
         >
           Pending
         </span>
       )}
 
-      {/* Match label */}
-      {label && (
-        <span
-          className={clsx(
-            'inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-semibold uppercase tracking-wider border',
-            labelCls,
-          )}
-        >
-          {label === 'Low' || (state === 'low-confidence') ? (
-            <XCircle className="w-2.5 h-2.5" />
-          ) : label === 'Partial' ? (
-            <AlertTriangle className="w-2.5 h-2.5" />
-          ) : (
-            <CheckCircle2 className="w-2.5 h-2.5" />
-          )}
-          {state === 'low-confidence' ? 'Low conf.' : label}
-        </span>
-      )}
-
-      {/* Low-confidence hint (spec M) */}
+      {/* Low-confidence hint (spec M) — kept as a tiny icon
+          underneath the badge so the user knows the score may be
+          unreliable. Stays outside the badge bg so it doesn't add
+          visual weight. */}
       {state === 'low-confidence' && (
         <span
-          className="inline-flex items-center gap-0.5 text-[9px] text-amber-300/80"
+          className="inline-flex items-center gap-0.5 text-[9px] text-amber-700/80 mt-0.5"
           title="Match score may be inaccurate due to limited data"
         >
           <Info className="w-2.5 h-2.5" />
           Low data
         </span>
-      )}
-
-      {/* Supporting tags — evidence-based only */}
-      {state === 'analyzed' && supportingTagsProps && (
-        <SupportingTags
-          job={job}
-          match={match}
-          hasTailoredCv={supportingTagsProps.hasTailoredCv}
-          cvFitScore={supportingTagsProps.cvFitScore}
-          profilePreferences={supportingTagsProps.profilePreferences}
-          matchedSkillsCount={supportingTagsProps.matchedSkillsCount}
-          totalRequiredSkills={supportingTagsProps.totalRequiredSkills}
-        />
       )}
     </button>
   );

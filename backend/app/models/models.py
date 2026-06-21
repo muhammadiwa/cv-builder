@@ -150,6 +150,13 @@ class Job(Base):
     # but no column existed, so it never persisted. Adding it now so the
     # parsed_at assertion in tests + the API response actually round-trip.
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # When the source job board actually published the role (NOT when the
+    # user added it to JobFind). Extracted from JSON-LD ``datePosted`` /
+    # Jobstreet ``listedAt.dateTimeUtc`` during scraping. Nullable because
+    # not every source exposes a date and manual-paste jobs never went
+    # through a scraper. The FE prefers this over ``created_at`` when
+    # displaying "when was this posted?".
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     # Soft-delete: list endpoint filters where deleted_at IS NULL.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

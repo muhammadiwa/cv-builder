@@ -112,6 +112,13 @@ async def _safe_scrape_and_analyze_async(job_id: str) -> None:
                 job.raw_description = result.text
                 job.extractor_used = result.extractor_used  # B11 fix
                 job.scraped_at = _utcnow()
+                # posted_at was set at create_job() time from the
+                # client-supplied payload. If the client didn't have
+                # it (most manual flows), the scraper may have extracted
+                # it from the page itself — apply it now so the FE can
+                # show "Posted 3d ago" instead of "Added 7h ago".
+                if result.posted_at is not None:
+                    job.posted_at = result.posted_at
                 job.status = "parsing"
                 db.commit()
             except _SCRAPE_EXC as e:
@@ -223,6 +230,7 @@ async def create_job(
         job_analysis_json=payload.job_analysis_json,
         ats_keywords_json=payload.ats_keywords_json,
         status="scraping" if payload.source_type == "url" else "parsing",
+        posted_at=payload.posted_at,
     )
     db.add(job)
     db.commit()

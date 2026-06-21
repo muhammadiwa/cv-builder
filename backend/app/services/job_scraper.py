@@ -28,6 +28,7 @@ import ipaddress
 import re
 import socket
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -142,6 +143,12 @@ class ScrapeResult:
     final_url: str
     status_code: int
     extractor_used: str   # "selectolax" | "trafilatura" | "beautifulsoup"
+    # When the source job board published the role (extracted from
+    # JSON-LD ``datePosted`` / Jobstreet ``listedAt.dateTimeUtc``).
+    # Optional because not every source exposes a date and we never
+    # want to guess. The FE prefers this over ``Job.created_at`` for
+    # "when was this posted?" display.
+    posted_at: datetime | None = None
 
 
 # ── URL cleanup ────────────────────────────────────────────────────
@@ -306,6 +313,110 @@ def _collapse_whitespace(text: str) -> str:
 # ── Public entry point ────────────────────────────────────────────
 
 
+def _extract_posted_at(html: str) -> datetime | None:
+    """Best-effort extraction of the source-side posting timestamp.
+
+    Different job boards expose this in different shapes. We try a
+    short list of known patterns, in priority order, and return the
+    first one that parses to a sane datetime. Returns None if no
+    pattern matches — the FE will fall back to ``Job.created_at``
+    ("Added Xh ago") in that case, with a clear label so the user
+    knows which timestamp they're seeing.
+
+    Patterns tried (highest priority first):
+      1. JSON-LD ``"datePosted": "2025-01-15"`` (schema.org standard;
+         used by LinkedIn, Greenhouse, Lever, most generic scrapers)
+      2. Jobstreet ``"listedAt":{"dateTimeUtc":"2026-06-18T05:39:04.592Z"}``
+         (graphql-shaped; appears as a stringified JSON blob inside the
+         initial-data script)
+      3. Open Graph ``<meta property="article:published_time" content="...">``
+         (last-resort fallback for sources that don't follow schema.org)
+
+    All returned datetimes are timezone-aware (UTC). We never return
+    a naive datetime because the FE can't reliably localize it.
+    """
+    if not html:
+        return None
+
+    # Pattern 1: JSON-LD datePosted
+    m = re.search(
+        r'"datePosted"\s*:\s*"([^"]+)"',
+        html,
+    )
+    if m:
+        dt = _parse_iso_to_utc(m.group(1))
+        if dt is not None:
+            return dt
+
+    # Pattern 2: Jobstreet listedAt.dateTimeUtc
+    m = re.search(
+        r'"listedAt"\s*:\s*\{[^}]*"dateTimeUtc"\s*:\s*"([^"]+)"',
+        html,
+    )
+    if m:
+        dt = _parse_iso_to_utc(m.group(1))
+        if dt is not None:
+            return dt
+
+    # Pattern 3: <meta property="article:published_time">
+    m = re.search(
+        r'<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)["\']',
+        html,
+        re.IGNORECASE,
+    )
+    if m:
+        dt = _parse_iso_to_utc(m.group(1))
+        if dt is not None:
+            return dt
+
+    return None
+
+
+def _parse_iso_to_utc(value: str) -> datetime | None:
+    """Parse an ISO-8601-ish timestamp string into a UTC datetime.
+
+    Tolerant of:
+      - Trailing 'Z' (UTC)
+      - Trailing fractional seconds (variable length)
+      - Missing timezone (assumes UTC)
+
+    Returns None on any parse failure so callers can try the next
+    pattern without aborting.
+    """
+    if not value:
+        return None
+    # Normalize trailing Z to +00:00 (Python's fromisoformat before 3.11
+    # doesn't accept Z directly).
+    s = value.strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        # Try trimming fractional seconds — some boards emit
+        # 6-digit microseconds that fromisoformat accepts, but a
+        # 3-digit variant gets rejected in older Python.
+        if "." in s:
+            head, _, tail = s.partition(".")
+            tz = ""
+            for suffix in ("+00:00", "+0000", "-00:00", "-0000", "Z"):
+                if tail.endswith(suffix):
+                    tz = tail[-len(suffix):]
+                    tail = tail[:-len(suffix)]
+                    break
+            tail = tail[:6]  # at most microseconds
+            try:
+                dt = datetime.fromisoformat(f"{head}.{tail}{tz}")
+            except ValueError:
+                return None
+        else:
+            return None
+    # Naive datetimes: assume UTC (the source boards all publish in UTC).
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def scrape_job(url: str, *, client: httpx.Client | None = None) -> ScrapeResult:
     """Fetch ``url`` and return the extracted JD text.
 
@@ -384,6 +495,7 @@ def scrape_job(url: str, *, client: httpx.Client | None = None) -> ScrapeResult:
     html = response.text or ""
     final_url = str(response.request.url) if response.request else clean_url
     text, extractor = _extract_main_content(html)
+    posted_at = _extract_posted_at(html)
 
     if not text or len(text) < MIN_EXTRACTED_CHARS:
         raise EmptyContentError(
@@ -412,4 +524,5 @@ def scrape_job(url: str, *, client: httpx.Client | None = None) -> ScrapeResult:
         final_url=final_url,
         status_code=response.status_code,
         extractor_used=extractor,
+        posted_at=posted_at,
     )
