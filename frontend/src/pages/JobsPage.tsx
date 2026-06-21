@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Briefcase, RefreshCw, AlertCircle, Plus, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { jobsApi, matchesApi, profileApi, type JobOut, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
@@ -22,48 +22,10 @@ import {
   ALL_FILTER_CATEGORIES,
 } from '../components/jobs/jobFilters';
 
-type SortBy =
-  | 'newest'
-  | 'oldest'
-  | 'title'
-  | 'match_desc'
-  | 'match_asc'
-  | 'recently_analyzed'
-  | 'failed_first'
-  | 'lowest_experience'
-  | 'highest_salary'
-  | 'lowest_salary'
-  | 'cv_ready'
-  | 'cover_letter_ready'
-  | 'critical_gaps';
-
-// Phase 10E: status filter tabs were removed (the dark score panel
-// on every card already communicates state). All filter groups
-// (Work Mode, Employment, Seniority, etc.) were removed per the
-// user's request — the page is now: sort + paginated grid.
-//
-// "Recommended for You" was also removed because the implementation
-// was just "Highest Match Score + freshness" in disguise. Will be
-// re-added once the user-preferences layer is wired.
-
-// Phase 10E: 13 sort options. Sort is in URL (?sort=...) so links
-// can share the chosen order. The default (no `sort` param) is
-// 'newest' which is the most intuitive order for a brand-new user.
-const SORT_OPTIONS: { value: SortBy; label: string }[] = [
-  { value: 'newest',              label: 'Newest Posted' },
-  { value: 'oldest',              label: 'Oldest Posted' },
-  { value: 'match_desc',          label: 'Highest Match Score' },
-  { value: 'match_asc',           label: 'Lowest Match Score' },
-  { value: 'recently_analyzed',   label: 'Recently Analyzed' },
-  { value: 'lowest_experience',   label: 'Lowest Experience Required' },
-  { value: 'highest_salary',      label: 'Highest Salary' },
-  { value: 'lowest_salary',       label: 'Lowest Salary' },
-  { value: 'cv_ready',            label: 'Jobs With CV Ready' },
-  { value: 'cover_letter_ready',  label: 'Jobs With Cover Letter Ready' },
-  { value: 'critical_gaps',       label: 'Jobs With Critical Gaps' },
-  { value: 'failed_first',        label: 'Failed Analysis First' },
-  { value: 'title',               label: 'Title A–Z' },
-];
+// Phase 10E: sort dropdown was removed per the user's request. The
+// page is now: filter bar + paginated grid. Jobs appear in BE's
+// natural order (newest first, by created_at DESC). No client-side
+// sort override.
 
 // Phase 10E: pagination. 24 jobs per page = 6 rows in the 4-col
 // grid (collapses to 2-3-1 cols on tablet/mobile). Page index is
@@ -94,10 +56,6 @@ export default function JobsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<SortBy>(() => {
-    const s = searchParams.get('sort') as SortBy | null;
-    return s && SORT_OPTIONS.some((o) => o.value === s) ? s : 'newest';
-  });
   // Phase 10D: bulk match summaries (one fetch for the whole grid)
   const [matchSummaries, setMatchSummaries] = useState<JobMatchSummary[]>([]);
   // Drawer state — which job's full match is open
@@ -125,12 +83,13 @@ export default function JobsPage() {
   );
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Sync sort + page + filter state → URL. Single source of truth
-  // is in-memory state; URL is the persistence + shareable link layer.
+  // Sync page + filter state → URL. Single source of truth is
+  // in-memory state; URL is the persistence + shareable link layer.
+  // (Sort removed — jobs always render in the BE's natural order,
+  // newest first by created_at DESC.)
   useEffect(() => {
     const next = searchParamsFromFilterState(filterState);
     searchParamsFromAdvanced(advancedState, next);
-    if (sortBy !== 'newest') next.set('sort', sortBy);
     if (page !== 1) next.set('page', String(page));
     setSearchParams(next, { replace: true });
   }, [filterState, advancedState]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,11 +241,6 @@ export default function JobsPage() {
     fetchJobs();
   };
 
-  const handleSortChange = (newSort: SortBy) => {
-    setSortBy(newSort);
-    setPage(1);  // reset to first page on sort change
-  };
-
   // Map of job_id → match summary for O(1) lookup in the grid.
   const summaryByJobId = useMemo(() => {
     const m = new Map<string, JobMatchSummary>();
@@ -310,68 +264,11 @@ export default function JobsPage() {
   // applies client-side. With pagination, the filter may show
   // fewer items than the page size when filters are active. The
   // pagination controls still reflect the BE's `total` + `has_more`.
+  // Jobs appear in the BE's natural order (newest first by
+  // created_at DESC) — no client-side sort override.
   const visibleJobs = useMemo(() => {
-    const sorted = [...filteredJobs];
-    const scoreOf = (id: string) => summaryByJobId.get(id)?.match_score ?? -1;
-    switch (sortBy) {
-      case 'newest':
-        sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
-        break;
-      case 'oldest':
-        sorted.sort((a, b) => a.created_at.localeCompare(b.created_at));
-        break;
-      case 'title':
-        sorted.sort((a, b) =>
-          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }),
-        );
-        break;
-      case 'match_desc':
-        sorted.sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
-        break;
-      case 'match_asc':
-        sorted.sort((a, b) => scoreOf(a.id) - scoreOf(b.id));
-        break;
-      case 'recently_analyzed':
-        sorted.sort((a, b) => {
-          const ma = summaryByJobId.get(a.id)?.created_at ?? '';
-          const mb = summaryByJobId.get(b.id)?.created_at ?? '';
-          return mb.localeCompare(ma);
-        });
-        break;
-      case 'failed_first':
-        sorted.sort((a, b) =>
-          a.status === 'failed' && b.status !== 'failed' ? -1 : a.status !== 'failed' && b.status === 'failed' ? 1 : 0,
-        );
-        break;
-      case 'lowest_experience':
-        sorted.sort((a, b) => {
-          const ay = (a as any).job_analysis_json?.required_experience_years;
-          const by = (b as any).job_analysis_json?.required_experience_years;
-          if (ay == null && by == null) return 0;
-          if (ay == null) return 1;
-          if (by == null) return -1;
-          return ay - by;
-        });
-        break;
-      case 'highest_salary':
-        sorted.sort((a, b) => (b.salary_max ?? 0) - (a.salary_max ?? 0));
-        break;
-      case 'lowest_salary':
-        sorted.sort((a, b) => {
-          const av = a.salary_min ?? Number.POSITIVE_INFINITY;
-          const bv = b.salary_min ?? Number.POSITIVE_INFINITY;
-          return av - bv;
-        });
-        break;
-      case 'cv_ready':
-      case 'cover_letter_ready':
-      case 'critical_gaps':
-        // Stub sort modes — full impl requires tracking CV/CL drafts.
-        sorted.sort((a, b) => scoreOf(b.id) - scoreOf(a.id));
-        break;
-    }
-    return sorted;
-  }, [filteredJobs, sortBy, summaryByJobId]);
+    return filteredJobs;
+  }, [filteredJobs]);
 
   // The job whose drawer is open. Null = closed.
   const drawerJob = useMemo(
@@ -436,29 +333,13 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Sort dropdown (always visible) + total count */}
+      {/* Count line (sort dropdown removed per user request — jobs
+          always render in the BE's natural order, newest first) */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-[12px] text-slate-600" data-testid="jobs-count">
-            {total === 0 && !loading ? 'No jobs' :
-             total === 0 ? '' :
-             `Showing ${pageStart}–${pageEnd} of ${total} ${total === 1 ? 'job' : 'jobs'}`}
-          </div>
-          <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            <select
-              value={sortBy}
-              onChange={(e) => handleSortChange(e.target.value as SortBy)}
-              data-testid="sort-select"
-              className="bg-white border border-slate-200 rounded-md px-2 py-1 text-[12px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
-            >
-              {SORT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="text-[12px] text-slate-600" data-testid="jobs-count">
+          {total === 0 && !loading ? 'No jobs' :
+           total === 0 ? '' :
+           `Showing ${pageStart}–${pageEnd} of ${total} ${total === 1 ? 'job' : 'jobs'}`}
         </div>
 
         {/* Phase 10D (restored): compact filter bar + All Filters drawer */}
