@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
 import clsx from 'clsx';
-import { jobsApi, matchesApi, type JobOut, type JobStatus, type JobMatchSummary } from '../lib/api';
+import { jobsApi, matchesApi, profileApi, type JobOut, type JobStatus, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import PasteZone from '../components/jobs/PasteZone';
@@ -48,6 +48,15 @@ export default function JobsPage() {
   const [matchSummaries, setMatchSummaries] = useState<JobMatchSummary[]>([]);
   // Drawer state — which job's full match is open
   const [drawerJobId, setDrawerJobId] = useState<string | null>(null);
+  // Phase 10D: profile preferences for supporting tags (read from
+  // base_profile_json if structured fields aren't there yet).
+  const [profilePreferences, setProfilePreferences] = useState<{
+    remote_only?: boolean | null;
+    expected_salary_min?: number | null;
+    expected_salary_max?: number | null;
+    expected_salary_currency?: string | null;
+    work_authorization?: string | null;
+  } | null>(null);
 
   const fetchJobs = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -80,11 +89,65 @@ export default function JobsPage() {
     }
   }, []);
 
+  // Phase 10D: fetch profile preferences (for supporting tags). The
+  // profile lives in base_profile_json which is a free-form dict, so we
+  // best-effort read the structured fields we care about. Missing
+  // fields just mean fewer supporting tags show up — never crash.
+  const fetchProfilePreferences = useCallback(async () => {
+    try {
+      // profileApi.getProfile<{ base_profile_json?: any; remote_only?: boolean; ... }>()
+      const profile = await profileApi.getProfile<{
+        base_profile_json?: Record<string, unknown>;
+        remote_only?: boolean | null;
+        expected_salary_min?: number | null;
+        expected_salary_max?: number | null;
+        expected_salary_currency?: string | null;
+        work_authorization?: string | null;
+      }>();
+      const bpj = profile?.base_profile_json ?? {};
+      // Best-effort: prefer top-level structured fields, fall back to
+      // the free-form bpj (which is what the ProfileEditForm writes).
+      const remoteOnly =
+        (profile?.remote_only as boolean | null | undefined) ??
+        (bpj?.remote_only as boolean | null | undefined) ??
+        (typeof bpj?.work_mode === 'string' && /remote/i.test(bpj.work_mode as string)
+          ? true
+          : null);
+      const expMin =
+        (profile?.expected_salary_min as number | null | undefined) ??
+        (bpj?.expected_salary_min as number | null | undefined) ??
+        null;
+      const expMax =
+        (profile?.expected_salary_max as number | null | undefined) ??
+        (bpj?.expected_salary_max as number | null | undefined) ??
+        null;
+      const expCur =
+        (profile?.expected_salary_currency as string | null | undefined) ??
+        (bpj?.expected_salary_currency as string | null | undefined) ??
+        null;
+      const workAuth =
+        (profile?.work_authorization as string | null | undefined) ??
+        (bpj?.work_authorization as string | null | undefined) ??
+        null;
+      setProfilePreferences({
+        remote_only: remoteOnly ?? null,
+        expected_salary_min: expMin ?? null,
+        expected_salary_max: expMax ?? null,
+        expected_salary_currency: expCur ?? null,
+        work_authorization: workAuth ?? null,
+      });
+    } catch {
+      // No profile yet or 404 — supporting tags will fall back to no-profile state
+      setProfilePreferences(null);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchJobs();
     fetchMatchSummaries();
-  }, [fetchJobs, fetchMatchSummaries]);
+    fetchProfilePreferences();
+  }, [fetchJobs, fetchMatchSummaries, fetchProfilePreferences]);
 
   // Poll if any job is still analyzing.
   // Pattern: clear + only re-arm when transitioning into "has pending".
@@ -348,6 +411,7 @@ export default function JobsPage() {
               onScoreClick={(id) => setDrawerJobId(id)}
               onDelete={handleDelete}
               onRetry={handleRetry}
+              profilePreferences={profilePreferences ?? undefined}
             />
           ))}
         </div>

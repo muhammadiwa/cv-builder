@@ -1,5 +1,5 @@
 /**
- * JobMatchScoreBadge — circular progress ring + score number + label.
+ * JobMatchScoreBadge — circular progress ring + score + label.
  *
  * Phase 10D: per spec, the badge sits in the top-right of the job card
  * near the status badge. It's the visual anchor users scan to find
@@ -53,10 +53,7 @@ interface JobMatchScoreBadgeProps {
   matchScore: number | null;
   /** Optional confidence indicator (0-1). null = unknown. */
   confidenceScore?: number | null;
-  // onClick opens the Match Score Drawer (optional — absent = no interaction).
-  // Receives the underlying React.MouseEvent so callers inside a <Link>
-  // can stopPropagation + preventDefault to avoid the parent link
-  // navigating when the badge is clicked.
+  /** onClick opens the Match Score Drawer (optional — absent = no interaction). */
   onClick?: (e?: React.MouseEvent) => void;
   /** Compact: hide the label text, keep just the ring + number. */
   compact?: boolean;
@@ -73,15 +70,15 @@ export function matchLabelFromScore(score: number): MatchLabel {
 
 /** Maps a 0-1 score to the ring's stroke color (red→amber→emerald). */
 function ringColor(score: number): string {
-  if (score >= 0.7) return 'text-emerald-500';
-  if (score >= 0.5) return 'text-amber-500';
-  return 'text-red-500';
+  if (score >= 0.7) return 'text-emerald-400';
+  if (score >= 0.5) return 'text-amber-400';
+  return 'text-red-400';
 }
 
 /** Maps a recommendation + score to the ring color (overrides ringColor
  *  when recommendation is "skip" to surface red even at higher scores). */
 function ringColorForRec(rec: string | undefined, score: number): string {
-  if (rec === 'skip') return 'text-red-500';
+  if (rec === 'skip') return 'text-red-400';
   return ringColor(score);
 }
 
@@ -89,18 +86,18 @@ function ringColorForRec(rec: string | undefined, score: number): string {
 function labelCls(label: MatchLabel, rec?: string): string {
   // Eligibility Review always amber, regardless of underlying score
   if (label === 'Eligibility Review') {
-    return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
   }
   if (rec === 'skip' || label === 'Low') {
-    return 'bg-red-50 text-red-700 border-red-200';
+    return 'bg-red-500/20 text-red-300 border-red-400/30';
   }
   if (label === 'Partial') {
-    return 'bg-amber-50 text-amber-700 border-amber-200';
+    return 'bg-amber-500/20 text-amber-300 border-amber-400/30';
   }
   if (label === 'Good' || label === 'Strong' || label === 'Excellent') {
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    return 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30';
   }
-  return 'bg-slate-50 text-slate-600 border-slate-200';
+  return 'bg-slate-700 text-slate-300 border-slate-600';
 }
 
 function LabelIcon({ label, rec }: { label: MatchLabel; rec?: string }) {
@@ -159,9 +156,9 @@ export default function JobMatchScoreBadge({
     confidenceScore,
   );
 
-  // Ring is 28px (40px with stroke) — compact enough to fit top-right
-  // of card without crowding the title.
-  const RING_SIZE = 40;
+  // Ring is 36px (44px with stroke) — still compact enough to fit
+  // top-right of card without crowding the title.
+  const RING_SIZE = 36;
   const RING_STROKE = 3;
   const RADIUS = (RING_SIZE - RING_STROKE) / 2;
   const CIRC = 2 * Math.PI * RADIUS;
@@ -203,7 +200,6 @@ export default function JobMatchScoreBadge({
   // Analyzed with profile: circular ring + score
   const rec = undefined; // recommendation is passed in via context (parent decides Eligibility Review)
   const colorCls = ringColorForRec(rec, ringScore);
-  const lblCls = labelCls(label, rec);
 
   return (
     <button
@@ -254,7 +250,7 @@ export default function JobMatchScoreBadge({
         <span
           className={clsx(
             'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border',
-            lblCls,
+            labelCls(label, rec),
           )}
         >
           <LabelIcon label={label} rec={rec} />

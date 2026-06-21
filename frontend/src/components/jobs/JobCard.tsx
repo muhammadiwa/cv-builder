@@ -11,16 +11,16 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { JobOut, JobStatus, JobMatchSummary } from '../../lib/api';
-import JobMatchScoreBadge from './JobMatchScoreBadge';
+import JobMatchScorePanel from './JobMatchScorePanel';
 import JobMatchInsightRow from './JobMatchInsightRow';
 
 interface JobCardProps {
   job: JobOut;
   onDelete?: (id: string) => void;
   onRetry?: (id: string) => void;
-  /** Match summary for the Profile Match score badge (Phase 10D). */
+  /** Match summary for the Profile Match score panel (Phase 10D). */
   match?: JobMatchSummary | null;
-  /** Click on the score badge — opens the Match Score Drawer. */
+  /** Click on the score panel — opens the Match Score Drawer. */
   onScoreClick?: (jobId: string) => void;
   /** True if a tailored CV exists for this job. */
   hasTailoredCv?: boolean;
@@ -28,6 +28,14 @@ interface JobCardProps {
   matchedSkillsCount?: number;
   /** Optional count of total required skills. */
   totalRequiredSkills?: number;
+  /** Profile preferences for supporting tags (Phase 10D). */
+  profilePreferences?: {
+    remote_only?: boolean | null;
+    expected_salary_min?: number | null;
+    expected_salary_max?: number | null;
+    expected_salary_currency?: string | null;
+    work_authorization?: string | null;
+  };
 }
 
 const statusStyles: Record<JobStatus, { label: string; cls: string }> = {
@@ -60,6 +68,7 @@ export default function JobCard({
   hasTailoredCv = false,
   matchedSkillsCount,
   totalRequiredSkills,
+  profilePreferences,
 }: JobCardProps) {
   const isLoading = job.status === 'scraping' || job.status === 'parsing' || job.status === 'pending';
   const isFailed = job.status === 'failed';
@@ -143,21 +152,28 @@ export default function JobCard({
           />
         </div>
 
+        {/* Phase 10D: dark score panel (Jobright-style) on the right of
+            the card. Click → opens Match Score Drawer. Status badge
+            stays below the panel (spec G.2: status must remain visible). */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          {/* Phase 10D: Match Score Badge in the top-right of the card,
-              per spec G.1. Sits above the status badge so the score is
-              the primary visual signal when the user scans the grid. */}
-          <JobMatchScoreBadge
+          <JobMatchScorePanel
+            job={job}
+            match={match}
             jobStatus={job.status}
             matchScore={match?.match_score ?? null}
             confidenceScore={match?.confidence_score ?? null}
             onClick={handleScoreClick}
-            compact
+            supportingTagsProps={{
+              hasTailoredCv,
+              matchedSkillsCount,
+              totalRequiredSkills,
+              profilePreferences,
+            }}
           />
           <span
             data-testid="job-status-badge"
             className={clsx(
-              'px-2 py-0.5 text-[11px] font-medium rounded-full border shrink-0',
+              'px-2 py-0.5 text-[10px] font-medium rounded-full border shrink-0',
               st.cls
             )}
           >
