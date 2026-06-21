@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { User, AlertCircle, RefreshCw, History } from 'lucide-react';
+import { User, AlertCircle, History } from 'lucide-react';
 import clsx from 'clsx';
 
 import { profileApi, UploadStatus } from '../lib/api';
@@ -146,16 +146,6 @@ export default function ProfilePage() {
         icon={User}
         title="Base Profile"
         subtitle="The structured resume data that powers every tailored CV."
-        actions={
-          hasProfile ? (
-            <button
-              onClick={() => qc.invalidateQueries({ queryKey: ['profile'] })}
-              className="btn btn-ghost text-xs"
-            >
-              <RefreshCw size={13} /> Refresh
-            </button>
-          ) : undefined
-        }
       />
 
       {/* Save banner */}

@@ -1,6 +1,96 @@
-import { useState } from 'react';
-import clsx from 'clsx';
-import { Save, X, ChevronDown, ChevronRight, Loader2, Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Save, X, ChevronDown, ChevronRight, Loader2, Plus, Check, Pencil } from 'lucide-react';
+
+/**
+ * Update button shown in the Basics section header. Three visual states:
+ *   - dirty=false: muted "Update" button (disabled, hint there's nothing to save)
+ *   - dirty=true:  primary "Update" + secondary "Discard" buttons
+ *   - justSaved:  green "Saved ✓" pill (auto-clears after 2.5s)
+ *
+ * Other sections get a disabled Update button + tooltip explaining
+ * inline editing isn't there yet (consistent visual pattern).
+ */
+function BasicsUpdateButton({
+  dirty,
+  saving = false,
+  justSaved,
+  onSave,
+  onReset,
+}: {
+  dirty: boolean;
+  saving?: boolean;
+  justSaved: boolean;
+  onSave: () => void;
+  onReset: () => void;
+}) {
+  if (justSaved) {
+    return (
+      <span
+        data-testid="basics-saved-pill"
+        className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-semibold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200"
+      >
+        <Check size={12} /> Saved
+      </span>
+    );
+  }
+  if (dirty) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={saving}
+          data-testid="basics-discard"
+          className="inline-flex items-center gap-1 px-2 py-1 text-[12px] font-medium border border-slate-200 text-slate-700 bg-white rounded hover:border-slate-300 transition-colors disabled:opacity-50"
+        >
+          <X size={12} /> Discard
+        </button>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          data-testid="basics-update"
+          className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-semibold bg-brand-600 text-white rounded hover:bg-brand-700 transition-colors disabled:opacity-50"
+        >
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+          Update
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled
+      data-testid="basics-update"
+      className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-medium border border-slate-200 text-slate-500 bg-slate-50 rounded cursor-not-allowed"
+      title="Edit a field above to enable Update"
+    >
+      <Pencil size={12} /> Update
+    </button>
+  );
+}
+
+/**
+ * Update button for read-only sections (Experience / Skills /
+ * Education / Projects). Inline editing for these isn't there yet,
+ * so the button is disabled with a tooltip that explains the
+ * placeholder honestly — much better UX than a missing button
+ * (where the user might wonder if the section is editable at all).
+ */
+function ReadOnlyUpdateButton({ section }: { section: string }) {
+  return (
+    <button
+      type="button"
+      disabled
+      data-testid={`update-${section.toLowerCase()}`}
+      className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-medium border border-slate-200 text-slate-500 bg-slate-50 rounded cursor-not-allowed"
+      title={`Inline editing for ${section.toLowerCase()} comes in the next phase. Re-upload your resume to refresh this section.`}
+    >
+      <Pencil size={12} /> Update
+    </button>
+  );
+}
 
 export interface ProfileData {
   id: string;
@@ -109,7 +199,13 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
   );
   const [summary, setSummary] = useState(profile.summary ?? '');
 
-  const dirty =
+  // Per-section "just saved" feedback. Each section's Update button
+  // briefly flips this state to true on success so the button can show
+  // a "Saved ✓" pill for a couple of seconds. Cleared on next edit.
+  const [basicsJustSaved, setBasicsJustSaved] = useState(false);
+  const basicsSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const basicsDirty =
     name !== profile.name ||
     title !== (profile.title ?? '') ||
     email !== profile.email ||
@@ -120,14 +216,25 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
     portfolio !== (profile.portfolio ?? '') ||
     summary !== (profile.summary ?? '');
 
-  const handleSave = async () => {
+  // Cleanup the saved-pill timer on unmount
+  useEffect(
+    () => () => {
+      if (basicsSavedTimer.current) clearTimeout(basicsSavedTimer.current);
+    },
+    [],
+  );
+
+  const handleSaveBasics = async () => {
     await onSave({
       name, title, email, phone, location,
       linkedin, github, portfolio, summary,
     });
+    setBasicsJustSaved(true);
+    if (basicsSavedTimer.current) clearTimeout(basicsSavedTimer.current);
+    basicsSavedTimer.current = setTimeout(() => setBasicsJustSaved(false), 2500);
   };
 
-  const handleReset = () => {
+  const handleResetBasics = () => {
     setName(profile.name);
     setTitle(profile.title ?? '');
     setEmail(profile.email);
@@ -137,27 +244,34 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
     setGithub(profile.github ?? '');
     setPortfolio(profile.portfolio ?? '');
     setSummary(profile.summary ?? '');
+    setBasicsJustSaved(false);
+    if (basicsSavedTimer.current) clearTimeout(basicsSavedTimer.current);
   };
 
   const Section = ({
     title,
     open,
     onToggle,
+    headerAction,
     children,
   }: {
     title: string;
     open: boolean;
     onToggle: () => void;
+    headerAction?: React.ReactNode;
     children: React.ReactNode;
   }) => (
     <section className="card card-pad">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between text-left"
-      >
-        <h3 className="section-title mb-0">{title}</h3>
-        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-      </button>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2 text-left flex-1 min-w-0"
+        >
+          <h3 className="section-title mb-0">{title}</h3>
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </button>
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
+      </div>
       {open && <div className="mt-4 space-y-4">{children}</div>}
     </section>
   );
@@ -169,39 +283,31 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
 
   return (
     <div className="space-y-6">
-      {/* Save bar (sticky-feeling, top of form) */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span>
-            Last updated:{' '}
-            {profile.updated_at
-              ? new Date(profile.updated_at).toLocaleString()
-              : 'unknown'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {dirty && (
-            <button
-              onClick={handleReset}
-              disabled={saving}
-              className="btn btn-ghost text-xs"
-            >
-              <X size={13} /> Discard
-            </button>
-          )}
-          <button
-            onClick={handleSave}
-            disabled={!dirty || saving}
-            className={clsx('btn btn-primary text-xs', !dirty && 'opacity-50 cursor-not-allowed')}
-          >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            Save changes
-          </button>
-        </div>
+      {/* Last updated line — kept simple, no actions here. The Update
+          button for each section lives in its own header (per-section
+          save). */}
+      <div className="text-xs text-slate-500">
+        Last updated:{' '}
+        {profile.updated_at
+          ? new Date(profile.updated_at).toLocaleString()
+          : 'unknown'}
       </div>
 
       {/* Basics */}
-      <Section title="Basics" open={basicsOpen} onToggle={() => setBasicsOpen(!basicsOpen)}>
+      <Section
+        title="Basics"
+        open={basicsOpen}
+        onToggle={() => setBasicsOpen(!basicsOpen)}
+        headerAction={
+          <BasicsUpdateButton
+            dirty={basicsDirty}
+            saving={saving}
+            onSave={handleSaveBasics}
+            onReset={handleResetBasics}
+            justSaved={basicsJustSaved}
+          />
+        }
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Full name</label>
@@ -303,6 +409,7 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
         title={`Experience (${work.length})`}
         open={workOpen}
         onToggle={() => setWorkOpen(!workOpen)}
+        headerAction={<ReadOnlyUpdateButton section="Experience" />}
       >
         {work.length === 0 && (
           <div className="text-xs text-slate-500 italic">No experience extracted yet.</div>
@@ -345,6 +452,7 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
         } ${skills.reduce((acc, s) => acc + s.keywords.length, 0) === 1 ? 'keyword' : 'keywords'})`}
         open={skillsOpen}
         onToggle={() => setSkillsOpen(!skillsOpen)}
+        headerAction={<ReadOnlyUpdateButton section="Skills" />}
       >
         {skills.length === 0 && (
           <div className="text-xs text-slate-500 italic">No skills extracted yet.</div>
@@ -375,7 +483,12 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
 
       {/* Education (read-only) */}
       {edu.length > 0 && (
-        <Section title={`Education (${edu.length})`} open={eduOpen} onToggle={() => setEduOpen(!eduOpen)}>
+        <Section
+          title={`Education (${edu.length})`}
+          open={eduOpen}
+          onToggle={() => setEduOpen(!eduOpen)}
+          headerAction={<ReadOnlyUpdateButton section="Education" />}
+        >
           <div className="space-y-2">
             {edu.map((e, i) => (
               <div key={i} className="flex items-baseline justify-between">
@@ -397,6 +510,7 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
           title={`Projects (${projects.length})`}
           open={projOpen}
           onToggle={() => setProjOpen(!projOpen)}
+          headerAction={<ReadOnlyUpdateButton section="Projects" />}
         >
           <div className="space-y-3">
             {projects.map((p, i) => (
