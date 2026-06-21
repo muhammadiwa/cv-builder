@@ -334,19 +334,39 @@ async def _compute_and_persist_match(
         log.info("match_skipped_no_profile", job_id=job.id, error=str(e)[:200])
         return None
 
-    try:
-        result = compute_match(profile_dict, job.job_analysis_json)
-    except Exception as e:  # noqa: BLE001
-        log.warning("compute_match_unexpected", job_id=job.id, error=str(e)[:200])
-        return None
-
-    llm = None
-    if not fast:
+    if fast:
+        # ?fast=true is for batch refreshes that don't need the LLM
+        # narrative or AI scorer. Just deterministic score, no AI.
         try:
-            llm = await narrate_match(result, db)
+            result = compute_match(profile_dict, job.job_analysis_json)
         except Exception as e:  # noqa: BLE001
-            log.warning("narrate_match_unexpected", error=str(e)[:200])
-            # llm stays None — deterministic score is still persisted
+            log.warning("compute_match_unexpected", job_id=job.id, error=str(e)[:200])
+            return None
+        return _persist_match(db, job.id, profile_id, result, llm=None)
+
+    # Phase 10E: full AI scoring. The LLM scores the candidate with a
+    # calibrated rubric and returns evidence-based dimensions. Falls
+    # back to the deterministic matcher if AI fails twice in a row.
+    from app.services.ai_matcher import ai_score_match
+
+    try:
+        result, _ai_raw = await ai_score_match(profile_dict, job.job_analysis_json)
+    except Exception as e:  # noqa: BLE001
+        log.warning("ai_score_match_unexpected", job_id=job.id, error=str(e)[:200])
+        try:
+            result = compute_match(profile_dict, job.job_analysis_json)
+        except Exception as e2:  # noqa: BLE001
+            log.warning("compute_match_unexpected", job_id=job.id, error=str(e2)[:200])
+            return None
+
+    # The narrative (Indonesian 2-3 sentences + actionable advice)
+    # is generated separately. It describes the score, doesn't
+    # determine it. Failures here don't affect the score.
+    try:
+        llm = await narrate_match(result, db)
+    except Exception as e:  # noqa: BLE001
+        log.warning("narrate_match_unexpected", error=str(e)[:200])
+        llm = None
 
     return _persist_match(db, job.id, profile_id, result, llm)
 

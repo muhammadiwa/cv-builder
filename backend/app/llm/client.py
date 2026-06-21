@@ -112,6 +112,7 @@ TASK_TYPES = {
     "resume_parse",   # extract structured data from raw resume text
     "job_analyze",    # extract role, requirements, ATS keywords from JD
     "match",          # score base profile against job + narrate
+    "score_match",    # AI-powered full match scoring (Phase 10E)
     "cv_generate",    # build tailored CV content
     "cv_score",       # score + critique a CV draft
     "cv_improve",     # generate improvement recommendations

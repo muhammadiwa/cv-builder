@@ -15,6 +15,7 @@
                 "resume_parse": "MiniMax-M3",
                 "job_analyze": "MiniMax-M3",
                 "match": "MiniMax-M3",
+                "score_match": "MiniMax-M3",
                 "cv_generate": "MiniMax-M3",
                 "cv_score": "MiniMax-M3",
                 "cv_improve": "MiniMax-M3",
