@@ -77,20 +77,13 @@ function BasicsUpdateButton({
  * so the button is disabled with a tooltip that explains the
  * placeholder honestly — much better UX than a missing button
  * (where the user might wonder if the section is editable at all).
+ *
+ * NOTE: per user feedback, the disabled-with-tooltip approach was
+ * considered annoying visual noise. Removed entirely from
+ * Experience / Skills / Education / Projects — only Basics has
+ * a visible Update button. The "re-upload your resume" path
+ * remains the way to refresh those sections.
  */
-function ReadOnlyUpdateButton({ section }: { section: string }) {
-  return (
-    <button
-      type="button"
-      disabled
-      data-testid={`update-${section.toLowerCase()}`}
-      className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] font-medium border border-slate-200 text-slate-500 bg-slate-50 rounded cursor-not-allowed"
-      title={`Inline editing for ${section.toLowerCase()} comes in the next phase. Re-upload your resume to refresh this section.`}
-    >
-      <Pencil size={12} /> Update
-    </button>
-  );
-}
 
 export interface ProfileData {
   id: string;
@@ -409,7 +402,6 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
         title={`Experience (${work.length})`}
         open={workOpen}
         onToggle={() => setWorkOpen(!workOpen)}
-        headerAction={<ReadOnlyUpdateButton section="Experience" />}
       >
         {work.length === 0 && (
           <div className="text-xs text-slate-500 italic">No experience extracted yet.</div>
@@ -452,7 +444,6 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
         } ${skills.reduce((acc, s) => acc + s.keywords.length, 0) === 1 ? 'keyword' : 'keywords'})`}
         open={skillsOpen}
         onToggle={() => setSkillsOpen(!skillsOpen)}
-        headerAction={<ReadOnlyUpdateButton section="Skills" />}
       >
         {skills.length === 0 && (
           <div className="text-xs text-slate-500 italic">No skills extracted yet.</div>
@@ -487,7 +478,6 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
           title={`Education (${edu.length})`}
           open={eduOpen}
           onToggle={() => setEduOpen(!eduOpen)}
-          headerAction={<ReadOnlyUpdateButton section="Education" />}
         >
           <div className="space-y-2">
             {edu.map((e, i) => (
@@ -510,7 +500,6 @@ export default function ProfileEditForm({ profile, onSave, saving }: ProfileEdit
           title={`Projects (${projects.length})`}
           open={projOpen}
           onToggle={() => setProjOpen(!projOpen)}
-          headerAction={<ReadOnlyUpdateButton section="Projects" />}
         >
           <div className="space-y-3">
             {projects.map((p, i) => (
