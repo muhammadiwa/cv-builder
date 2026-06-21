@@ -1,12 +1,12 @@
 /**
  * Reusable hero "quick facts" grid used by JobDetailPage.
  *
- * P2 fix (Phase 5 review): the original inline grid was copy-paste
- * territory waiting to happen — CV drafts need the same salary/type/
- * experience/education strip. This component accepts a `facts` array
- * and renders any subset; callers pass only the rows that apply.
+ * Phase 10D: count-aware columns — 1 fact = 1 col, 2 = 1+2, 3 = 1+3,
+ * 4+ = 2+4. Previously always used grid-cols-4 which left 3 empty
+ * cells when only 1-2 facts were present.
  */
 import { type LucideIcon } from 'lucide-react';
+import clsx from 'clsx';
 
 export interface QuickFact {
   icon: LucideIcon;
@@ -22,8 +22,15 @@ interface QuickFactsGridProps {
 
 export default function QuickFactsGrid({ facts, footer }: QuickFactsGridProps) {
   if (facts.length === 0 && !footer) return null;
+  // Pick the column count that best matches the fact count so we don't
+  // leave gaping empty cells on jobs with sparse data.
+  const colsClass =
+    facts.length <= 1 ? 'grid-cols-1'
+    : facts.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
+    : facts.length === 3 ? 'grid-cols-1 sm:grid-cols-3'
+    : 'grid-cols-2 md:grid-cols-4';
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-slate-100">
+    <div className={clsx('grid gap-3 pt-4 border-t border-slate-100', colsClass)}>
       {facts.map((f, i) => (
         <div key={`${f.label}-${i}`}>
           <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-1">
@@ -36,7 +43,7 @@ export default function QuickFactsGrid({ facts, footer }: QuickFactsGridProps) {
         </div>
       ))}
       {footer && (
-        <div className="col-span-2 md:col-span-4 text-[12px] text-slate-500 italic">
+        <div className="col-span-full text-[12px] text-slate-500 italic">
           {footer}
         </div>
       )}

@@ -3,10 +3,6 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Briefcase,
-  Building2,
-  MapPin,
-  Globe,
-  Calendar,
   DollarSign,
   GraduationCap,
   Clock,
@@ -20,9 +16,13 @@ import {
   ExternalLink,
   ListChecks,
   Heart,
+  Link2,
+  CalendarPlus,
+  Gauge,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { jobsApi, matchesApi, type JobOut, type JobAnalysis, type JobSkillCategory, type JobMatch } from '../lib/api';
+import PageHeader from '../components/PageHeader';
 import MatchPanel from '../components/jobs/MatchPanel';
 import QuickFactsGrid, { type QuickFact } from '../components/jobs/QuickFactsGrid';
 
@@ -55,22 +55,45 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function SkillChip({ name, keywords }: JobSkillCategory) {
+// Phase 10D fix: Required Skills section used to render a 2-col grid
+// where each category got its own card. When a category had only 1
+// keyword (common case — "LANGUAGES: Python"), each card was a giant
+// 1-word tile wasting vertical space. Now we render a single chip cloud
+// grouped by category in compact rows.
+function SkillsChipCloud({
+  categories,
+  tone = 'brand',
+}: {
+  categories: JobSkillCategory[];
+  tone?: 'brand' | 'pink';
+}) {
+  const cls =
+    tone === 'pink'
+      ? 'bg-pink-50 text-pink-700 border-pink-200'
+      : 'bg-brand-50 text-brand-700 border-brand-200';
   return (
-    <div className="border border-slate-200 rounded-lg p-3 bg-white">
-      <div className="text-[11px] uppercase tracking-wide font-semibold text-slate-500 mb-2">
-        {name}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {keywords.map((kw) => (
-          <span
-            key={kw}
-            className="px-2 py-0.5 text-[12px] font-medium bg-brand-50 text-brand-700 border border-brand-200 rounded"
-          >
-            {kw}
-          </span>
-        ))}
-      </div>
+    <div className="space-y-3">
+      {categories.map((cat) => (
+        <div key={cat.name} className="flex items-start gap-3">
+          <div className="text-[10px] uppercase tracking-wide font-semibold text-slate-500 w-24 lg:w-32 shrink-0 pt-1">
+            {cat.name}
+            <span className="text-slate-400 ml-1">({cat.keywords.length})</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+            {cat.keywords.map((kw) => (
+              <span
+                key={kw}
+                className={clsx(
+                  'px-2 py-0.5 text-[12px] font-medium border rounded',
+                  cls,
+                )}
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -223,24 +246,114 @@ export default function JobDetailPage() {
   const salaryCurrency = analysis?.salary?.currency ?? job.salary_currency;
   const hasSalary = Boolean(salaryCurrency && (salaryMin || salaryMax));
 
+  // Build subtitle for PageHeader — meta line below job title
+  const metaBits: string[] = [];
+  if (analysis?.company || job.company) metaBits.push(analysis?.company || job.company || '');
+  if (analysis?.location || job.location) metaBits.push(analysis?.location || job.location || '');
+  if (analysis?.remote_type || job.remote) metaBits.push('Remote');
+  if (analysis?.seniority || job.seniority) metaBits.push(analysis?.seniority || job.seniority || '');
+  const metaLine = metaBits.filter(Boolean).join(' · ');
+
+  // Compose Quick Facts. Phase 10D: include fallback facts (Source, Posted,
+  // Confidence) so the row never shows a single lonely fact with empty
+  // cells across 3 columns. Always-available fields guarantee at least 3.
+  const facts: QuickFact[] = [
+    // Hard-required / optional from analysis
+    hasSalary && {
+      icon: DollarSign,
+      label: 'Salary',
+      value:
+        salaryMin && salaryMax
+          ? `${salaryCurrency} ${salaryMin.toLocaleString()}–${salaryMax.toLocaleString()}`
+          : salaryMin
+          ? `${salaryCurrency} ${salaryMin.toLocaleString()}+`
+          : `${salaryCurrency} ${salaryMax?.toLocaleString()}`,
+    },
+    analysis?.employment_type && {
+      icon: Clock,
+      label: 'Type',
+      value: analysis.employment_type.replace('-', ' '),
+    },
+    analysis?.required_experience_years !== undefined && {
+      icon: Briefcase,
+      label: 'Experience',
+      value: `${analysis.required_experience_years}+ years`,
+    },
+    analysis?.required_education && {
+      icon: GraduationCap,
+      label: 'Education',
+      value: analysis.required_education,
+    },
+    // Always-available fallbacks (Source + Posted + Confidence) so the
+    // 4-col grid never leaves empty cells when JD is sparse.
+    {
+      icon: job.source_type === 'url' ? Link2 : Copy,
+      label: 'Source',
+      value: job.source_type === 'url' ? 'From URL' : 'Manual paste',
+    },
+    {
+      icon: CalendarPlus,
+      label: 'Posted',
+      value: new Date(job.created_at).toLocaleDateString(),
+    },
+    hasAnalysis && analysis?.confidence_score !== undefined && {
+      icon: Gauge,
+      label: 'AI confidence',
+      value: `${Math.round((analysis.confidence_score || 0) * 100)}%`,
+    },
+  ].filter(Boolean) as QuickFact[];
+
   return (
-    <div className="page-narrow space-y-6 lg:space-y-8">
-      {/* Back link */}
-      <Link
-        to="/jobs"
-        className="inline-flex items-center gap-1.5 text-[13px] text-slate-600 hover:text-slate-900"
-      >
-        <ArrowLeft className="w-3.5 h-3.5" />
-        All jobs
-      </Link>
+    <div className="space-y-6 lg:space-y-8">
+      {/* ── PageHeader — uniform with other pages (Phase 10D) ────── */}
+      <PageHeader
+        icon={Briefcase}
+        title={job.title || 'Untitled role'}
+        subtitle={metaLine || 'Job from your list'}
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            {hasAnalysis && (
+              <span
+                data-testid="ai-analyzed-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-br from-brand-50 to-brand-100 border border-brand-200 rounded-lg text-[11px] font-semibold text-brand-700 uppercase tracking-wide"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                AI Analyzed
+              </span>
+            )}
+            <Link
+              to="/jobs"
+              data-testid="back-to-jobs"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 hover:border-slate-300 bg-white text-[13px] text-slate-700 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              All jobs
+            </Link>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              data-testid="delete-job-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] text-red-600 hover:bg-red-50 hover:text-red-700 border border-transparent rounded-lg transition-colors disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+              Delete
+            </button>
+          </div>
+        }
+      />
 
       {/* Status banner (if analyzing/failed) */}
       {banner && job.status !== 'parsed' && (
         <div
           data-testid="status-banner"
           className={clsx(
-            'mb-4 px-4 py-2.5 border rounded-lg text-[13px] font-medium flex items-center gap-2',
-            banner.cls
+            'px-4 py-2.5 border rounded-lg text-[13px] font-medium flex items-center gap-2',
+            banner.cls,
           )}
         >
           {job.status === 'parsing' || job.status === 'scraping' ? (
@@ -257,105 +370,21 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      {/* Hero card */}
-      <div className="card card-pad mb-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">
-              {job.title || 'Untitled role'}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-slate-600">
-              {job.company && (
-                <span className="flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                  {job.company}
-                </span>
-              )}
-              {analysis?.location || job.location ? (
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  {analysis?.location || job.location}
-                </span>
-              ) : null}
-              {(analysis?.remote_type || job.remote) && (
-                <span className="flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-slate-400" />
-                  Remote
-                </span>
-              )}
-              {(analysis?.seniority || job.seniority) && (
-                <span className="flex items-center gap-1.5">
-                  <Briefcase className="w-3.5 h-3.5 text-slate-400" />
-                  {analysis?.seniority || job.seniority}
-                </span>
-              )}
-              <span className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                Added {new Date(job.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          </div>
-
-          {hasAnalysis && (
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-br from-brand-50 to-brand-100 border border-brand-200 rounded-lg">
-                <Sparkles className="w-3.5 h-3.5 text-brand-700" />
-                <span className="text-[11px] font-semibold text-brand-700 uppercase tracking-wide">
-                  AI Analyzed
-                </span>
-              </div>
-              {analysis?.confidence_score !== undefined && (
-                <span className="text-[11px] text-slate-500">
-                  Confidence: {Math.round((analysis.confidence_score || 0) * 100)}%
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Quick facts row — P2 fix: extracted to a reusable grid. */}
-        {(hasSalary || analysis?.employment_type || analysis?.required_experience_years || analysis?.required_education) && (
+      {/* ── Quick facts card — Phase 10D: own card (was inside hero) ── */}
+      {facts.length > 0 && (
+        <div className="card card-pad">
           <QuickFactsGrid
-            facts={
-              [
-                hasSalary && {
-                  icon: DollarSign,
-                  label: 'Salary',
-                  value:
-                    salaryMin && salaryMax
-                      ? `${salaryCurrency} ${salaryMin.toLocaleString()}–${salaryMax.toLocaleString()}`
-                      : salaryMin
-                      ? `${salaryCurrency} ${salaryMin.toLocaleString()}+`
-                      : `${salaryCurrency} ${salaryMax?.toLocaleString()}`,
-                },
-                analysis?.employment_type && {
-                  icon: Clock,
-                  label: 'Type',
-                  value: analysis.employment_type.replace('-', ' '),
-                },
-                analysis?.required_experience_years !== undefined && {
-                  icon: Briefcase,
-                  label: 'Experience',
-                  value: `${analysis.required_experience_years}+ years`,
-                },
-                analysis?.required_education && {
-                  icon: GraduationCap,
-                  label: 'Education',
-                  value: analysis.required_education,
-                },
-              ].filter(Boolean) as QuickFact[]
-            }
+            facts={facts}
             footer={
               !hasSalary && analysis?.employment_type
                 ? 'Salary not stated in JD'
                 : undefined
             }
           />
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Match panel — Phase 5 */}
+      {/* ── Match panel — Phase 5 ──────────────────────────────── */}
       <MatchPanel
         jobId={id}
         jobStatus={job.status}
@@ -363,9 +392,9 @@ export default function JobDetailPage() {
         onMatchChange={setMatch}
       />
 
-      {/* Summary */}
+      {/* ── Summary (full width when no other section to pair with) ── */}
       {hasAnalysis && analysis?.summary && (
-        <div className="card card-pad mb-6">
+        <div className="card card-pad">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[15px] font-semibold text-slate-900">Summary</h2>
             <CopyButton text={analysis.summary} />
@@ -376,81 +405,90 @@ export default function JobDetailPage() {
         </div>
       )}
 
-      {/* Required skills */}
+      {/* ── Required + Preferred skills (chip cloud) ────────────── */}
       {hasAnalysis && analysis?.required_skills && analysis.required_skills.length > 0 && (
-        <div className="card card-pad mb-6">
+        <div className="card card-pad">
           <div className="flex items-center gap-2 mb-4">
             <ListChecks className="w-4 h-4 text-brand-600" />
             <h2 className="text-[15px] font-semibold text-slate-900">Required skills</h2>
+            <span className="text-[11px] text-slate-500 ml-auto">
+              {analysis.required_skills.reduce((n, c) => n + c.keywords.length, 0)} keywords
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {analysis.required_skills.map((cat) => (
-              <SkillChip key={cat.name} name={cat.name} keywords={cat.keywords} />
-            ))}
-          </div>
+          <SkillsChipCloud categories={analysis.required_skills} tone="brand" />
         </div>
       )}
 
-      {/* Preferred skills */}
       {hasAnalysis && analysis?.preferred_skills && analysis.preferred_skills.length > 0 && (
-        <div className="card card-pad mb-6">
+        <div className="card card-pad">
           <div className="flex items-center gap-2 mb-4">
             <Heart className="w-4 h-4 text-pink-500" />
             <h2 className="text-[15px] font-semibold text-slate-900">Preferred / nice-to-have</h2>
+            <span className="text-[11px] text-slate-500 ml-auto">
+              {analysis.preferred_skills.reduce((n, c) => n + c.keywords.length, 0)} keywords
+            </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {analysis.preferred_skills.map((cat) => (
-              <SkillChip key={cat.name} name={cat.name} keywords={cat.keywords} />
-            ))}
-          </div>
+          <SkillsChipCloud categories={analysis.preferred_skills} tone="pink" />
         </div>
       )}
 
-      {/* Responsibilities */}
-      {hasAnalysis && analysis?.responsibilities && analysis.responsibilities.length > 0 && (
-        <div className="card card-pad mb-6">
-          <h2 className="text-[15px] font-semibold text-slate-900 mb-3">
-            What you'll do
-          </h2>
-          <ul className="space-y-2">
-            {analysis.responsibilities.map((r, i) => (
-              <li key={i} className="flex items-start gap-2.5 text-[14px] text-slate-700 leading-relaxed">
-                <span className="w-1.5 h-1.5 bg-brand-500 rounded-full mt-2 shrink-0" />
-                <span>{r}</span>
-              </li>
-            ))}
-          </ul>
+      {/* ── 2-col: Responsibilities (left) + ATS keywords (right) ──
+          Phase 10D fix: previously these were stacked full-width, both
+          feeling like afterthoughts. Side-by-side at lg+ gives the page
+          a balanced "kiri kanan" rhythm that matches Dashboard cards. */}
+      {hasAnalysis && ((analysis?.responsibilities?.length ?? 0) > 0 || (analysis?.ats_keywords?.length ?? 0) > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 lg:gap-6">
+          {hasAnalysis && analysis?.responsibilities && analysis.responsibilities.length > 0 && (
+            <div className="card card-pad">
+              <h2 className="text-[15px] font-semibold text-slate-900 mb-3">
+                What you'll do
+              </h2>
+              <ul className="space-y-2">
+                {analysis.responsibilities.map((r, i) => (
+                  <li key={i} className="flex items-start gap-2.5 text-[13.5px] text-slate-700 leading-relaxed">
+                    <span className="w-1.5 h-1.5 bg-brand-500 rounded-full mt-2 shrink-0" />
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {hasAnalysis && analysis?.ats_keywords && analysis.ats_keywords.length > 0 && (
+            <div className="card card-pad">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-amber-600" />
+                  <h2 className="text-[15px] font-semibold text-slate-900">
+                    ATS keywords
+                    <span className="ml-2 text-[12px] font-normal text-slate-500">
+                      {analysis.ats_keywords.length} extracted
+                    </span>
+                  </h2>
+                </div>
+                <CopyButton text={analysis.ats_keywords.join(', ')} />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {analysis.ats_keywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="px-2 py-1 text-[12px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-3 italic">
+                Paste these in your CV's skills section for better ATS matching.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ATS keywords */}
-      {hasAnalysis && analysis?.ats_keywords && analysis.ats_keywords.length > 0 && (
-        <div className="card card-pad mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Tag className="w-4 h-4 text-amber-600" />
-            <h2 className="text-[15px] font-semibold text-slate-900">
-              ATS keywords
-              <span className="ml-2 text-[12px] font-normal text-slate-500">
-                ({analysis.ats_keywords.length} extracted — paste these in your CV)
-              </span>
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {analysis.ats_keywords.map((kw) => (
-              <span
-                key={kw}
-                className="px-2 py-1 text-[12px] font-medium bg-amber-50 text-amber-800 border border-amber-200 rounded"
-              >
-                {kw}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Raw JD (collapsible) */}
+      {/* ── Raw JD (collapsible) ────────────────────────────────── */}
       {job.raw_description && (
-        <details className="card card-pad mb-6 group">
+        <details className="card card-pad group">
           <summary className="cursor-pointer text-[13px] font-medium text-slate-700 hover:text-slate-900 flex items-center justify-between">
             <span>Raw job description</span>
             <span className="text-[11px] text-slate-500 group-open:hidden">
@@ -463,37 +501,20 @@ export default function JobDetailPage() {
         </details>
       )}
 
-      {/* Actions footer */}
-      <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-        <div className="flex items-center gap-2">
-          {job.source_url && (
-            <a
-              href={job.source_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary text-[13px]"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-              Open source
-            </a>
-          )}
+      {/* ── Source URL footer (only if not already in actions) ───── */}
+      {job.source_url && (
+        <div className="flex items-center justify-end pt-2">
+          <a
+            href={job.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-slate-700"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Open source URL
+          </a>
         </div>
-
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          data-testid="delete-job-btn"
-          className="btn-ghost text-[13px] text-red-600 hover:bg-red-50 hover:text-red-700"
-        >
-          {deleting ? (
-            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-          ) : (
-            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-          )}
-          Delete
-        </button>
-      </div>
+      )}
     </div>
   );
 }

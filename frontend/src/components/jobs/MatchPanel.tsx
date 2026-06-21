@@ -287,13 +287,14 @@ export default function MatchPanel({
       </div>
 
       {/* Headline score + recommendation */}
-            <div className="flex items-center gap-4 mb-4 pb-4 border-b border-slate-100">
+      <div className="flex items-start gap-5 mb-4 pb-4 border-b border-slate-100">
         <div className="shrink-0">
-          <div className="flex items-baseline gap-1">
-            <span className="text-3xl font-bold text-slate-900 tabular-nums leading-none">
-              {scorePct}
-            </span>
-            <span className="text-base text-slate-500 font-medium">%</span>
+          {/* Phase 10D fix: OVERALL label moves ABOVE the big score
+              (standard UX hierarchy: label first, then the number it's
+              labeling). Score grows to text-5xl so it's the page's
+              visual anchor. */}
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 flex items-center gap-1.5">
+            <span>Overall match</span>
             {/* P3 fix: explain the score on a sparse profile. */}
             {sparseProfile && (
               <span
@@ -301,21 +302,24 @@ export default function MatchPanel({
                 title="Your profile is missing most required skills — upload a complete resume for an accurate match."
                 data-testid="match-sparse-profile-hint"
               >
-                <HelpCircle className="w-4 h-4" />
+                <HelpCircle className="w-3.5 h-3.5" />
               </span>
             )}
           </div>
-          <div className="text-[10px] uppercase tracking-wide text-slate-500 mt-1 flex items-center gap-1.5">
-            <span>overall</span>
-            {/* L2 fix: telemetry summary next to the score. */}
-            {totalMatched > 0 && (
-              <span className="text-slate-400 normal-case tracking-normal">
-                · {match.match_telemetry?.exact ?? 0} exact, {match.match_telemetry?.substring ?? 0} substring, {match.match_telemetry?.fuzzy ?? 0} fuzzy
-              </span>
-            )}
+          <div className="flex items-baseline gap-1">
+            <span className="text-5xl font-bold text-slate-900 tabular-nums leading-none">
+              {scorePct}
+            </span>
+            <span className="text-xl text-slate-500 font-medium">%</span>
           </div>
+          {/* L2 fix: telemetry summary below the score. */}
+          {totalMatched > 0 && (
+            <div className="text-[11px] text-slate-500 mt-1.5 tabular-nums">
+              {match.match_telemetry?.exact ?? 0} exact · {match.match_telemetry?.substring ?? 0} substring · {match.match_telemetry?.fuzzy ?? 0} fuzzy
+            </div>
+          )}
         </div>
-        <div className="flex-1">
+        <div className="flex-1 pt-1">
           <span
             data-testid="match-recommendation"
             className={clsx(
@@ -328,7 +332,7 @@ export default function MatchPanel({
             {match.recommendation === 'skip' && <XCircle className="w-3.5 h-3.5" />}
             {rec.label}
           </span>
-          <p className="text-[12px] text-slate-600 mt-1.5 leading-relaxed">{rec.description}</p>
+          <p className="text-[12.5px] text-slate-600 mt-2 leading-relaxed">{rec.description}</p>
         </div>
       </div>
 
@@ -389,12 +393,14 @@ export default function MatchPanel({
         </div>
       )}
 
-      {/* Skills detail (collapsible) — L1 fix: grouped by category. */}
-      <details className="group" data-testid="match-skills-details">
+      {/* Skills detail (open by default — Phase 10D fix: was hidden
+          behind disclosure, but this is the core value of the match
+          analysis. Users land here to see exactly which skills match). */}
+      <details className="group" data-testid="match-skills-details" open>
         <summary className="cursor-pointer text-[13px] font-medium text-slate-700 hover:text-slate-900 flex items-center justify-between mb-2">
           <span>Skill-by-skill breakdown</span>
           <span className="text-[11px] text-slate-500 group-open:hidden">
-            {match.matched_skills.length + match.missing_skills.length} keywords · click to expand
+            {match.matched_skills.length + match.missing_skills.length} keywords · click to collapse
           </span>
         </summary>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 mt-2">
