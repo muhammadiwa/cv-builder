@@ -22,6 +22,7 @@ import {
   type CoverLetterTone,
   type JobOut,
 } from '../lib/api';
+import { toast } from '../lib/toast';
 
 const TONES: { value: CoverLetterTone; label: string; desc: string }[] = [
   { value: 'professional', label: 'Professional', desc: 'Polished, balanced — the safe default.' },
@@ -45,17 +46,11 @@ export default function CoverLettersPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<CoverLetterOut | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<'preview' | 'edit'>('preview');
   const [saving, setSaving] = useState(false);
   const [rescoring, setRescoring] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
-
-  const showToast = useCallback((type: 'success' | 'error', msg: string) => {
-    setToast({ type, msg });
-    setTimeout(() => setToast(null), 3500);
-  }, []);
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -83,10 +78,10 @@ export default function CoverLettersPage() {
         const detail =
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error).message;
-        showToast('error', detail);
+        toast.error(detail);
       }
     },
-    [showToast],
+    [],
   );
 
   useEffect(() => {
@@ -103,17 +98,17 @@ export default function CoverLettersPage() {
       if (!confirm('Delete this cover letter? This cannot be undone.')) return;
       try {
         await coverLettersApi.delete(id);
-        showToast('success', 'Cover letter deleted');
+        toast.success('Cover letter deleted');
         if (selectedId === id) setSelectedId(null);
         await fetchList();
       } catch (e: unknown) {
         const detail =
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error).message;
-        showToast('error', detail);
+        toast.error(detail);
       }
     },
-    [selectedId, showToast, fetchList],
+    [selectedId, fetchList],
   );
 
   const handlePatch = useCallback(
@@ -124,17 +119,17 @@ export default function CoverLettersPage() {
         const updated = await coverLettersApi.patch(selected.id, patch);
         setSelected(updated);
         setLetters((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-        showToast('success', 'Saved');
+        toast.success('Saved');
       } catch (e: unknown) {
         const detail =
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error).message;
-        showToast('error', detail);
+        toast.error(detail);
       } finally {
         setSaving(false);
       }
     },
-    [selected, showToast],
+    [selected],
   );
 
   const handleRescore = useCallback(async () => {
@@ -144,16 +139,16 @@ export default function CoverLettersPage() {
       const updated = await coverLettersApi.rescore(selected.id);
       setSelected(updated);
       setLetters((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
-      showToast('success', `Rescored: ${updated.score.toFixed(2)}`);
+      toast.success(`Rescored: ${updated.score.toFixed(2)}`);
     } catch (e: unknown) {
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e as Error).message;
-      showToast('error', detail);
+      toast.error(detail);
     } finally {
       setRescoring(false);
     }
-  }, [selected, showToast]);
+  }, [selected]);
 
   const handleExport = useCallback(
     async (fmt: 'pdf' | 'docx') => {
@@ -161,7 +156,7 @@ export default function CoverLettersPage() {
       setExporting(fmt);
       try {
         const { fileName } = await coverLettersApi.exportFile(selected.id, fmt);
-        showToast('success', `Exported ${fileName}`);
+        toast.success(`Exported ${fileName}`);
         // Refresh to pick up the exported status / new history row
         await fetchOne(selected.id);
         await fetchList();
@@ -169,12 +164,12 @@ export default function CoverLettersPage() {
         const detail =
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error).message;
-        showToast('error', detail);
+        toast.error(detail);
       } finally {
         setExporting(null);
       }
     },
-    [selected, showToast, fetchOne, fetchList],
+    [selected, fetchOne, fetchList],
   );
 
   const handleStatusToggle = useCallback(async () => {
@@ -193,23 +188,23 @@ export default function CoverLettersPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Mail className="w-6 h-6" />
+    <div className="space-y-5 lg:space-y-6">
+      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row pt-1 lg:pt-2">
+        <div className="min-w-0">
+          <h1 className="text-lg lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Mail className="w-5 h-5 lg:w-6 lg:h-6 text-brand-600 shrink-0" />
             Cover Letters
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-[13px] lg:text-sm text-slate-500 mt-1">
             Targeted cover letters per job. Editable, scorable, exportable to PDF or DOCX.
           </p>
         </div>
         <button
           onClick={() => setShowGenerate(true)}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-3 py-2 rounded-md"
+          className="btn-primary text-[13px] shrink-0"
           data-testid="generate-btn"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 mr-1.5" />
           Generate Cover Letter
         </button>
       </div>
@@ -220,19 +215,7 @@ export default function CoverLettersPage() {
         </div>
       )}
 
-      {toast && (
-        <div
-          className={clsx(
-            'fixed bottom-6 right-6 z-50 px-4 py-2 rounded-md text-sm shadow-lg',
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white',
-          )}
-          data-testid="toast"
-        >
-          {toast.msg}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
         {/* List */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -333,10 +316,10 @@ export default function CoverLettersPage() {
           onCreated={(cl) => {
             setShowGenerate(false);
             setSelectedId(cl.id);
-            showToast('success', 'Cover letter generated');
+            toast.success('Cover letter generated');
             fetchList();
           }}
-          onError={(m) => showToast('error', m)}
+          onError={(m) => toast.error(m)}
         />
       )}
     </div>

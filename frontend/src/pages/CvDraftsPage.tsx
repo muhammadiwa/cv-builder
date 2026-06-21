@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { FileText, Plus, Trash2, X, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { cvsApi, jobsApi, type CVDraft, type JobOut } from '../lib/api';
+import { toast } from '../lib/toast';
 import TemplatePicker from '../components/templates/TemplatePicker';
 import CVEditor from '../components/cvs/CVEditor';
 import CVRecommendationsPanel from '../components/cvs/CVRecommendationsPanel';
@@ -18,13 +19,7 @@ export default function CvDraftsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDraft, setSelectedDraft] = useState<CVDraft | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const showToast = useCallback((type: 'success' | 'error', msg: string) => {
-    setToast({ type, msg });
-    setTimeout(() => setToast(null), 3500);
-  }, []);
 
   const fetchDrafts = useCallback(async () => {
     setLoading(true);
@@ -51,9 +46,9 @@ export default function CvDraftsPage() {
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e as Error).message;
-      showToast('error', detail);
+      toast.error(detail);
     }
-  }, [showToast]);
+  }, []);
 
   useEffect(() => {
     fetchDrafts();
@@ -69,17 +64,17 @@ export default function CvDraftsPage() {
       if (!confirm('Delete this CV? This cannot be undone.')) return;
       try {
         await cvsApi.delete(id);
-        showToast('success', 'CV deleted');
+        toast.success('CV deleted');
         if (selectedId === id) setSelectedId(null);
         await fetchDrafts();
       } catch (e: unknown) {
         const detail =
           (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
           (e as Error).message;
-        showToast('error', detail);
+        toast.error(detail);
       }
     },
-    [selectedId, showToast, fetchDrafts]
+    [selectedId, fetchDrafts]
   );
 
   const handleDraftUpdate = useCallback((next: CVDraft) => {
@@ -98,23 +93,23 @@ export default function CvDraftsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <FileText className="w-6 h-6" />
+    <div className="space-y-5 lg:space-y-6">
+      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row pt-1 lg:pt-2">
+        <div className="min-w-0">
+          <h1 className="text-lg lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <FileText className="w-5 h-5 lg:w-6 lg:h-6 text-brand-600 shrink-0" />
             CV Drafts
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-[13px] lg:text-sm text-slate-500 mt-1">
             Generated from your profile + targeted to a job. LLM-enhance individual sections.
           </p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-3 py-2 rounded-md"
+          className="btn-primary text-[13px] shrink-0"
           data-testid="create-cv-btn"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 mr-1.5" />
           New CV
         </button>
       </div>
@@ -132,20 +127,8 @@ export default function CvDraftsPage() {
         onOpenCV={(cvId) => setSelectedId(cvId)}
       />
 
-      {toast && (
-        <div
-          className={clsx(
-            'fixed bottom-6 right-6 z-50 px-4 py-2 rounded-md text-sm shadow-lg',
-            toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-          )}
-          data-testid="cv-toast"
-        >
-          {toast.msg}
-        </div>
-      )}
-
       {/* List + Detail split */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
         {/* List */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -202,8 +185,8 @@ export default function CvDraftsPage() {
             <CVEditor
               draft={selectedDraft}
               onUpdate={handleDraftUpdate}
-              onError={(m) => showToast('error', m)}
-              onSuccess={(m) => showToast('success', m)}
+              onError={(m) => toast.error(m)}
+              onSuccess={(m) => toast.success(m)}
             />
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 border-dashed p-12 text-center text-slate-400">
@@ -220,10 +203,10 @@ export default function CvDraftsPage() {
           onCreated={(cv) => {
             setShowCreate(false);
             setSelectedId(cv.id);
-            showToast('success', `CV "${cv.title}" created`);
+            toast.success(`CV "${cv.title}" created`);
             fetchDrafts();
           }}
-          onError={(m) => showToast('error', m)}
+          onError={(m) => toast.error(m)}
         />
       )}
     </div>

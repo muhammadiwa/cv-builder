@@ -24,7 +24,7 @@ import {
   Loader2,
   ChevronDown,
 } from 'lucide-react';
-import { showToast, toast } from '../lib/toast';
+import { toast } from '../lib/toast';
 import {
   LLM_TASK_TYPES,
   llmProvidersApi,
@@ -74,7 +74,7 @@ export default function SettingsPage() {
 
   if (error) {
     return (
-      <div className="max-w-3xl mx-auto">
+      <div>
         <div className="card card-pad text-rose-700 bg-rose-50">
           {error}
         </div>
@@ -84,23 +84,23 @@ export default function SettingsPage() {
 
   if (!providers) {
     return (
-      <div className="max-w-3xl mx-auto text-slate-500 flex items-center gap-2">
+      <div className="text-slate-500 flex items-center gap-2 py-12">
         <Loader2 className="w-4 h-4 animate-spin" /> Loading settings…
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-5 lg:space-y-6">
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+      <div className="flex items-start justify-between pt-1 lg:pt-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
             <Brain size={20} />
           </div>
-          <div>
-            <h1 className="text-2xl font-semibold">Settings</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
+          <div className="min-w-0">
+            <h1 className="text-lg lg:text-2xl font-semibold">Settings</h1>
+            <p className="text-[13px] lg:text-sm text-slate-500 mt-0.5">
               LLM providers, defaults, and app preferences.
             </p>
           </div>
@@ -159,9 +159,9 @@ export default function SettingsPage() {
                   try {
                     const r = await llmProvidersApi.test(p.id);
                     if (r.ok) {
-                      showToast('success', `Reachable in ${r.latency_ms ?? '?'}ms — ${r.message}`,);
+                      toast.success(`Reachable in ${r.latency_ms ?? '?'}ms — ${r.message}`);
                     } else {
-                      showToast('error', `Test failed: ${r.message}`);
+                      toast.error(`Test failed: ${r.message}`);
                     }
                   } catch (e) {
                     toast.error(
@@ -175,7 +175,7 @@ export default function SettingsPage() {
                   const payload: LLMProviderPatchPayload = { enabled };
                   try {
                     await llmProvidersApi.patch(p.id, payload);
-                    showToast('success', `${enabled ? 'Enabled' : 'Disabled'} ${p.display_name}`,);
+                    toast.success(`${enabled ? 'Enabled' : 'Disabled'} ${p.display_name}`);
                     await load();
                   } catch (e) {
                     toast.error(
@@ -196,7 +196,7 @@ export default function SettingsPage() {
           mode="create"
           onClose={() => setShowCreate(false)}
           onSaved={async (saved) => {
-            showToast('success', `Created ${saved.display_name}`);
+            toast.success(`Created ${saved.display_name}`);
             setShowCreate(false);
             await load();
           }}
@@ -210,7 +210,7 @@ export default function SettingsPage() {
           providerId={editingId}
           onClose={() => setEditingId(null)}
           onSaved={async (saved) => {
-            showToast('success', `Saved ${saved.display_name}`);
+            toast.success(`Saved ${saved.display_name}`);
             setEditingId(null);
             await load();
           }}
@@ -227,10 +227,10 @@ export default function SettingsPage() {
             setConfirmDelete(null);
             try {
               await llmProvidersApi.delete(target.id);
-              showToast('success', `Deleted ${target.display_name}`);
+              toast.success(`Deleted ${target.display_name}`);
               await load();
             } catch (e) {
-              showToast('error', `Delete failed: ${(e as Error).message}`);
+              toast.error(`Delete failed: ${(e as Error).message}`);
             }
           }}
         />
@@ -440,7 +440,7 @@ function ProviderFormModal({
         setTemperature(p.temperature_default);
         setModelsJson({ ...(p.models_json || {}) });
       } catch (e) {
-        showToast('error', `Load failed: ${(e as Error).message}`);
+        toast.error(`Load failed: ${(e as Error).message}`);
         onClose();
       } finally {
         setLoading(false);
@@ -450,11 +450,11 @@ function ProviderFormModal({
 
   const handleSubmit = async () => {
     if (!displayName.trim()) {
-      showToast('error', 'Display name required');
+      toast.error('Display name required');
       return;
     }
     if (mode === 'create' && !/^[a-z0-9][a-z0-9_\-]*$/.test(id)) {
-      showToast('error', 'ID must be lowercase, start alphanumeric, no spaces');
+      toast.error('ID must be lowercase, start alphanumeric, no spaces');
       return;
     }
     setSaving(true);
@@ -497,7 +497,7 @@ function ProviderFormModal({
       onSaved(saved);
     } catch (e) {
       const msg = (e as Error).message;
-      showToast('error', `Save failed: ${msg}`);
+      toast.error(`Save failed: ${msg}`);
     } finally {
       setSaving(false);
     }

@@ -27,7 +27,7 @@ import type {
   TemplateSummary,
 } from '../lib/api';
 import { templatesApi } from '../lib/api';
-import { showToast } from '../lib/toast';
+import { toast } from '../lib/toast';
 
 const PRESET_IDS = new Set(['ats_classic', 'ats_modern', 'ats_compact']);
 
@@ -67,14 +67,14 @@ export default function TemplatesPage() {
     mutationFn: (id: string) => templatesApi.delete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['templates'] });
-      showToast('success', 'Template deleted');
+      toast.success('Template deleted');
     },
     onError: (e: unknown) => {
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e as Error).message ||
         'Failed to delete template';
-      showToast('error', detail);
+      toast.error(detail);
     },
   });
 
@@ -83,14 +83,14 @@ export default function TemplatesPage() {
       templatesApi.duplicate(src, dst),
     onSuccess: (t) => {
       qc.invalidateQueries({ queryKey: ['templates'] });
-      showToast('success', `Duplicated as "${t.name}"`);
+      toast.success(`Duplicated as "${t.name}"`);
     },
     onError: (e: unknown) => {
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e as Error).message ||
         'Failed to duplicate template';
-      showToast('error', detail);
+      toast.error(detail);
     },
   });
 
@@ -114,21 +114,21 @@ export default function TemplatesPage() {
   const userTemplates = templates?.filter((t) => !PRESET_IDS.has(t.id)) ?? [];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto" data-testid="templates-page">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Templates</h1>
-          <p className="text-sm text-slate-600 mt-1">
+    <div className="space-y-5 lg:space-y-6" data-testid="templates-page">
+      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row pt-1 lg:pt-2">
+        <div className="min-w-0">
+          <h1 className="text-lg lg:text-2xl font-bold text-slate-900">Templates</h1>
+          <p className="text-[13px] lg:text-sm text-slate-600 mt-1">
             ATS-safe CV and cover letter templates. All single-column, no
             graphics, selectable text.
           </p>
         </div>
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+          className="btn-primary text-[13px] shrink-0"
           data-testid="new-template-btn"
         >
-          <Plus className="w-4 h-4" /> New template
+          <Plus className="w-4 h-4 mr-1.5" /> New template
         </button>
       </div>
 
@@ -193,7 +193,7 @@ export default function TemplatesPage() {
           onSaved={() => {
             setCreating(false);
             qc.invalidateQueries({ queryKey: ['templates'] });
-            showToast('success', 'Template created');
+            toast.success('Template created');
           }}
         />
       )}
@@ -205,7 +205,7 @@ export default function TemplatesPage() {
           onSaved={() => {
             setEditingId(null);
             qc.invalidateQueries({ queryKey: ['templates'] });
-            showToast('success', 'Template updated');
+            toast.success('Template updated');
           }}
         />
       )}
@@ -391,7 +391,7 @@ function TemplateFormModal({
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        showToast('error', (e as Error).message);
+        toast.error((e as Error).message);
         setLoading(false);
       });
     return () => {
@@ -513,7 +513,7 @@ function TemplateFormModal({
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e as Error).message ||
         'Failed to save template';
-      showToast('error', detail);
+      toast.error(detail);
     } finally {
       setSaving(false);
     }
@@ -848,7 +848,7 @@ function TemplatePreviewModal({
         setLoading(false);
       } catch (e: unknown) {
         if (!alive) return;
-        showToast('error', (e as Error).message);
+        toast.error((e as Error).message);
         setLoading(false);
       }
     })();

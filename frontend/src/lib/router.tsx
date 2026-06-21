@@ -6,9 +6,7 @@ import JobsPage from '../pages/JobsPage';
 import JobDetailPage from '../pages/JobDetailPage';
 import CvDraftsPage from '../pages/CvDraftsPage';
 import CoverLettersPage from '../pages/CoverLettersPage';
-import ApplicationsPage from '../pages/ApplicationsPage';
 import TemplatesPage from '../pages/TemplatesPage';
-import PromptsPage from '../pages/PromptsPage';
 import SettingsPage from '../pages/SettingsPage';
 
 export const router = createBrowserRouter([
@@ -22,9 +20,7 @@ export const router = createBrowserRouter([
       { path: 'jobs/:id', element: <JobDetailPage /> },
       { path: 'cv-drafts', element: <CvDraftsPage /> },
       { path: 'cover-letters', element: <CoverLettersPage /> },
-      { path: 'applications', element: <ApplicationsPage /> },
       { path: 'templates', element: <TemplatesPage /> },
-      { path: 'prompts', element: <PromptsPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

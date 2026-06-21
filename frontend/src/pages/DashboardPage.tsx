@@ -8,8 +8,6 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-// ── Sample data (Phase 2+ will wire to real API) ───────────────
-
 const SAMPLE_MATCHES = [
   { title: 'Senior Backend Engineer', company: 'Bukalapak', location: 'Jakarta', match: 87, tier: 'hot', days: 1 },
   { title: 'Full Stack Developer', company: 'Shopee', location: 'Remote', match: 72, tier: 'warm', days: 2 },
@@ -73,36 +71,35 @@ function Avatar({ name, size = 32 }: { name: string; size?: number }) {
 
 export default function DashboardPage() {
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="space-y-5 lg:space-y-6">
       {/* ── Header (greeting + date) ───────────────────── */}
-      <div className="flex items-baseline justify-between gap-6 flex-wrap pt-2">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
+      <div className="flex items-baseline justify-between gap-4 flex-wrap pt-1 lg:pt-2">
+        <div className="min-w-0">
+          <h1 className="text-lg lg:text-xl font-semibold text-slate-900 tracking-tight">
             Welcome back, Mohammad
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Build a tailored CV for each job in minutes, not hours.
           </p>
         </div>
-        <div className="text-xs text-slate-400">
+        <div className="text-xs text-slate-400 shrink-0">
           {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </div>
       </div>
 
       {/* ── Profile banner (single, compact) ──────────────────── */}
-      <div className="card card-pad flex items-center gap-4">
+      <div className="card card-pad flex items-center gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
         <Avatar name="Mohammad Pratama" size={48} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold text-slate-900">Mohammad Pratama</h2>
             <span className="text-xs text-slate-500">·</span>
             <span className="text-xs text-slate-600">Senior Backend Engineer</span>
           </div>
-          <div className="flex items-center gap-4 mt-1 text-xs text-slate-500">
+          <div className="flex items-center gap-2 sm:gap-4 mt-1 text-xs text-slate-500 flex-wrap">
             <span>📍 Jakarta</span>
             <span>·</span>
             <span>6 years experience</span>
-            <span>·</span>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
               <AlertCircle size={11} /> Base Profile not uploaded
             </span>
@@ -114,7 +111,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Two-column: jobs (left, 8/12) + sidebar (right, 4/12) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
         {/* LEFT — Top job matches (the actual product) */}
         <section className="lg:col-span-8 space-y-3">
           <div className="flex items-center justify-between">

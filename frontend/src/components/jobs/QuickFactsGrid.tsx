@@ -6,13 +6,7 @@
  * experience/education strip. This component accepts a `facts` array
  * and renders any subset; callers pass only the rows that apply.
  */
-import {
-  DollarSign,
-  Clock,
-  Briefcase,
-  GraduationCap,
-  type LucideIcon,
-} from 'lucide-react';
+import { type LucideIcon } from 'lucide-react';
 
 export interface QuickFact {
   icon: LucideIcon;

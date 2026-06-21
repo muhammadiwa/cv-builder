@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
 import clsx from 'clsx';
 import { jobsApi, type JobOut, type JobStatus } from '../lib/api';
+import { toast } from '../lib/toast';
 import PasteZone from '../components/jobs/PasteZone';
 import JobCard from '../components/jobs/JobCard';
 
@@ -39,7 +40,6 @@ export default function JobsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('newest');
 
@@ -89,16 +89,9 @@ export default function JobsPage() {
     return clearPollTimer;
   }, [jobs, fetchJobs]);
 
-  // Auto-dismiss toast
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const handleCreated = (job: JobOut) => {
     setShowAdd(false);
-    setToast({ type: 'success', msg: `Job submitted — analyzing in background` });
+    toast.success('Job submitted — analyzing in background');
     setJobs((prev) => [job, ...prev]);
   };
 
@@ -106,12 +99,12 @@ export default function JobsPage() {
     try {
       await jobsApi.delete(id);
       setJobs((prev) => prev.filter((j) => j.id !== id));
-      setToast({ type: 'success', msg: 'Job deleted' });
+      toast.success('Job deleted');
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         'Failed to delete job';
-      setToast({ type: 'error', msg });
+      toast.error(msg);
     }
   };
 
@@ -120,12 +113,12 @@ export default function JobsPage() {
       const updated = await jobsApi.reanalyze(id);
       // Replace the row in-place so the card flips to "scraping/parsing" instantly.
       setJobs((prev) => prev.map((j) => (j.id === id ? updated : j)));
-      setToast({ type: 'success', msg: 'Retrying analysis…' });
+      toast.success('Retrying analysis…');
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         'Failed to retry';
-      setToast({ type: 'error', msg });
+      toast.error(msg);
     }
   };
 
@@ -162,20 +155,20 @@ export default function JobsPage() {
   }, [jobs]);
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="space-y-5 lg:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Briefcase className="w-6 h-6 text-brand-600" />
+      <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+        <div className="min-w-0">
+          <h1 className="text-lg lg:text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Briefcase className="w-5 h-5 lg:w-6 lg:h-6 text-brand-600 shrink-0" />
             Job Postings
           </h1>
-          <p className="text-[14px] text-slate-600 mt-1">
+          <p className="text-[13px] lg:text-sm text-slate-600 mt-1">
             Paste a job URL or description. AI analyzes it, extracts skills and keywords, then we match it against your profile.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleRefresh}
@@ -208,26 +201,12 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div
-          data-testid="toast"
-          className={`mb-4 px-4 py-2.5 rounded-lg text-[13px] font-medium ${
-            toast.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              : 'bg-red-50 text-red-800 border border-red-200'
-          }`}
-        >
-          {toast.msg}
-        </div>
-      )}
-
       {/* Add form (inline, not modal — simpler) */}
       {showAdd && (
-        <div className="mb-6">
+        <div>
           <PasteZone
             onCreated={handleCreated}
-            onError={(msg) => setToast({ type: 'error', msg })}
+            onError={(msg) => toast.error(msg)}
           />
         </div>
       )}

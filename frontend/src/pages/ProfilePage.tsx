@@ -140,15 +140,15 @@ export default function ProfilePage() {
   const hasProfile = !!profile;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="space-y-5 lg:space-y-6">
       {/* Page header */}
-      <div className="flex items-baseline justify-between gap-6 flex-wrap pt-2">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+      <div className="flex items-baseline justify-between gap-4 flex-wrap pt-1 lg:pt-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0">
             <User size={18} />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
+          <div className="min-w-0">
+            <h1 className="text-lg lg:text-xl font-semibold text-slate-900 tracking-tight">
               Base Profile
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
@@ -204,7 +204,7 @@ export default function ProfilePage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6">
           {/* Main editor */}
           <div className="lg:col-span-8 space-y-6">
             <ProfileEditForm profile={profile} onSave={handleSave} saving={saving} />
