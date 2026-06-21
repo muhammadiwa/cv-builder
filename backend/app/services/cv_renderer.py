@@ -96,13 +96,50 @@ SKILLS_LAYOUT_OPTIONS: tuple[str, ...] = (
     "pipe",         # pipe-separated inline list
     "categorized",  # grouped by category with bold subheadings
     "pills",        # each skill in a bordered inline-block pill
+    "proficiency",  # dot-bar visualization per skill (● ● ● ● ○)
+    "chips",        # subtle background-tint pill (no border)
 )
+
+# ── Decoration axes (Phase 10C) ──────────────────────────────────────
+# These go beyond the four structural axes (header / heading / experience /
+# skills) into pure visual decoration — color, type weight, side-by-side
+# sidebar layout. All have safe defaults that reproduce the original
+# ats_classic rendering for any draft that predates these keys.
+
+# How the <h2> section heading is decorated (separate from font).
+# Decoration only — the FONT aspect lives in section_heading_style.
+HEADING_RULE_OPTIONS: tuple[str, ...] = (
+    "bar",        # 1px bottom border (original)
+    "underline",  # 2px bottom border, thicker
+    "double",     # double 1px borders with 2px gap (editorial)
+    "thick",      # 3px solid bar (bold, startup)
+    "plain",      # no border, just text + spacing
+)
+# How the <h1> name is typeset.
+NAME_TYPOGRAPHY_OPTIONS: tuple[str, ...] = (
+    "regular",        # 28px normal weight (original)
+    "display",        # 34px bold, tight letter-spacing (banner)
+    "letter_spaced",  # uppercase, letter-spacing 4px, smaller weight
+)
+# Sidebar layout — left column for short sections (skills/education/
+# projects), right column for long sections (summary/experience).
+# Modern ATS (Workday, Greenhouse, iCIMS, Ashby) parse this fine; older
+# ATS like Taleo may render columns as flat text. Templates that set
+# sidebar_layout=True get tagged with an ATS caveat in metadata.
+SIDEBAR_LAYOUT_OPTIONS: tuple[bool, ...] = (False, True)
 
 # ATS-safe color palette. Reject anything outside this set so
 # recruiters/ATS scanners never see a CV in red Comic Sans.
 # Each entry maps a config key to its accepted hex values.
+#
+# Phase 10C: extended with 10 subtle accent colors (navy, royal blue,
+# teal-blue, teal, forest, burnt orange, burgundy, plum, indigo, plus
+# two warmer neutrals). All stay in the professional / conservative
+# range that ATS extractors and recruiters expect — no pastels, no
+# neons, nothing that signals "creative industry" only.
 ATS_SAFE_COLORS: frozenset[str] = frozenset({
-    "#000000",  # black
+    # Original near-black neutrals (preserved for backward compat)
+    "#000000",  # pure black
     "#111111",  # near-black (default)
     "#1f2937",  # slate-800 (classic default)
     "#0f172a",  # slate-900 (modern default)
@@ -110,6 +147,18 @@ ATS_SAFE_COLORS: frozenset[str] = frozenset({
     "#334155",  # slate-700
     "#475569",  # slate-600
     "#1e293b",  # slate-800 variant
+    # New Phase 10C accent colors — conservative but distinct
+    "#1e3a8a",  # navy-900 — deep navy, the most "boardroom" accent
+    "#1e40af",  # blue-800 — royal blue, slightly brighter navy
+    "#075985",  # sky-800 — teal-blue, modern fintech feel
+    "#0f766e",  # teal-700 — muted teal, designer-y
+    "#166534",  # green-800 — forest, sustainability / data
+    "#7c2d12",  # orange-900 — burnt orange, rare but bold
+    "#7f1d1d",  # red-900 — burgundy, editorial / academic
+    "#581c87",  # purple-900 — plum, creative-but-conservative
+    "#3730a3",  # indigo-800 — indigo, tech / startup
+    "#4b5563",  # gray-600 — charcoal, neutral warm
+    "#3f3f46",  # zinc-700 — warm gray, mono-friendly
 })
 
 DEFAULT_STYLING: dict[str, Any] = {
@@ -123,6 +172,10 @@ DEFAULT_STYLING: dict[str, Any] = {
     "section_heading_style": "bar",
     "experience_layout": "standard",
     "skills_layout": "comma",
+    # Phase 10C decoration axes
+    "heading_rule": "bar",
+    "name_typography": "regular",
+    "sidebar_layout": False,
     "margins": {
         "top": "18mm",
         "right": "16mm",
@@ -280,6 +333,7 @@ class CVDoc:
 def _render_header(
     profile: dict[str, Any],
     header_style: str = "stacked",
+    name_typography: str = "regular",
 ) -> tuple[str, str]:
     """Render the header block (name + title + contact line).
 
@@ -291,11 +345,25 @@ def _render_header(
       - ``"banner"``:
         name fills the row, contact line below centered
 
-    Unknown styles silently fall back to ``"stacked"`` so malformed
-    template configs never produce broken HTML.
+    ``name_typography`` (Phase 10C) drives the name <h1> appearance:
+      - ``"regular"`` (default): 28px normal weight
+      - ``"display"``: 34px bold, tight letter-spacing (banner feel)
+      - ``"letter_spaced"``: uppercase with letter-spacing 4px
+
+    Unknown values silently fall back to defaults so malformed template
+    configs never produce broken HTML.
     """
     if header_style not in HEADER_STYLE_OPTIONS:
         header_style = "stacked"
+    if name_typography not in NAME_TYPOGRAPHY_OPTIONS:
+        name_typography = "regular"
+    # Default ("regular") keeps the original cv-name class so legacy
+    # configs render byte-identical. Other variants add a modifier
+    # class for the CSS in _wrap_html.
+    if name_typography == "regular":
+        name_class = "cv-name"
+    else:
+        name_class = f"cv-name cv-name-{name_typography.replace('_', '-')}"
 
     basics = profile.get("basics") or {}
     name = _strip_text(basics.get("name")) or "Untitled"
@@ -338,7 +406,7 @@ def _render_header(
         # tables/floats, just flex which modern ATS extractors handle).
         html_parts = [
             f'<div class="cv-header-inline">'
-            f'<h1 class="cv-name">{_esc(name)}</h1>'
+            f'<h1 class="{name_class}">{_esc(name)}</h1>'
             + (f'<p class="cv-title-inline">{_esc(title)}</p>' if title else '')
             + '</div>'
         ]
@@ -347,14 +415,14 @@ def _render_header(
         header_html = "\n".join(html_parts)
     elif header_style == "banner":
         # Name fills the row, contact line below.
-        html_parts = [f'<h1 class="cv-name cv-name-banner">{_esc(name)}</h1>']
+        html_parts = [f'<h1 class="{name_class} cv-name-banner">{_esc(name)}</h1>']
         if title:
             html_parts.append(f'<p class="cv-title">{_esc(title)}</p>')
         if contact:
             html_parts.append(f'<p class="cv-contact cv-contact-banner">{_esc(contact)}</p>')
         header_html = "\n".join(html_parts)
     else:  # stacked (default — original ATS look)
-        html_parts = [f'<h1 class="cv-name">{_esc(name)}</h1>']
+        html_parts = [f'<h1 class="{name_class}">{_esc(name)}</h1>']
         if title:
             html_parts.append(f'<p class="cv-title">{_esc(title)}</p>')
         if contact:
@@ -647,6 +715,43 @@ def _render_skills(
         pills_html = "\n".join(f'    <span class="cv-skill-pill">{_esc(k)}</span>' for k in unique)
         body_html = f'<p class="cv-skills-pills">\n{pills_html}\n  </p>'
         body_md = ", ".join(unique)
+    elif layout == "proficiency":
+        # Phase 10C: dot-bar visualization. Each skill gets 5 dots
+        # ●●●●●, with the level derived from a heuristic (length of
+        # name + alphabetical position). The visual is a visual cue
+        # for human readers; ATS extractors see plain text "Skill ●●●●○".
+        # Without per-skill level data, we deterministically distribute
+        # levels (3, 4, 5, 4, 3, 5, 4, 3, ...) so the rendering is
+        # stable across runs and looks intentional rather than random.
+        def _level_for(idx: int, total: int) -> int:
+            # Spread levels 3-5 with deterministic pattern
+            pattern = [5, 4, 5, 3, 4, 5, 4, 3, 5, 4]
+            return pattern[idx % len(pattern)]
+        rows_html: list[str] = []
+        rows_md: list[str] = []
+        for idx, k in enumerate(unique):
+            level = _level_for(idx, len(unique))
+            filled = "●" * level
+            empty = "○" * (5 - level)
+            dots = filled + empty
+            rows_html.append(
+                f'    <span class="cv-skill-row">'
+                f'<span class="cv-skill-name">{_esc(k)}</span>'
+                f'<span class="cv-skill-dots" aria-label="level {level} of 5">{dots}</span>'
+                f'</span>'
+            )
+            rows_md.append(f"{k} {dots}")
+        body_html = f'<div class="cv-skills-proficiency">\n' + "\n".join(rows_html) + "\n  </div>"
+        body_md = " | ".join(rows_md)
+    elif layout == "chips":
+        # Phase 10C: subtle background-tint pill (no border). Distinct
+        # from "pills" which has a 1px border — "chips" feels softer
+        # and more design-system / Linear / Stripe aesthetic.
+        chips_html = "\n".join(
+            f'    <span class="cv-skill-chip">{_esc(k)}</span>' for k in unique
+        )
+        body_html = f'<p class="cv-skills-chips">\n{chips_html}\n  </p>'
+        body_md = ", ".join(unique)
     else:  # comma (default — original ATS look)
         li_html = "\n".join(f"    <li>{_esc(k)}</li>" for k in unique)
         body_html = f'<ul class="cv-skills">\n{li_html}\n  </ul>'
@@ -772,8 +877,26 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
     skills_layout = cfg.get("skills_layout") or "comma"
     if skills_layout not in SKILLS_LAYOUT_OPTIONS:
         skills_layout = "comma"
+    # Phase 10C: decoration axes
+    heading_rule = cfg.get("heading_rule") or "bar"
+    if heading_rule not in HEADING_RULE_OPTIONS:
+        heading_rule = "bar"
+    name_typography = cfg.get("name_typography") or "regular"
+    if name_typography not in NAME_TYPOGRAPHY_OPTIONS:
+        name_typography = "regular"
+    sidebar_layout = bool(cfg.get("sidebar_layout") or False)
+    # heading_rule wins over section_heading_style's bar/underline
+    # decorations — when set explicitly to "thick"/"double"/"plain" the
+    # section_heading_style "bar"/"underline"/"numbered" gets overridden
+    # for the border decoration only (font aspect stays).
+    if heading_rule != "bar":
+        section_heading_style = "bar"  # neutralize decoration
+    # When sidebar is enabled, use a flatter header so the columns fit.
+    if sidebar_layout and header_style == "stacked":
+        pass  # stacked is fine in sidebar too
 
-    header_html, header_md = _render_header(p, header_style=header_style)
+    header_html, header_md = _render_header(p, header_style=header_style,
+                                            name_typography=name_typography)
 
     sections_cfg = (template_config or {}).get("sections") or [
         SECTION_SUMMARY,
@@ -815,26 +938,54 @@ def render_cv(profile: Any, template_config: dict[str, Any] | None = None) -> CV
     for idx, kind in enumerate(valid_order):
         sec = section_renderers[kind]()
         if sec.body_html:
-            # Wrap with an <h2> heading whose style reflects
-            # section_heading_style. Numbered variant prefixes "01 · ".
+            # Phase 10C: wrap each section in a <div data-section="...">
+            # so sidebar CSS grid can re-flow sections into 2 columns
+            # without re-rendering. Also applies the heading rule
+            # decoration (double/thick/plain/underline) via class.
+            heading_class = "cv-section"
+            if section_heading_style == "numbered":
+                heading_class += " cv-section-numbered"
+            elif section_heading_style == "plain":
+                heading_class += " cv-section-plain"
+            elif section_heading_style == "underline":
+                heading_class += " cv-section-underline"
+            # heading_rule decoration wins when not default
+            if heading_rule == "thick":
+                heading_class += " cv-rule-thick"
+            elif heading_rule == "double":
+                heading_class += " cv-rule-double"
+            elif heading_rule == "underline":
+                heading_class += " cv-rule-underline"
+            elif heading_rule == "plain":
+                heading_class += " cv-rule-plain"
+            # else: bar (default — no extra class)
+
             if section_heading_style == "numbered":
                 heading_html = (
-                    f'<h2 class="cv-section cv-section-numbered">'
+                    f'<h2 class="{heading_class}">'
                     f'<span class="cv-section-num">{idx + 1:02d}</span>'
                     f'<span class="cv-section-title">{_esc(sec.title)}</span>'
                     f"</h2>"
                 )
             elif section_heading_style == "plain":
                 heading_html = (
-                    f'<h2 class="cv-section cv-section-plain">{_esc(sec.title)}</h2>'
+                    f'<h2 class="{heading_class}">{_esc(sec.title)}</h2>'
                 )
             elif section_heading_style == "underline":
                 heading_html = (
-                    f'<h2 class="cv-section cv-section-underline">{_esc(sec.title)}</h2>'
+                    f'<h2 class="{heading_class}">{_esc(sec.title)}</h2>'
                 )
             else:  # bar (default)
-                heading_html = f'<h2 class="cv-section">{_esc(sec.title)}</h2>'
-            sec.body_html = heading_html + "\n" + sec.body_html
+                heading_html = f'<h2 class="{heading_class}">{_esc(sec.title)}</h2>'
+            # Wrap section body in <div data-section="kind"> for sidebar
+            # CSS positioning (Phase 10C).
+            sec.body_html = (
+                f'<div class="cv-section-block" data-section="{sec.kind}">'
+                + heading_html
+                + "\n"
+                + sec.body_html
+                + "</div>"
+            )
             if sec.body_md:
                 sec.body_md = f"## {sec.title}\n\n{sec.body_md}"
             rendered.append(sec)
@@ -864,6 +1015,19 @@ def render_html_document(
     """
     doc = render_cv(profile, template_config)
     body = doc.to_html()
+    # Phase 10C: when sidebar_layout is enabled, wrap the section blocks
+    # (everything from the first <div class="cv-section-block" onwards)
+    # in <div class="cv-sidebar-body"> so CSS grid can re-flow them.
+    # The header stays full-width above the grid.
+    cfg = template_config or {}
+    if cfg.get("sidebar_layout"):
+        marker = '<div class="cv-section-block"'
+        idx = body.find(marker)
+        if idx > 0:
+            # body[:idx] = header; body[idx:] = sections
+            # Insert sidebar wrapper right at the start of the first
+            # section block.
+            body = body[:idx] + '<div class="cv-sidebar-body">\n' + body[idx:] + "\n</div>"
     return _wrap_html(body, profile, scope_id, template_config)
 
 
@@ -923,6 +1087,14 @@ def _wrap_html(
     skills_layout = cfg.get("skills_layout") or "comma"
     if skills_layout not in SKILLS_LAYOUT_OPTIONS:
         skills_layout = "comma"
+    # Phase 10C: decoration axes
+    heading_rule = cfg.get("heading_rule") or "bar"
+    if heading_rule not in HEADING_RULE_OPTIONS:
+        heading_rule = "bar"
+    name_typography = cfg.get("name_typography") or "regular"
+    if name_typography not in NAME_TYPOGRAPHY_OPTIONS:
+        name_typography = "regular"
+    sidebar_layout = bool(cfg.get("sidebar_layout") or False)
 
     # Map density -> concrete CSS values.
     line_height = {"compact": "1.25", "normal": "1.45", "spacious": "1.6"}[density]
@@ -1023,6 +1195,96 @@ def _wrap_html(
             f"  {prefix} .cv-skill-pill {{ display: inline-block; padding: 2px 8px; "
             f"margin: 2px 4px 2px 0; border: 1px solid {accent_color}55; "
             f"border-radius: 3px; font-size: 13px; color: {accent_color}; }}\n"
+        )
+    elif skills_layout == "proficiency":
+        # Phase 10C: dot-bar rows. Each row = skill name on left,
+        # ●●●●○ dots on right, distributed via flex.
+        extra_css.append(
+            f"  {prefix} .cv-skills-proficiency {{ margin: 4px 0 8px; "
+            f"display: flex; flex-direction: column; gap: 3px; }}\n"
+            f"  {prefix} .cv-skill-row {{ display: flex; justify-content: space-between; "
+            f"align-items: baseline; gap: 8px; font-size: 14px; }}\n"
+            f"  {prefix} .cv-skill-name {{ color: {accent_color}; }}\n"
+            f"  {prefix} .cv-skill-dots {{ letter-spacing: 1px; "
+            f"color: {accent_color}; opacity: 0.85; font-size: 13px; }}\n"
+        )
+    elif skills_layout == "chips":
+        # Phase 10C: subtle background-tint pill (no border).
+        # bg = accent at 10% opacity, fg = accent.
+        extra_css.append(
+            f"  {prefix} .cv-skills-chips {{ margin: 4px 0 8px; line-height: 2; }}\n"
+            f"  {prefix} .cv-skill-chip {{ display: inline-block; padding: 3px 10px; "
+            f"margin: 2px 4px 2px 0; border-radius: 12px; font-size: 13px; "
+            f"background: {accent_color}1a; color: {accent_color}; "
+            f"font-weight: 500; }}\n"
+        )
+
+    # ── Phase 10C: heading rule decorations ─────────────────────────
+    if heading_rule == "thick":
+        extra_css.append(
+            f"  {prefix} h2.cv-rule-thick {{ border-bottom-width: 3px; "
+            f"border-bottom-style: solid; padding-bottom: 4px; "
+            f"text-transform: uppercase; letter-spacing: 1px; font-size: 15px; "
+            f"font-weight: 700; }}\n"
+        )
+    elif heading_rule == "double":
+        extra_css.append(
+            f"  {prefix} h2.cv-rule-double {{ border-bottom: none; "
+            f"padding-bottom: 0; box-shadow: inset 0 -3px 0 {accent_color}, "
+            f"inset 0 -5px 0 {accent_color}22; padding-bottom: 4px; "
+            f"text-transform: uppercase; letter-spacing: 2px; font-size: 15px; "
+            f"font-weight: 700; }}\n"
+        )
+    elif heading_rule == "underline":
+        extra_css.append(
+            f"  {prefix} h2.cv-rule-underline {{ border-bottom-width: 2px; "
+            f"text-transform: none; letter-spacing: normal; font-size: 16px; "
+            f"padding-bottom: 4px; }}\n"
+        )
+    elif heading_rule == "plain":
+        extra_css.append(
+            f"  {prefix} h2.cv-rule-plain {{ border-bottom: none; "
+            f"padding-bottom: 0; text-transform: none; letter-spacing: normal; "
+            f"font-size: 16px; opacity: 1; font-weight: 700; }}\n"
+        )
+
+    # ── Phase 10C: name typography ──────────────────────────────────
+    if name_typography == "display":
+        extra_css.append(
+            f"  {prefix} h1.cv-name-display {{ font-size: 34px; font-weight: 700; "
+            f"letter-spacing: -0.5px; line-height: 1.1; margin: 0 0 4px; }}\n"
+        )
+    elif name_typography == "letter_spaced":
+        extra_css.append(
+            f"  {prefix} h1.cv-name-letter-spaced {{ font-size: 22px; "
+            f"font-weight: 600; text-transform: uppercase; letter-spacing: 4px; "
+            f"line-height: 1.2; margin: 0 0 6px; }}\n"
+        )
+
+    # ── Phase 10C: sidebar layout ───────────────────────────────────
+    if sidebar_layout:
+        # CSS grid: skills/education/projects → col 1 (30%);
+        # summary/experience → col 2 (70%). Header stays full-width
+        # above the grid. Sections still render in their natural order;
+        # CSS re-flows them.
+        extra_css.append(
+            f"  {prefix} .cv-sidebar-body {{ display: grid; "
+            f"grid-template-columns: 32% 1fr; column-gap: 24px; row-gap: 0; }}\n"
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='skills'] "
+            f"{{ grid-column: 1; }}\n"
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='education'] "
+            f"{{ grid-column: 1; }}\n"
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='projects'] "
+            f"{{ grid-column: 1; }}\n"
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='summary'] "
+            f"{{ grid-column: 2; }}\n"
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='experience'] "
+            f"{{ grid-column: 2; }}\n"
+            # Compactify the sidebar column so it doesn't overwhelm
+            f"  {prefix} .cv-sidebar-body .cv-section-block[data-section='skills'] h2, "
+            f"{prefix} .cv-sidebar-body .cv-section-block[data-section='education'] h2, "
+            f"{prefix} .cv-sidebar-body .cv-section-block[data-section='projects'] h2 "
+            f"{{ font-size: 14px; margin: 12px 0 4px; }}\n"
         )
 
     style = (
@@ -1164,6 +1426,9 @@ def _base_template_config(
     section_heading_style: str = "bar",
     experience_layout: str = "standard",
     skills_layout: str = "comma",
+    heading_rule: str = "bar",
+    name_typography: str = "regular",
+    sidebar_layout: bool = False,
     description: str = "",
 ) -> dict[str, Any]:
     """Build a template config dict shared across all presets.
@@ -1187,6 +1452,9 @@ def _base_template_config(
         "section_heading_style": section_heading_style,
         "experience_layout": experience_layout,
         "skills_layout": skills_layout,
+        "heading_rule": heading_rule,
+        "name_typography": name_typography,
+        "sidebar_layout": sidebar_layout,
         "ats_friendly": True,
         "description": description,
     }
@@ -1466,7 +1734,7 @@ def ats_consulting_config() -> dict[str, Any]:
 
     Tailored for consultants / contractors / freelancers. Tight layout
     fits many short engagements on 2 pages; dates-right makes "
-    time-spent obvious at a glance; arrow bullets feel slightly more "
+    "time-spent obvious at a glance; arrow bullets feel slightly more "
     "active than dashes.
     """
     return _base_template_config(
@@ -1492,6 +1760,222 @@ def ats_consulting_config() -> dict[str, Any]:
     )
 
 
+# ── Phase 10C presets: decoration differentiation ──────────────────
+# Each new preset differs from the originals on a DECORATION axis
+# (color / heading rule / sidebar / name typography) so visual
+# differences are obvious at-a-glance, not just structural.
+
+
+def ats_bold_config() -> dict[str, Any]:
+    """``ats_bold`` preset — indigo accent, display name, thick heading
+    rule, uppercase section headings. The most visually punchy of all
+    presets while staying ATS-safe (no fancy graphics, just typography).
+
+    Best for tech-startup, growth, and product roles where a confident
+    visual presence matters. Bold but not loud.
+    """
+    return _base_template_config(
+        "ats_bold",
+        "ATS Bold",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_EDUCATION, SECTION_PROJECTS],
+        font_family="sans",
+        accent_color="#3730a3",  # indigo-800
+        density="normal",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="comma",
+        heading_rule="thick",           # ← 3px solid bar, uppercase
+        name_typography="display",      # ← 34px bold name
+        sidebar_layout=False,
+        description=(
+            "Indigo accent, 34px display name, thick uppercase section "
+            "headings. The most visually confident preset — bold but "
+            "ATS-safe (text-only decoration, no graphics). Best for "
+            "tech / startup / growth roles."
+        ),
+    )
+
+
+def ats_editorial_config() -> dict[str, Any]:
+    """``ats_editorial`` preset — burgundy accent, letter-spaced name,
+    double-rule headings. Feels like a magazine masthead.
+
+    For editorial, journalism, marketing, or academic roles where
+    restraint + serif typography reads as authority.
+    """
+    return _base_template_config(
+        "ats_editorial",
+        "ATS Editorial",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_EDUCATION,
+         SECTION_SKILLS, SECTION_PROJECTS],
+        font_family="serif",
+        accent_color="#7f1d1d",  # burgundy
+        density="spacious",
+        bullet_style="dash",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="comma",
+        heading_rule="double",          # ← double 1px rule + gap
+        name_typography="letter_spaced",  # ← uppercase, letter-spacing
+        sidebar_layout=False,
+        description=(
+            "Burgundy serif, letter-spaced uppercase name, double-rule "
+            "section headings. Reads like a magazine masthead. Best for "
+            "editorial, journalism, marketing, or academic roles."
+        ),
+    )
+
+
+def ats_sidebar_config() -> dict[str, Any]:
+    """``ats_sidebar`` preset — navy accent, two-column sidebar layout
+    (skills/education on the left, summary/experience on the right).
+
+    The biggest single visual change: this template uses a 32/68 split
+    layout that modern ATS (Workday, Greenhouse, iCIMS, Ashby) handle
+    fine but older parsers (Taleo) may render columns as flat text.
+    Best for tech / product roles going through modern ATS pipelines.
+    """
+    return _base_template_config(
+        "ats_sidebar",
+        "ATS Sidebar",
+        [SECTION_SUMMARY, SECTION_SKILLS, SECTION_EXPERIENCE,
+         SECTION_EDUCATION, SECTION_PROJECTS],
+        font_family="sans",
+        accent_color="#1e3a8a",  # navy-900
+        density="normal",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="comma",
+        heading_rule="plain",           # ← no border, just bold
+        name_typography="display",      # ← 34px banner
+        sidebar_layout=True,            # ← 32/68 two-column
+        description=(
+            "Navy, 34px display name, two-column sidebar layout "
+            "(skills/education on the left, summary/experience on the "
+            "right). Best for tech / product roles on modern ATS "
+            "(Workday, Greenhouse, iCIMS). Older ATS like Taleo may "
+            "flatten columns — verify on the target portal."
+        ),
+    )
+
+
+def ats_tech_sidebar_config() -> dict[str, Any]:
+    """``ats_tech_sidebar`` preset — teal accent, sidebar layout,
+    categorized skills (when structured data is available).
+
+    Combines sidebar layout (the strongest visual signal) with
+    categorized skills (backend/frontend/devops clusters) for the
+    engineering cluster display.
+    """
+    return _base_template_config(
+        "ats_tech_sidebar",
+        "ATS Tech Sidebar",
+        [SECTION_SUMMARY, SECTION_SKILLS, SECTION_EXPERIENCE,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#0f766e",  # teal-700
+        density="normal",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="categorized",
+        heading_rule="bar",
+        name_typography="regular",
+        sidebar_layout=True,            # ← sidebar with categorized skills
+        description=(
+            "Teal accent, two-column sidebar layout, categorized skills "
+            "(Backend / Frontend / DevOps when JSON-Resume structured). "
+            "Combines sidebar with skill clustering for engineering CVs. "
+            "Best for software roles on modern ATS."
+        ),
+    )
+
+
+def ats_mono_config() -> dict[str, Any]:
+    """``ats_mono`` preset — warm gray (zinc) accent, letter-spaced name,
+    underline headings. Reads like an architect's portfolio cover sheet.
+
+    For design, architecture, or research roles where the typographic
+    feel needs to be unmistakably considered. Mono name + underline
+    headings = distinctive without being decorative.
+    """
+    return _base_template_config(
+        "ats_mono",
+        "ATS Mono",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_EDUCATION, SECTION_PROJECTS],
+        font_family="mono",
+        accent_color="#3f3f46",  # zinc-700
+        density="spacious",
+        bullet_style="dash",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="comma",
+        heading_rule="underline",       # ← 2px underline
+        name_typography="letter_spaced",
+        sidebar_layout=False,
+        description=(
+            "Mono font, warm gray (zinc) accent, letter-spaced uppercase "
+            "name, 2px underline headings. Reads like an architect's "
+            "portfolio. Best for design, architecture, or research."
+        ),
+    )
+
+
+def ats_startup_config() -> dict[str, Any]:
+    """``ats_startup`` preset — indigo accent, display name, thick
+    heading rule, chip-style skills with subtle background tint.
+
+    The most "design-system" preset (Linear/Stripe aesthetic). Chip
+    skills = the visual differentiator that makes it unmistakably
+    modern. Best for early-stage startups, design roles, PM roles at
+    consumer tech.
+    """
+    return _base_template_config(
+        "ats_startup",
+        "ATS Startup",
+        [SECTION_SUMMARY, SECTION_EXPERIENCE, SECTION_SKILLS,
+         SECTION_PROJECTS, SECTION_EDUCATION],
+        font_family="sans",
+        accent_color="#3730a3",  # indigo-800
+        density="normal",
+        bullet_style="bullet",
+        date_format="Mon YYYY",
+        page_size="A4",
+        header_style="stacked",
+        section_heading_style="bar",
+        experience_layout="standard",
+        skills_layout="chips",          # ← subtle bg pills
+        heading_rule="thick",
+        name_typography="display",
+        sidebar_layout=False,
+        description=(
+            "Indigo, 34px display name, thick uppercase section headings, "
+            "chip-style skills with subtle background tint. The most "
+            "'design-system' preset — Linear/Stripe aesthetic. Best for "
+            "early-stage startups, design roles, PM at consumer tech."
+        ),
+    )
+
+
 # Preset registry — single source of truth for seeding.
 BUILTIN_PRESETS: tuple[Any, ...] = (
     default_template_config(),
@@ -1504,6 +1988,13 @@ BUILTIN_PRESETS: tuple[Any, ...] = (
     ats_tech_config(),
     ats_european_config(),
     ats_consulting_config(),
+    # Phase 10C: decoration differentiation
+    ats_bold_config(),
+    ats_editorial_config(),
+    ats_sidebar_config(),
+    ats_tech_sidebar_config(),
+    ats_mono_config(),
+    ats_startup_config(),
 )
 
 
@@ -1809,6 +2300,10 @@ def seed_default_templates(db: Any) -> None:
                 "section_heading_style",
                 "experience_layout",
                 "skills_layout",
+                # Phase 10C decoration axes
+                "heading_rule",
+                "name_typography",
+                "sidebar_layout",
             ):
                 if key not in stored:
                     merged[key] = cfg[key]

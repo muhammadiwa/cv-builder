@@ -82,6 +82,11 @@ export default function TemplateThumbnail({
   const sectionHeadingStyle = config.section_heading_style ?? 'bar';
   const experienceLayout = config.experience_layout ?? 'standard';
   const skillsLayout = config.skills_layout ?? 'comma';
+  // Phase 10C decoration axes — read with safe defaults so legacy
+  // configs (predating these keys) still render correctly.
+  const headingRule = config.heading_rule ?? 'bar';
+  const nameTypography = config.name_typography ?? 'regular';
+  const sidebarLayout = config.sidebar_layout ?? false;
 
   // The skills row visualises skills_layout (pipe | pills | categorized |
   // comma fallback). Renders below the section list as a single row of
@@ -110,8 +115,13 @@ export default function TemplateThumbnail({
             style={{ borderBottom: `1px solid ${accentColor}22` }}
           >
             <div
-              className="h-1.5 rounded-sm"
-              style={{ backgroundColor: accentColor, width: '50%', opacity: 0.92 }}
+              className="rounded-sm"
+              style={{
+                backgroundColor: accentColor,
+                width: nameTypography === 'display' ? '55%' : nameTypography === 'letter_spaced' ? '60%' : '50%',
+                height: nameTypography === 'display' ? '7px' : nameTypography === 'letter_spaced' ? '4px' : '6px',
+                opacity: 0.92,
+              }}
             />
             <div
               className="h-1 rounded-sm"
@@ -125,8 +135,13 @@ export default function TemplateThumbnail({
             style={{ borderBottom: `1px solid ${accentColor}22` }}
           >
             <div
-              className="h-2.5 rounded-sm"
-              style={{ backgroundColor: accentColor, width: '70%', opacity: 0.95 }}
+              className="rounded-sm"
+              style={{
+                backgroundColor: accentColor,
+                width: nameTypography === 'display' ? '80%' : nameTypography === 'letter_spaced' ? '90%' : '70%',
+                height: nameTypography === 'display' ? '11px' : nameTypography === 'letter_spaced' ? '5px' : '10px',
+                opacity: 0.95,
+              }}
             />
             <div
               className="h-1 mt-1 rounded-sm ml-auto"
@@ -144,8 +159,13 @@ export default function TemplateThumbnail({
             style={{ borderBottom: `1px solid ${accentColor}22` }}
           >
             <div
-              className="h-1.5 rounded-sm"
-              style={{ backgroundColor: accentColor, width: '55%', opacity: 0.92 }}
+              className="rounded-sm"
+              style={{
+                backgroundColor: accentColor,
+                width: nameTypography === 'display' ? '65%' : nameTypography === 'letter_spaced' ? '70%' : '55%',
+                height: nameTypography === 'display' ? '8px' : nameTypography === 'letter_spaced' ? '5px' : '6px',
+                opacity: 0.92,
+              }}
             />
             <div
               className="h-1 mt-1 rounded-sm"
@@ -159,8 +179,15 @@ export default function TemplateThumbnail({
         )}
 
         {/* ── Section rows ────────────────────────────────────────── */}
+        {/* Phase 10C: sidebar layout splits body into 2 columns. Skills/
+            Education/Projects go to the left, Summary/Experience to the
+            right. Header stays full-width above. */}
         <div
-          className={`flex-1 px-2.5 py-2 ${DENSITY_PAD[config.density] ?? DENSITY_PAD.normal}`}
+          className={
+            sidebarLayout
+              ? `flex-1 px-2 py-2 grid grid-cols-[38%_1fr] gap-x-1.5 ${DENSITY_PAD[config.density] ?? DENSITY_PAD.normal}`
+              : `flex-1 px-2.5 py-2 ${DENSITY_PAD[config.density] ?? DENSITY_PAD.normal}`
+          }
         >
           {visibleSections.map((s, idx) => {
             const isSkills = idx === visibleSkillsIdx;
@@ -169,84 +196,141 @@ export default function TemplateThumbnail({
             // - "underline": title-case + thicker bottom border
             // - "plain": title-case, no border, bold
             // - "numbered": "01 · Title" with numeric prefix
-            const headingBase =
-              'text-[7px] font-semibold uppercase tracking-wider';
-            const headingStyle: React.CSSProperties = {
-              color: accentColor,
-              fontFamily,
-            };
-            let headingEl: React.ReactNode;
-            if (sectionHeadingStyle === 'numbered') {
-              headingEl = (
-                <span className="flex items-baseline gap-1 mb-1">
-                  <span
-                    className={`${headingBase}`}
-                    style={{ ...headingStyle, opacity: 0.55 }}
-                  >
-                    {String(idx + 1).padStart(2, '0')}
-                  </span>
-                  <span className={`${headingBase}`} style={headingStyle}>
-                    {SECTION_LABELS[s] ?? s}
-                  </span>
-                  <span
-                    className="flex-1 h-[1px] mt-[3px]"
-                    style={{ backgroundColor: accentColor, opacity: 0.18 }}
-                  />
-                </span>
-              );
-            } else if (sectionHeadingStyle === 'plain') {
-              headingEl = (
-                <span className="flex items-baseline gap-1 mb-1">
-                  <span
-                    className={`${headingBase}`}
-                    style={{
-                      ...headingStyle,
-                      opacity: 1,
-                      textTransform: 'none',
-                      letterSpacing: 'normal',
-                      fontSize: '8px',
-                    }}
-                  >
-                    {SECTION_LABELS[s] ?? s}
-                  </span>
-                </span>
-              );
-            } else if (sectionHeadingStyle === 'underline') {
-              headingEl = (
-                <span className="mb-1 block">
-                  <span
-                    className={`${headingBase}`}
-                    style={{
-                      ...headingStyle,
-                      textTransform: 'none',
-                      letterSpacing: 'normal',
-                      fontSize: '8px',
-                    }}
-                  >
-                    {SECTION_LABELS[s] ?? s}
-                  </span>
-                  <span
-                    className="block h-[2px] mt-1"
-                    style={{ backgroundColor: accentColor, opacity: 0.35 }}
-                  />
-                </span>
-              );
-            } else {
-              // bar (default)
-              headingEl = (
-                <span className="flex items-baseline gap-1 mb-1">
-                  <span className={`${headingBase}`} style={headingStyle}>
-                    {SECTION_LABELS[s] ?? s}
-                  </span>
-                  <span
-                    className="flex-1 h-[1px] mt-[3px]"
-                    style={{ backgroundColor: accentColor, opacity: 0.18 }}
-                  />
-                </span>
-              );
-            }
+            // Phase 10C: heading_rule overrides the underline/bar decoration with
+            // thicker bar (3px solid) or double-line rule or no rule (plain).
+                        const headingBase =
+                          'text-[7px] font-semibold uppercase tracking-wider';
+                        const headingStyle: React.CSSProperties = {
+                          color: accentColor,
+                          fontFamily,
+                        };
+                        let headingEl: React.ReactNode;
+                        // heading_rule decoration (Phase 10C) wins when set non-default.
+                        if (headingRule === 'thick') {
+                          // Heavy solid bar — same as 'bar' but 3px instead of 1px.
+                          headingEl = (
+                            <span className="flex items-baseline gap-1 mb-1">
+                              <span className={`${headingBase}`} style={headingStyle}>
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                              <span
+                                className="flex-1 h-[3px] mt-[2px]"
+                                style={{ backgroundColor: accentColor, opacity: 0.65 }}
+                              />
+                            </span>
+                          );
+                        } else if (headingRule === 'double') {
+                          // Two parallel lines — typical editorial / magazine style.
+                          headingEl = (
+                            <span className="flex flex-col gap-[1px] mb-1">
+                              <span className={`${headingBase}`} style={headingStyle}>
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                              <span
+                                className="h-[1px]"
+                                style={{ backgroundColor: accentColor, opacity: 0.55 }}
+                              />
+                              <span
+                                className="h-[1px]"
+                                style={{ backgroundColor: accentColor, opacity: 0.25 }}
+                              />
+                            </span>
+                          );
+                        } else if (headingRule === 'plain') {
+                          // No rule at all — just bold uppercase text.
+                          headingEl = (
+                            <span className="mb-1 block">
+                              <span className={`${headingBase}`} style={headingStyle}>
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                            </span>
+                          );
+                        } else if (sectionHeadingStyle === 'numbered') {
+                          headingEl = (
+                            <span className="flex items-baseline gap-1 mb-1">
+                              <span
+                                className={`${headingBase}`}
+                                style={{ ...headingStyle, opacity: 0.55 }}
+                              >
+                                {String(idx + 1).padStart(2, '0')}
+                              </span>
+                              <span className={`${headingBase}`} style={headingStyle}>
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                              <span
+                                className="flex-1 h-[1px] mt-[3px]"
+                                style={{ backgroundColor: accentColor, opacity: 0.18 }}
+                              />
+                            </span>
+                          );
+                        } else if (sectionHeadingStyle === 'plain') {
+                          headingEl = (
+                            <span className="flex items-baseline gap-1 mb-1">
+                              <span
+                                className={`${headingBase}`}
+                                style={{
+                                  ...headingStyle,
+                                  opacity: 1,
+                                  textTransform: 'none',
+                                  letterSpacing: 'normal',
+                                  fontSize: '8px',
+                                }}
+                              >
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                            </span>
+                          );
+                        } else if (sectionHeadingStyle === 'underline') {
+                          headingEl = (
+                            <span className="mb-1 block">
+                              <span
+                                className={`${headingBase}`}
+                                style={{
+                                  ...headingStyle,
+                                  textTransform: 'none',
+                                  letterSpacing: 'normal',
+                                  fontSize: '8px',
+                                }}
+                              >
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                              <span
+                                className="block h-[2px] mt-1"
+                                style={{ backgroundColor: accentColor, opacity: 0.35 }}
+                              />
+                            </span>
+                          );
+                        } else {
+                          // bar (default)
+                          headingEl = (
+                            <span className="flex items-baseline gap-1 mb-1">
+                              <span className={`${headingBase}`} style={headingStyle}>
+                                {SECTION_LABELS[s] ?? s}
+                              </span>
+                              <span
+                                className="flex-1 h-[1px] mt-[3px]"
+                                style={{ backgroundColor: accentColor, opacity: 0.18 }}
+                              />
+                            </span>
+                          );
+                        }
             return (
-              <div key={`${s}-${idx}`} className="leading-none">
+              <div
+                key={`${s}-${idx}`}
+                className={
+                  // Phase 10C: in sidebar layout, push skills/education/
+                  // projects to col 1 and summary/experience to col 2.
+                  sidebarLayout
+                    ? `leading-none ${
+                        s === 'skills' || s === 'education' || s === 'projects'
+                          ? 'col-start-1'
+                          : s === 'summary' || s === 'experience'
+                          ? 'col-start-2'
+                          : ''
+                      }`
+                    : 'leading-none'
+                }
+              >
                 {headingEl}
                 {isSkills && skillsLayout !== 'comma' ? (
                   // Skills gets its own visualisation, not body bullets
@@ -357,6 +441,64 @@ function SkillsRow({
             K8s, AWS
           </span>
         </div>
+      </div>
+    );
+  }
+  if (layout === 'proficiency') {
+    // Phase 10C: dot-bar visualization. Skill name on left, ●●●●○ on right.
+    // Deterministic levels (3-5) for visual stability.
+    const levels = [4, 5, 3];
+    return (
+      <div className="flex flex-col gap-[1px] pl-0.5 leading-tight">
+        {names.map((n, i) => {
+          const lvl = levels[i % levels.length];
+          const filled = '●'.repeat(lvl);
+          const empty = '○'.repeat(5 - lvl);
+          return (
+            <div key={n} className="flex items-baseline justify-between gap-1">
+              <span
+                className="text-[6px]"
+                style={{ color: accentColor, fontFamily, opacity: 0.8 }}
+              >
+                {n}
+              </span>
+              <span
+                className="text-[6px]"
+                style={{
+                  color: accentColor,
+                  fontFamily,
+                  opacity: 0.7,
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {filled}
+                {empty}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if (layout === 'chips') {
+    // Phase 10C: subtle background-tint pill (no border). Different
+    // from 'pills' which has a 1px border — chips feels softer.
+    return (
+      <div className="flex flex-wrap gap-[2px] pl-0.5">
+        {names.map((n) => (
+          <span
+            key={n}
+            className="inline-block px-1 py-[1px] rounded-full text-[6px]"
+            style={{
+              backgroundColor: `${accentColor}1a`,
+              color: accentColor,
+              fontFamily,
+              fontWeight: 500,
+            }}
+          >
+            {n}
+          </span>
+        ))}
       </div>
     );
   }
@@ -603,4 +745,20 @@ export const SKILLS_LAYOUT_LABELS: Record<string, string> = {
   pipe: 'Pipe list',
   categorized: 'Categorized',
   pills: 'Pills',
+  proficiency: 'Proficiency dots',
+  chips: 'Chips',
+};
+
+// Phase 10C decoration axis labels (used by form dropdowns).
+export const HEADING_RULE_LABELS: Record<string, string> = {
+  bar: 'Bar',
+  underline: 'Underline',
+  double: 'Double rule',
+  thick: 'Thick bar',
+  plain: 'Plain',
+};
+export const NAME_TYPOGRAPHY_LABELS: Record<string, string> = {
+  regular: 'Regular',
+  display: 'Display',
+  letter_spaced: 'Letter-spaced',
 };

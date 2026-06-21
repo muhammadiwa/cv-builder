@@ -683,7 +683,12 @@ PageSizeLiteral = Literal["A4", "Letter"]
 HeaderStyleLiteral = Literal["stacked", "inline", "banner"]
 SectionHeadingLiteral = Literal["bar", "underline", "plain", "numbered"]
 ExperienceLayoutLiteral = Literal["standard", "dates_right", "inline_dates", "compact"]
-SkillsLayoutLiteral = Literal["comma", "pipe", "categorized", "pills"]
+SkillsLayoutLiteral = Literal["comma", "pipe", "categorized", "pills", "proficiency", "chips"]
+
+# Phase 10C decoration axes
+HeadingRuleLiteral = Literal["bar", "underline", "double", "thick", "plain"]
+NameTypographyLiteral = Literal["regular", "display", "letter_spaced"]
+SidebarLayoutLiteral = Literal[False, True]
 
 
 def _validate_ats_color(v: str | None) -> str | None:
@@ -764,6 +769,10 @@ class TemplateCreateIn(BaseModel):
     section_heading_style: SectionHeadingLiteral = "bar"
     experience_layout: ExperienceLayoutLiteral = "standard"
     skills_layout: SkillsLayoutLiteral = "comma"
+    # Phase 10C decoration axes
+    heading_rule: HeadingRuleLiteral = "bar"
+    name_typography: NameTypographyLiteral = "regular"
+    sidebar_layout: bool = False
     is_ats_friendly: bool = True
 
     @field_validator("accent_color")
@@ -795,6 +804,10 @@ class TemplatePatchIn(BaseModel):
     section_heading_style: SectionHeadingLiteral | None = None
     experience_layout: ExperienceLayoutLiteral | None = None
     skills_layout: SkillsLayoutLiteral | None = None
+    # Phase 10C decoration axes
+    heading_rule: HeadingRuleLiteral | None = None
+    name_typography: NameTypographyLiteral | None = None
+    sidebar_layout: bool | None = None
     is_ats_friendly: bool | None = None
 
     @field_validator("accent_color")

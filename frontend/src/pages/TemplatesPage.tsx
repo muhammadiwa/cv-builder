@@ -49,7 +49,6 @@ const PRESET_IDS = new Set([
   'ats_classic',
   'ats_modern',
   'ats_compact',
-  // Phase 10B: seven new structural presets.
   'ats_minimal',
   'ats_executive',
   'ats_timeline',
@@ -57,6 +56,13 @@ const PRESET_IDS = new Set([
   'ats_tech',
   'ats_european',
   'ats_consulting',
+  // Phase 10C decoration presets
+  'ats_bold',
+  'ats_editorial',
+  'ats_sidebar',
+  'ats_tech_sidebar',
+  'ats_mono',
+  'ats_startup',
 ]);
 
 const COLOR_OPTIONS = [
@@ -66,6 +72,19 @@ const COLOR_OPTIONS = [
   { value: '#111827', label: 'Gray 900' },
   { value: '#334155', label: 'Slate 700' },
   { value: '#475569', label: 'Slate 600' },
+  // Phase 10C: subtle accent colors (navy, teal, burgundy, etc.) —
+  // all ATS-safe per the BE palette.
+  { value: '#1e3a8a', label: 'Navy' },
+  { value: '#1e40af', label: 'Royal blue' },
+  { value: '#075985', label: 'Sky' },
+  { value: '#0f766e', label: 'Teal' },
+  { value: '#166534', label: 'Forest' },
+  { value: '#7c2d12', label: 'Burnt orange' },
+  { value: '#7f1d1d', label: 'Burgundy' },
+  { value: '#581c87', label: 'Plum' },
+  { value: '#3730a3', label: 'Indigo' },
+  { value: '#4b5563', label: 'Charcoal' },
+  { value: '#3f3f46', label: 'Warm gray' },
 ];
 
 const SECTION_OPTIONS: { value: string; label: string }[] = [
@@ -393,6 +412,37 @@ function TemplateCard({
             />
             Accent
           </span>
+          {/* Phase 10C: visual flavor pills — sidebar, name typo, heading rule */}
+          {cfg.sidebar_layout && (
+            <MetaPill
+              label="Sidebar"
+              className="bg-violet-50 border-violet-200 text-violet-700"
+            />
+          )}
+          {cfg.name_typography && cfg.name_typography !== 'regular' && (
+            <MetaPill
+              label={
+                cfg.name_typography === 'display'
+                  ? 'Display'
+                  : 'Letter-spaced'
+              }
+              className="bg-blue-50 border-blue-200 text-blue-700"
+            />
+          )}
+          {cfg.heading_rule && cfg.heading_rule !== 'bar' && (
+            <MetaPill
+              label={
+                cfg.heading_rule === 'thick'
+                  ? 'Thick bar'
+                  : cfg.heading_rule === 'double'
+                  ? 'Double rule'
+                  : cfg.heading_rule === 'underline'
+                  ? 'Underline'
+                  : 'Plain'
+              }
+              className="bg-amber-50 border-amber-200 text-amber-700"
+            />
+          )}
         </div>
 
         {/* Section order flow — the actual structural differentiator */}
@@ -503,8 +553,18 @@ function TemplateFormModal({
     'standard' | 'dates_right' | 'inline_dates' | 'compact'
   >('standard');
   const [skillsLayout, setSkillsLayout] = useState<
-    'comma' | 'pipe' | 'categorized' | 'pills'
+    'comma' | 'pipe' | 'categorized' | 'pills' | 'proficiency' | 'chips'
   >('comma');
+  // Phase 10C: three decoration axes — heading rule decoration, name
+  // typography, and sidebar layout. All default to safe legacy values
+  // so existing templates keep rendering identically.
+  const [headingRule, setHeadingRule] = useState<
+    'bar' | 'underline' | 'double' | 'thick' | 'plain'
+  >('bar');
+  const [nameTypography, setNameTypography] = useState<
+    'regular' | 'display' | 'letter_spaced'
+  >('regular');
+  const [sidebarLayout, setSidebarLayout] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(mode === 'edit');
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -535,6 +595,11 @@ function TemplateFormModal({
         setSectionHeadingStyle(cfg.section_heading_style ?? 'bar');
         setExperienceLayout(cfg.experience_layout ?? 'standard');
         setSkillsLayout(cfg.skills_layout ?? 'comma');
+        // Phase 10C: decoration axes — safe defaults if missing (legacy
+        // presets saved before Phase 10C don't have these keys).
+        setHeadingRule(cfg.heading_rule ?? 'bar');
+        setNameTypography(cfg.name_typography ?? 'regular');
+        setSidebarLayout(cfg.sidebar_layout ?? false);
         setLoading(false);
       })
       .catch((e: unknown) => {
@@ -566,6 +631,10 @@ function TemplateFormModal({
           section_heading_style: sectionHeadingStyle,
           experience_layout: experienceLayout,
           skills_layout: skillsLayout,
+          // Phase 10C decoration axes
+          heading_rule: headingRule,
+          name_typography: nameTypography,
+          sidebar_layout: sidebarLayout,
         };
         const out = await templatesApi.preview({
           cv_json: {
@@ -631,6 +700,10 @@ function TemplateFormModal({
     sectionHeadingStyle,
     experienceLayout,
     skillsLayout,
+    // Phase 10C: decoration axes must retrigger too.
+    headingRule,
+    nameTypography,
+    sidebarLayout,
   ]);
 
   const handleSave = async () => {
@@ -655,6 +728,10 @@ function TemplateFormModal({
           section_heading_style: sectionHeadingStyle,
           experience_layout: experienceLayout,
           skills_layout: skillsLayout,
+          // Phase 10C decoration axes
+          heading_rule: headingRule,
+          name_typography: nameTypography,
+          sidebar_layout: sidebarLayout,
         });
       } else {
         await templatesApi.patch(templateId!, {
@@ -671,6 +748,10 @@ function TemplateFormModal({
           section_heading_style: sectionHeadingStyle,
           experience_layout: experienceLayout,
           skills_layout: skillsLayout,
+          // Phase 10C decoration axes
+          heading_rule: headingRule,
+          name_typography: nameTypography,
+          sidebar_layout: sidebarLayout,
         });
       }
       onSaved();
@@ -1039,8 +1120,81 @@ function TemplateFormModal({
                       <option value="comma">Comma list</option>
                       <option value="pipe">Pipe list (A | B | C)</option>
                       <option value="categorized">Categorized</option>
-                      <option value="pills">Pills</option>
+                      <option value="pills">Pills (bordered)</option>
+                      <option value="proficiency">Proficiency dots ●●●●○</option>
+                      <option value="chips">Chips (tinted)</option>
                     </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Decoration (Phase 10C) ───────────────────────────── */}
+              <div className="border-t border-slate-200 pt-3 mt-1">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                    Decoration
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    visual flavor
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Heading rule
+                    </label>
+                    <select
+                      value={headingRule}
+                      onChange={(e) =>
+                        setHeadingRule(e.target.value as typeof headingRule)
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="heading-rule-select"
+                    >
+                      <option value="bar">Bar (1px)</option>
+                      <option value="underline">Underline (2px)</option>
+                      <option value="double">Double rule</option>
+                      <option value="thick">Thick bar (3px)</option>
+                      <option value="plain">Plain (no rule)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Name typography
+                    </label>
+                    <select
+                      value={nameTypography}
+                      onChange={(e) =>
+                        setNameTypography(
+                          e.target.value as typeof nameTypography
+                        )
+                      }
+                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-sm"
+                      data-testid="name-typography-select"
+                    >
+                      <option value="regular">Regular (28px)</option>
+                      <option value="display">Display (34px bold)</option>
+                      <option value="letter_spaced">
+                        Letter-spaced uppercase
+                      </option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sidebarLayout}
+                        onChange={(e) => setSidebarLayout(e.target.checked)}
+                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+                        data-testid="sidebar-layout-checkbox"
+                      />
+                      <span className="text-xs font-medium text-slate-700">
+                        Sidebar layout (32/68 split)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        — best for modern ATS
+                      </span>
+                    </label>
                   </div>
                 </div>
               </div>

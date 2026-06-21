@@ -748,7 +748,14 @@ export type PageSize = 'A4' | 'Letter';
 export type HeaderStyle = 'stacked' | 'inline' | 'banner';
 export type SectionHeadingStyle = 'bar' | 'underline' | 'plain' | 'numbered';
 export type ExperienceLayout = 'standard' | 'dates_right' | 'inline_dates' | 'compact';
-export type SkillsLayout = 'comma' | 'pipe' | 'categorized' | 'pills';
+export type SkillsLayout =
+  | 'comma' | 'pipe' | 'categorized' | 'pills'
+  | 'proficiency' | 'chips';
+
+// Phase 10C: decoration axes — color, heading rule, name typography,
+// sidebar layout. All optional so legacy configs keep working.
+export type HeadingRule = 'bar' | 'underline' | 'double' | 'thick' | 'plain';
+export type NameTypography = 'regular' | 'display' | 'letter_spaced';
 
 export interface TemplateConfigJson {
   id: string;
@@ -765,6 +772,10 @@ export interface TemplateConfigJson {
   section_heading_style: SectionHeadingStyle;
   experience_layout: ExperienceLayout;
   skills_layout: SkillsLayout;
+  // Phase 10C decoration axes (all optional for backward compat)
+  heading_rule?: HeadingRule;
+  name_typography?: NameTypography;
+  sidebar_layout?: boolean;
   ats_friendly: boolean;
   description: string;
 }
@@ -816,6 +827,10 @@ export const templatesApi = {
     section_heading_style?: SectionHeadingStyle;
     experience_layout?: ExperienceLayout;
     skills_layout?: SkillsLayout;
+    // Phase 10C decoration axes
+    heading_rule?: HeadingRule;
+    name_typography?: NameTypography;
+    sidebar_layout?: boolean;
     is_ats_friendly?: boolean;
   }): Promise<Template> => {
     const resp = await api.post<Template>('/templates', payload);
@@ -837,6 +852,10 @@ export const templatesApi = {
       section_heading_style: SectionHeadingStyle;
       experience_layout: ExperienceLayout;
       skills_layout: SkillsLayout;
+      // Phase 10C decoration axes
+      heading_rule: HeadingRule;
+      name_typography: NameTypography;
+      sidebar_layout: boolean;
       is_ats_friendly: boolean;
     }>,
   ): Promise<Template> => {
