@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Briefcase, RefreshCw, AlertCircle, Plus, X, ArrowUpDown } from 'lucide-react';
-import clsx from 'clsx';
 import { useSearchParams } from 'react-router-dom';
-import { jobsApi, matchesApi, profileApi, type JobOut, type JobStatus, type JobMatchSummary } from '../lib/api';
+import { jobsApi, matchesApi, profileApi, type JobOut, type JobMatchSummary } from '../lib/api';
 import { toast } from '../lib/toast';
 import PageHeader from '../components/PageHeader';
 import PasteZone from '../components/jobs/PasteZone';
@@ -17,7 +16,6 @@ import {
   ALL_FILTER_CATEGORIES,
 } from '../components/jobs/jobFilters';
 
-type StatusFilter = 'all' | JobStatus;
 type SortBy =
   | 'newest'
   | 'oldest'
@@ -34,14 +32,11 @@ type SortBy =
   | 'cover_letter_ready'
   | 'critical_gaps';
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'parsed', label: 'Analyzed' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'scraping', label: 'Scraping' },
-  { value: 'parsing', label: 'Analyzing' },
-  { value: 'pending', label: 'Pending' },
-];
+// Phase 10D: status filter tabs removed — the dark score panel on
+// every card already communicates state (PENDING for scraping/parsing,
+// score for analyzed, NO PROFILE for missing profile, UNAVAILABLE for
+// failed). The tabs were redundant with the panel. Users who want
+// to see only failed jobs can use the "Failed Analysis First" sort.
 
 // Phase 10D: sort options per spec E. The "Recommended for You" sort
 // uses match_score when present + freshness as a tiebreaker. Falls
@@ -80,7 +75,6 @@ export default function JobsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('recommended');
   // Phase 10D: bulk match summaries (one fetch for the whole grid)
   const [matchSummaries, setMatchSummaries] = useState<JobMatchSummary[]>([]);
@@ -95,10 +89,8 @@ export default function JobsPage() {
     expected_salary_currency?: string | null;
     work_authorization?: string | null;
   } | null>(null);
-  // Phase 10D: filter state (URL-synced). Status filter is a separate
-  // primitive (kept as legacy state above) because spec B says it
-  // answers "what stage is this job in?" not "what kind of job do I
-  // want?".
+  // Phase 10D: filter state (URL-synced). Status tabs were removed
+  // because the dark score panel already shows state per-card.
   const [filterState, setFilterState] = useState<FilterState>(() =>
     filterStateFromSearchParams(searchParams),
   );
@@ -107,8 +99,6 @@ export default function JobsPage() {
   // is filterState; URL is the persistence + shareable link layer.
   useEffect(() => {
     const next = searchParamsFromFilterState(filterState);
-    // Preserve status + sort if they're in the URL too.
-    if (statusFilter !== 'all') next.set('status', statusFilter);
     if (sortBy !== 'recommended') next.set('sort', sortBy);
     setSearchParams(next, { replace: true });
   }, [filterState]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -265,10 +255,10 @@ export default function JobsPage() {
     fetchJobs();
   };
 
-  // Apply status + multi-category filters + sort in one pass.
-  // useMemo so it only re-runs when jobs / statusFilter / sortBy /
-  // filterState actually change. The match summary map is also built
-  // here so the sort can read match scores without a second pass.
+  // Apply multi-category filters + sort in one pass.
+  // useMemo so it only re-runs when jobs / sortBy / filterState
+  // actually change. The match summary map is also built here so the
+  // sort can read match scores without a second pass.
   const summaryByJobId = useMemo(() => {
     const m = new Map<string, JobMatchSummary>();
     for (const s of matchSummaries) m.set(s.job_id, s);
@@ -276,12 +266,10 @@ export default function JobsPage() {
   }, [matchSummaries]);
 
   const visibleJobs = useMemo(() => {
-    // 1. Status filter (existing pipeline state filter)
-    const byStatus =
-      statusFilter === 'all' ? jobs : jobs.filter((j) => j.status === statusFilter);
-
-    // 2. Multi-category filters (Phase 10D) — OR within category, AND between.
-    const filtered = byStatus.filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES));
+    // Multi-category filters (Phase 10D) — OR within category, AND between.
+    // Status filter no longer needed: the dark score panel on every
+    // card already shows the state.
+    const filtered = jobs.filter((j) => matchesAllFilters(j, filterState, ALL_FILTER_CATEGORIES));
 
     // 3. Sort
     const sorted = [...filtered];
@@ -354,14 +342,7 @@ export default function JobsPage() {
         break;
     }
     return sorted;
-  }, [jobs, statusFilter, filterState, sortBy, summaryByJobId]);
-
-  // Count per status for the filter chips' badges.
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: jobs.length };
-    for (const j of jobs) counts[j.status] = (counts[j.status] ?? 0) + 1;
-    return counts;
-  }, [jobs]);
+  }, [jobs, filterState, sortBy, summaryByJobId]);
 
   // The job whose drawer is open. Null = closed.
   const drawerJob = useMemo(
@@ -421,43 +402,12 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Filter chips + sort dropdown (only when we have rows) */}
+      {/* Sort dropdown + filter bar (only when we have rows). The
+          old status tabs (All/Analyzed/Failed/etc) are gone — the
+          dark score panel on every card communicates state. */}
       {!loading && jobs.length > 0 && (
         <div className="space-y-3 mb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-1.5" data-testid="status-filters">
-              {STATUS_FILTERS.map((f) => {
-                const count = statusCounts[f.value] ?? 0;
-                const active = statusFilter === f.value;
-                return (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => setStatusFilter(f.value)}
-                    data-testid={`filter-${f.value}`}
-                    className={clsx(
-                      'px-3 py-1.5 text-[12px] font-medium rounded-full border transition-colors',
-                      active
-                        ? 'bg-brand-50 border-brand-300 text-brand-700'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                    )}
-                  >
-                    {f.label}
-                    {count > 0 && (
-                      <span
-                        className={clsx(
-                          'ml-1.5 text-[11px]',
-                          active ? 'text-brand-600' : 'text-slate-400'
-                        )}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
             <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
               <ArrowUpDown className="w-3.5 h-3.5" />
               <select
@@ -552,14 +502,15 @@ export default function JobsPage() {
       {!loading && jobs.length > 0 && visibleJobs.length === 0 && (
         <div className="card card-pad text-center py-12">
           <p className="text-[14px] text-slate-600">
-            No jobs match the <span className="font-semibold">{statusFilter}</span> filter.
+            No jobs match your current filters.
           </p>
           <button
             type="button"
-            onClick={() => setStatusFilter('all')}
+            onClick={() => setFilterState({})}
+            data-testid="empty-clear-filters"
             className="mt-3 text-[13px] text-brand-600 hover:text-brand-700 font-medium"
           >
-            Show all jobs
+            Clear all filters
           </button>
         </div>
       )}
@@ -568,7 +519,7 @@ export default function JobsPage() {
       {!loading && jobs.length > 0 && (
         <p className="mt-6 text-center text-[12px] text-slate-500">
           {visibleJobs.length === jobs.length
-            ? `${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'} · ${jobs.filter((j) => j.status === 'parsed').length} analyzed`
+            ? `${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}`
             : `Showing ${visibleJobs.length} of ${jobs.length} jobs`}
         </p>
       )}
