@@ -8,6 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
 [![Tests](https://img.shields.io/badge/tests-110%20passing-brightgreen.svg)](#testing)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Good First Issues](https://img.shields.io/github/issues/muhammadiwa/cv-builder/good%20first%20issue?label=help%20wanted)](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
 ---
 
