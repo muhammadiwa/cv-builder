@@ -307,7 +307,6 @@ export default function JobDetailPage() {
           <JobOverviewCard job={job} analysis={analysis} />
 
           <ProfileMatchCompactCard
-            jobId={job.id}
             jobStatus={job.status}
             match={match}
             baseProfileConfidence={profile?.confidence_score ?? null}

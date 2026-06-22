@@ -13,17 +13,12 @@
  * tab. This card answers "should I keep reading?" without dominating
  * the page.
  */
-import { Link } from 'react-router-dom';
 import {
   TrendingUp,
   TrendingDown,
   AlertTriangle,
   CheckCircle2,
   Gauge,
-  ArrowRight,
-  FileText,
-  UserCog,
-  Sparkles,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { JobMatch } from '../../../lib/api';
@@ -39,7 +34,6 @@ interface MissingLite {
 }
 
 export interface ProfileMatchCompactCardProps {
-  jobId: string;
   jobStatus: string;
   match: JobMatch | null;
   /** Optional base profile confidence for the header subtitle. */
@@ -101,7 +95,6 @@ function buildHighlights(match: JobMatch | null): {
 }
 
 export default function ProfileMatchCompactCard({
-  jobId,
   jobStatus,
   match,
   baseProfileConfidence,
@@ -241,40 +234,13 @@ export default function ProfileMatchCompactCard({
         </ul>
       )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
-        <Link
-          to={`/jobs/${jobId}?tab=match`}
-          data-testid="view-match-analysis"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-brand-700 hover:text-brand-800"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          View full analysis
-          <ArrowRight className="w-3 h-3" />
-        </Link>
-        <span className="text-slate-300">·</span>
-        <Link
-          to={`/cvs?job_id=${jobId}`}
-          data-testid="build-cv-link"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:text-slate-900"
-        >
-          <FileText className="w-3.5 h-3.5" />
-          Build tailored CV
-        </Link>
-        <span className="text-slate-300">·</span>
-        <Link
-          to={`/profile?focus=evidence`}
-          data-testid="improve-profile-link"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:text-slate-900"
-        >
-          <UserCog className="w-3.5 h-3.5" />
-          Improve profile
-        </Link>
-        {/* Visual hint, hidden on small screens */}
+      {/* Anti-fabrication hint (Phase 10J). The 3 prior action links
+          ('View full analysis', 'Build tailored CV', 'Improve
+          profile') were exact duplicates of cards in the right
+          column's AI Action Center — killed for the same reason. */}
+      <div className="pt-1 border-t border-slate-100 flex justify-end">
         <span
-          className={clsx(
-            'ml-auto inline-flex items-center gap-1 text-[11px] text-slate-500',
-          )}
+          className="inline-flex items-center gap-1 text-[11px] text-slate-500"
           title="Match analysis is calibrated but never a guarantee of interview"
         >
           <TrendingUp className="w-3 h-3" />
