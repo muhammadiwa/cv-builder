@@ -42,16 +42,20 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { JobOut, JobMatch, JobAnalysis } from '../../../lib/api';
+import type { ProfileData } from '../../ProfileEditForm';
 
 export interface TailoredCVDrawerProps {
   open: boolean;
   onClose: () => void;
   job: JobOut;
   match: JobMatch | null;
-  /** Last 1-2 lines of the user's CV summary. */
-  resumeSummary: string;
-  /** Approx years of experience the user has, e.g. "3+ years exp". */
-  resumeYears: string;
+  /**
+   * Full Base Profile (ProfileData). When provided, the drawer
+   * derives resume years, current title, and summary from real
+   * profile fields (work history, base_profile_json.basics) —
+   * no stubs.
+   */
+  profile: ProfileData | null;
 }
 
 // ── Status visual mapping ────────────────────────────────────
@@ -110,11 +114,93 @@ function PillTag({
   );
 }
 
+// ── Real-data derivations (Phase 10N) ────────────────────────
+//
+// The drawer used to receive hard-coded `resumeSummary` and
+// `resumeYears` strings. Both are now derived from the real
+// ProfileData shape that the BE already returns at /api/profile.
+//
+//  - Years of experience: summed from base_profile_json.work[],
+//    each entry's (endDate || now) - startDate converted to
+//    fractional years.
+//  - Current title: highest-priority of base_profile_json.basics
+//    .label → profile.title → first open work[].position.
+//  - Resume summary: profile.summary → base_profile_json.basics
+//    .summary → ''.
+
+interface WorkItem {
+  name: string;
+  position: string;
+  startDate?: string;
+  endDate?: string | null;
+}
+
+function deriveResumeYears(profile: ProfileData | null): string {
+  if (!profile) return '—';
+  const work = (profile.base_profile_json?.work ?? []) as WorkItem[];
+  if (work.length === 0) return '—';
+  const now = new Date();
+  let totalMonths = 0;
+  for (const job of work) {
+    if (!job.startDate) continue;
+    const start = parseYearMonth(job.startDate);
+    if (!start) continue;
+    const end = job.endDate ? parseYearMonth(job.endDate) : now;
+    if (!end || end <= start) continue;
+    totalMonths += (end.getFullYear() - start.getFullYear()) * 12
+      + (end.getMonth() - start.getMonth());
+  }
+  if (totalMonths === 0) return '—';
+  const years = totalMonths / 12;
+  // Round to nearest integer if close, otherwise 1 decimal.
+  const rounded = Math.abs(years - Math.round(years)) < 0.15
+    ? Math.round(years)
+    : Math.round(years * 10) / 10;
+  return `${rounded}+ years exp`;
+}
+
+function deriveResumeTitle(profile: ProfileData | null): string {
+  if (!profile) return '';
+  const basicsLabel = profile.base_profile_json?.basics?.label;
+  if (basicsLabel && basicsLabel.trim()) return basicsLabel;
+  if (profile.title && profile.title.trim()) return profile.title;
+  const work = (profile.base_profile_json?.work ?? []) as WorkItem[];
+  // Pick the open (no endDate) position if any, else the latest.
+  const open = work.find((w) => !w.endDate);
+  if (open) return open.position;
+  if (work.length > 0) return work[0].position;
+  return '';
+}
+
+function deriveResumeSummary(profile: ProfileData | null): string {
+  if (!profile) return '';
+  if (profile.summary && profile.summary.trim()) return profile.summary;
+  const basics = profile.base_profile_json?.basics?.summary;
+  if (basics && basics.trim()) return basics;
+  return '';
+}
+
+function parseYearMonth(ym: string): Date | null {
+  // Accept "2025-05", "2025-5", "2025", "2025-05-15"
+  const m = ym.match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  const month = m[2] ? parseInt(m[2], 10) - 1 : 0;
+  return new Date(year, month, 1);
+}
+
+function parseYears(label: string): number {
+  // Parse the leading integer from a label like "3+ years exp".
+  const m = label.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
 function buildRows(
   job: JobOut,
   match: JobMatch | null,
   resumeSummary: string,
   resumeYears: string,
+  resumeTitle: string,
 ): ComparisonRow[] {
   const analysis = (job.job_analysis_json as JobAnalysis | undefined) ?? {};
   const matched = match?.matched_skills ?? [];
@@ -125,7 +211,9 @@ function buildRows(
       label: 'Job Title',
       kind: 'match',
       jobValue: <span className="font-medium text-slate-800">{job.title || '—'}</span>,
-      resumeValue: <span className="text-slate-700">Backend Developer / Fullstack Engineer</span>,
+      resumeValue: resumeTitle
+        ? <span className="text-slate-700">{resumeTitle}</span>
+        : <span className="text-slate-500">—</span>,
     },
   ];
 
@@ -254,11 +342,6 @@ function buildRows(
   return rows;
 }
 
-function parseYears(label: string): number {
-  const m = label.match(/(\d+)/);
-  return m ? parseInt(m[1], 10) : 0;
-}
-
 function scoreBand(score: number): {
   label: string;
   color: string;
@@ -335,8 +418,7 @@ export default function TailoredCVDrawer({
   onClose,
   job,
   match,
-  resumeSummary,
-  resumeYears,
+  profile,
 }: TailoredCVDrawerProps) {
   // ESC closes
   useEffect(() => {
@@ -362,7 +444,14 @@ export default function TailoredCVDrawer({
   const score = match?.match_score ?? 0;
   const band = scoreBand(score);
   const company = job.company || 'Company';
-  const rows = buildRows(job, match, resumeSummary, resumeYears);
+
+  // Derive resume identity from the real Base Profile. No stubs —
+  // if the profile isn't loaded yet, the affected rows show '—'.
+  const resumeTitle = deriveResumeTitle(profile);
+  const resumeYears = deriveResumeYears(profile);
+  const resumeSummary = deriveResumeSummary(profile);
+
+  const rows = buildRows(job, match, resumeSummary, resumeYears, resumeTitle);
   const isLowMatch = score < 0.6;
   const steps = [
     { n: 1, label: 'See Your Difference' },
@@ -399,10 +488,11 @@ export default function TailoredCVDrawer({
         }}
         className={clsx(
           // Full-height sheet. Width ramps with viewport: 100% on
-          // phones, 560px on small tablets, 720px on md, 800px on
-          // lg+ so the comparison table never feels cramped.
+          // phones, 560px on small tablets, 720px on md, 880px on
+          // lg+, 960px on xl so the comparison table never feels
+          // cramped and there's enough horizontal room to breathe.
           'fixed top-0 right-0 bottom-0 z-[1001] m-0',
-          'w-full sm:w-[560px] md:w-[720px] lg:w-[800px] xl:w-[840px] h-screen',
+          'w-full sm:w-[560px] md:w-[720px] lg:w-[880px] xl:w-[960px] h-screen',
           'bg-white shadow-xl rounded-none sm:rounded-l-xl flex flex-col',
           'transition-transform duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
           open ? 'translate-x-0' : 'translate-x-full',
@@ -413,7 +503,7 @@ export default function TailoredCVDrawer({
       >
         {/* ── Header ────────────────────────────────────────── */}
         <header
-          className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-b border-slate-200 shrink-0"
+          className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 lg:px-8 py-3 sm:py-4 border-b border-slate-200 shrink-0"
           style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
         >
           <button
@@ -446,7 +536,7 @@ export default function TailoredCVDrawer({
           style={{ WebkitOverflowScrolling: 'touch' as const }}
         >
           {/* Step indicator */}
-          <div className="px-4 sm:px-5 lg:px-6 py-4 sm:py-5 border-b border-slate-200 bg-slate-50/50">
+          <div className="px-4 sm:px-5 lg:px-8 py-4 sm:py-5 border-b border-slate-200 bg-slate-50/50">
             <ol className="flex items-center gap-1.5 sm:gap-2 max-w-xl mx-auto">
               {steps.map((step, i) => {
                 const active = i === 0;
@@ -485,7 +575,7 @@ export default function TailoredCVDrawer({
           </div>
 
           {/* ── Hero (score) ──────────────────────────────── */}
-          <div className="px-4 sm:px-5 lg:px-6 py-5 sm:py-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5 md:gap-6 items-center">
+          <div className="px-4 sm:px-5 lg:px-8 py-5 sm:py-6 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-5 md:gap-6 items-center">
             <div className="min-w-0">
               <h3 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900 leading-tight">
                 Your resume is a {band.label.toLowerCase()} match for this job
@@ -522,7 +612,7 @@ export default function TailoredCVDrawer({
           </div>
 
           {/* ── Comparison table ──────────────────────────── */}
-          <div className="px-4 sm:px-5 lg:px-6 pb-2">
+          <div className="px-4 sm:px-5 lg:px-8 pb-2">
             <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
               {/* Column headers */}
               <div className="hidden sm:grid grid-cols-[1.1fr_1fr_1fr] bg-slate-50 px-4 py-3 border-b border-slate-200 text-xs">
@@ -602,7 +692,7 @@ export default function TailoredCVDrawer({
           </div>
 
           {/* Anti-fabrication footer note */}
-          <p className="px-4 sm:px-5 lg:px-6 pb-6 pt-2 text-[11px] text-slate-500 italic">
+          <p className="px-4 sm:px-5 lg:px-8 pb-6 pt-2 text-[11px] text-slate-500 italic">
             Calibrated, not a guarantee — match score is estimated from
             your current resume, the job description, and the Base
             Profile. Real recruiter decisions depend on many other factors.
@@ -611,7 +701,7 @@ export default function TailoredCVDrawer({
 
         {/* ── Footer action bar ──────────────────────────── */}
         <footer
-          className="px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-t border-slate-200 bg-white flex items-center justify-center shrink-0"
+          className="px-4 sm:px-5 lg:px-8 py-3 sm:py-4 border-t border-slate-200 bg-white flex items-center justify-center shrink-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
         >
           <button

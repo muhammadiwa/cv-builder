@@ -52,12 +52,10 @@ import ATSKeywordsSection from '../components/jobs/detail/ATSKeywordsSection';
 import RawJobDescriptionAccordion from '../components/jobs/detail/RawJobDescriptionAccordion';
 import AIActionCenter from '../components/jobs/detail/AIActionCenter';
 
-// Minimal shape we care about from /profile. We don't import a full
-// Profile type because the FE side doesn't ship one — define the few
-// fields we read so we don't widen the API surface for this page.
-interface ProfileLite {
-  confidence_score: number | null;
-}
+// We import the full ProfileData shape (the same one ProfilePage
+// and ProfileEditForm use) so the TailoredCVDrawer can derive
+// resume years / title / summary from real fields without stubs.
+import type { ProfileData } from '../components/ProfileEditForm';
 
 export default function JobDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
@@ -66,7 +64,7 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<JobOut | null>(null);
   const [match, setMatch] = useState<JobMatch | null>(null);
   const [cvDraft, setCvDraft] = useState<CVDraft | null>(null);
-  const [profile, setProfile] = useState<ProfileLite | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -128,7 +126,7 @@ export default function JobDetailPage() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const data = await profileApi.getProfile<ProfileLite>();
+      const data = await profileApi.getProfile<ProfileData>();
       setProfile(data);
     } catch {
       setProfile(null);
@@ -354,21 +352,18 @@ export default function JobDetailPage() {
         />
       </div>
 
-      {/* Phase 10K: slide-out drawer for the tailored CV flow.
-          TODO(10L): pull the real `summary` from the profile API once
-          a richer profile shape is shipped; for now the drawer hard-
-          codes a representative CV summary so the alignment view has
-          something realistic to compare against. */}
+      {/* Phase 10N: drawer receives the real Base Profile. The drawer
+          derives resumeYears / resumeTitle / resumeSummary from
+          profile.work[] + profile.summary, with no hard-coded
+          stubs. While the profile is still loading, the affected
+          rows show '—' via the drawer's graceful-empty handling. */}
       {job && (
         <TailoredCVDrawer
           open={tailoredCvOpen}
           onClose={() => setTailoredCvOpen(false)}
           job={job}
           match={match}
-          resumeSummary={
-            'Backend Developer with 3+ years of experience building production web applications using .NET Core, Golang, Laravel, and NuxtJS. Comfortable across the full stack — from REST API design and database modelling to component-driven frontends.'
-          }
-          resumeYears="3+ years exp"
+          profile={profile}
         />
       )}
     </div>
