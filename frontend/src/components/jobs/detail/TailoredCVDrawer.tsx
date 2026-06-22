@@ -389,23 +389,33 @@ export default function TailoredCVDrawer({
         aria-labelledby="tailored-cv-drawer-title"
         aria-hidden={!open}
         data-testid="tailored-cv-drawer"
+        style={{
+          // Belt-and-suspenders: the parent <div className="space-y-6">
+          // (which adds margin-top: 1.5rem to subsequent children) leaks
+          // onto this fixed-positioned aside via the cascade, pushing
+          // it 24px down so the footer button sits below the fold.
+          // Inline !important is the only reliable override here.
+          margin: 0,
+        }}
         className={clsx(
           // Full-height sheet. Width ramps with viewport: 100% on
-          // phones, 560px on small tablets, 720-760px on md+.
-          'fixed top-0 right-0 z-[1001] h-screen w-full sm:w-[560px] md:w-[720px] lg:w-[760px]',
+          // phones, 560px on small tablets, 720px on md, 800px on
+          // lg+ so the comparison table never feels cramped.
+          'fixed top-0 right-0 bottom-0 z-[1001] m-0',
+          'w-full sm:w-[560px] md:w-[720px] lg:w-[800px] xl:w-[840px] h-screen',
           'bg-white shadow-xl rounded-none sm:rounded-l-xl flex flex-col',
           'transition-transform duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]',
           open ? 'translate-x-0' : 'translate-x-full',
         )}
-        style={{
-          // iOS safe-area: respect the notch / home indicator so
-          // the X button + footer CTAs aren't pushed off-screen.
-          paddingTop: 'env(safe-area-inset-top)',
-          paddingBottom: 'env(safe-area-inset-bottom)',
-        }}
+        // No padding here — the header and footer each manage
+        // their own safe-area-inset individually so the inset
+        // isn't double-counted.
       >
         {/* ── Header ────────────────────────────────────────── */}
-        <header className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-b border-slate-200 shrink-0">
+        <header
+          className="flex items-center gap-2 sm:gap-3 px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-b border-slate-200 shrink-0"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
+        >
           <button
             type="button"
             onClick={onClose}
@@ -601,21 +611,14 @@ export default function TailoredCVDrawer({
 
         {/* ── Footer action bar ──────────────────────────── */}
         <footer
-          className="px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-t border-slate-200 bg-slate-50/50 flex items-center justify-end gap-2 sm:gap-3 shrink-0"
+          className="px-4 sm:px-5 lg:px-6 py-3 sm:py-4 border-t border-slate-200 bg-white flex items-center justify-center shrink-0"
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.75rem)' }}
         >
           <button
             type="button"
-            onClick={onClose}
-            className="px-3 sm:px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-          >
-            Not now
-          </button>
-          <button
-            type="button"
             data-testid="improve-resume-cta"
             onClick={onClose}
-            className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold shadow-sm transition"
+            className="inline-flex items-center gap-2 w-full sm:w-auto justify-center px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm sm:text-base font-semibold shadow-sm transition"
           >
             <Sparkles className="w-4 h-4" />
             <span className="hidden sm:inline">Improve My Resume for This Job</span>
