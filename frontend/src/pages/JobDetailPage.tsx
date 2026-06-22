@@ -22,10 +22,12 @@
  * /cover-letters pages pre-filtered by job_id.
  */
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import clsx from 'clsx';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   AlertCircle,
+  ChevronDown,
 } from 'lucide-react';
 
 import {
@@ -41,9 +43,6 @@ import {
 import { toast } from '../lib/toast';
 
 import JobDetailHeader from '../components/jobs/detail/JobDetailHeader';
-import JobDetailTabs, {
-  type JobDetailTab,
-} from '../components/jobs/detail/JobDetailTabs';
 import JobOverviewCard from '../components/jobs/detail/JobOverviewCard';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
 import JobRoleSummary from '../components/jobs/detail/JobRoleSummary';
@@ -65,7 +64,6 @@ interface ProfileLite {
 export default function JobDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   const [job, setJob] = useState<JobOut | null>(null);
   const [match, setMatch] = useState<JobMatch | null>(null);
@@ -76,10 +74,10 @@ export default function JobDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
 
-  // ── Tab state (URL-driven) ──
-  const tabParam = (searchParams.get('tab') || 'overview').toLowerCase();
-  const activeTab: JobDetailTab =
-    tabParam === 'match' ? 'match' : 'overview';
+  // Phase 10H: tab system removed — only "Overview" remains. The
+  // Match Analysis content is folded in below as a single collapsible
+  // section. No more ?tab= URL state.
+  const [showDetailedAnalysis, setShowDetailedAnalysis] = useState(false);
 
   // ── Polling timer (module-level so it's a single shared ref) ──
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -301,60 +299,92 @@ export default function JobDetailPage() {
         reanalyzing={reanalyzing}
       />
 
-      {/* ── Tabs ── */}
-      <JobDetailTabs
-        active={activeTab}
-        showMatchTab={hasAnalysis || !!match}
-      />
+      {/* Phase 10H: tabs removed. Only Overview content renders.
+          Detailed match analysis (skill table, gaps filter, CV
+          strategy) is folded in as a collapsible section at the
+          bottom — accessible without a tab switch. */}
 
       {/* ── Two-column body ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,_28%)] xl:grid-cols-[1fr_minmax(300px,_26%)] gap-6">
-        {/* LEFT: tab content */}
-        <main className="min-w-0">
-          {activeTab === 'overview' ? (
-            <div className="space-y-6">
-              <JobOverviewCard job={job} analysis={analysis} />
+        {/* LEFT: single Overview column */}
+        <main className="min-w-0 space-y-6">
+          <JobOverviewCard job={job} analysis={analysis} />
 
-              <ProfileMatchCompactCard
-                jobId={job.id}
-                jobStatus={job.status}
-                match={match}
-                baseProfileConfidence={profile?.confidence_score ?? null}
-              />
+          <ProfileMatchCompactCard
+            jobId={job.id}
+            jobStatus={job.status}
+            match={match}
+            baseProfileConfidence={profile?.confidence_score ?? null}
+          />
 
-              <JobRoleSummary summary={analysis.summary} />
+          <JobRoleSummary summary={analysis.summary} />
 
-              <JobResponsibilitiesSection
-                responsibilities={analysis.responsibilities}
-              />
+          <JobResponsibilitiesSection
+            responsibilities={analysis.responsibilities}
+          />
 
-              <JobQualificationsSection
-                required={qualificationsRequired}
-                preferred={qualificationsPreferred}
-                matchedKeywords={matchedKeywords}
-                missingKeywords={missingKeywords}
-              />
+          <JobQualificationsSection
+            required={qualificationsRequired}
+            preferred={qualificationsPreferred}
+            matchedKeywords={matchedKeywords}
+            missingKeywords={missingKeywords}
+          />
 
-              <RequiredSkillsSection
-                requiredSkills={analysis.required_skills}
-              />
+          <RequiredSkillsSection
+            requiredSkills={analysis.required_skills}
+          />
 
-              <ATSKeywordsSection
-                keywords={analysis.ats_keywords}
-                matchedKeywords={matchedKeywords}
-                missingKeywords={missingKeywords}
-              />
+          <ATSKeywordsSection
+            keywords={analysis.ats_keywords}
+            matchedKeywords={matchedKeywords}
+            missingKeywords={missingKeywords}
+          />
 
-              <RawJobDescriptionAccordion
-                rawDescription={job.raw_description}
-              />
-            </div>
-          ) : (
-            <MatchAnalysisTab
-              match={match}
-              recalculating={reanalyzing}
-              onRecalculate={handleReanalyze}
-            />
+          <RawJobDescriptionAccordion
+            rawDescription={job.raw_description}
+          />
+
+          {/* Collapsible "Detailed match analysis" — replaces the
+              Match Analysis tab. Closed by default so it doesn't
+              dominate the page; expand when the user wants the
+              skill table + gaps + CV strategy. */}
+          {hasAnalysis && (
+            <section
+              data-testid="detailed-match-analysis"
+              className="card card-pad"
+            >
+              <button
+                type="button"
+                onClick={() => setShowDetailedAnalysis((v) => !v)}
+                className="w-full flex items-center justify-between gap-2 text-left"
+                aria-expanded={showDetailedAnalysis}
+              >
+                <div>
+                  <h2 className="section-title mb-0">
+                    Detailed match analysis
+                  </h2>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Skill-by-skill table, missing-requirement
+                    breakdown, and CV strategy.
+                  </p>
+                </div>
+                <ChevronDown
+                  className={clsx(
+                    'w-4 h-4 text-slate-500 transition-transform shrink-0',
+                    showDetailedAnalysis && 'rotate-180',
+                  )}
+                />
+              </button>
+              {showDetailedAnalysis && (
+                <div className="mt-4">
+                  <MatchAnalysisTab
+                    match={match}
+                    recalculating={reanalyzing}
+                    onRecalculate={handleReanalyze}
+                  />
+                </div>
+              )}
+            </section>
           )}
         </main>
 

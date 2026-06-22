@@ -14,7 +14,6 @@
  * lives in the overflow menu so it's available but never dominant.
  */
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Sparkles,
@@ -99,23 +98,10 @@ export default function JobDetailHeader({
 
   return (
     <div className="space-y-3">
-      {/* Breadcrumb — always visible, slim */}
-      <nav
-        aria-label="Breadcrumb"
-        className="flex items-center gap-1.5 text-[12px] text-slate-500"
-      >
-        <Link
-          to="/jobs"
-          className="hover:text-slate-700 transition-colors"
-          onClick={onBack}
-        >
-          Job Postings
-        </Link>
-        <span className="text-slate-300">/</span>
-        <span className="text-slate-700 truncate max-w-[60%]">
-          {job.title || 'Untitled role'}
-        </span>
-      </nav>
+      {/* Phase 10H: breadcrumb removed entirely. The page title +
+          the "Back" button in the action row already cover the
+          navigation need; a redundant breadcrumb above the page
+          heading was visual noise. */}
 
       {/* Status pill row — compact, all on one line */}
       <div className="flex flex-wrap items-center gap-1.5">
