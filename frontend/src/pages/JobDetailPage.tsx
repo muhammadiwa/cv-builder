@@ -42,6 +42,7 @@ import { toast } from '../lib/toast';
 
 import JobDetailHeader from '../components/jobs/detail/JobDetailHeader';
 import JobOverviewCard from '../components/jobs/detail/JobOverviewCard';
+import TailoredCVDrawer from '../components/jobs/detail/TailoredCVDrawer';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
 import JobRoleSummary from '../components/jobs/detail/JobRoleSummary';
 import JobResponsibilitiesSection from '../components/jobs/detail/JobResponsibilitiesSection';
@@ -69,6 +70,8 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Phase 10K: slide-out drawer for the tailored CV flow.
+  const [tailoredCvOpen, setTailoredCvOpen] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
 
   // Phase 10H: tab system removed — only "Overview" remains. The
@@ -347,8 +350,27 @@ export default function JobDetailPage() {
           match={match}
           cvDraft={cvDraft}
           hasBaseProfile={!!profile}
+          onOpenTailoredCV={() => setTailoredCvOpen(true)}
         />
       </div>
+
+      {/* Phase 10K: slide-out drawer for the tailored CV flow.
+          TODO(10L): pull the real `summary` from the profile API once
+          a richer profile shape is shipped; for now the drawer hard-
+          codes a representative CV summary so the alignment view has
+          something realistic to compare against. */}
+      {job && (
+        <TailoredCVDrawer
+          open={tailoredCvOpen}
+          onClose={() => setTailoredCvOpen(false)}
+          job={job}
+          match={match}
+          resumeSummary={
+            'Backend Developer with 3+ years of experience building production web applications using .NET Core, Golang, Laravel, and NuxtJS. Comfortable across the full stack — from REST API design and database modelling to component-driven frontends.'
+          }
+          resumeYears="3+ years exp"
+        />
+      )}
     </div>
   );
 }

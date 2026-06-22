@@ -32,6 +32,8 @@ export interface AIActionCenterProps {
   cvDraft?: CVDraft | null;
   /** True when the user has at least one Base Profile on file. */
   hasBaseProfile: boolean;
+  /** Phase 10K: open the slide-out Tailored CV drawer. */
+  onOpenTailoredCV: () => void;
 }
 
 export default function AIActionCenter({
@@ -40,6 +42,7 @@ export default function AIActionCenter({
   match,
   cvDraft,
   hasBaseProfile,
+  onOpenTailoredCV,
 }: AIActionCenterProps) {
   // Safe-cast: the caller (JobDetailPage) passes the parsed status
   // string from JobOut, which is typed JobStatus. We re-cast here so
@@ -63,10 +66,10 @@ export default function AIActionCenter({
 
       {/* 1. Primary CTA — Tailored CV */}
       <TailoredCVActionCard
-        jobId={jobId}
         jobStatus={safeStatus}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}
+        onOpen={onOpenTailoredCV}
       />
 
       {/* 2. Cover Letter */}
