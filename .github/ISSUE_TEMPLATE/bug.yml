@@ -1,0 +1,70 @@
+name: Bug report
+description: Report broken behavior or an error you encountered
+title: "[Bug]: "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more detail you give, the faster we can reproduce and fix it.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: "I expected the page to do X when I clicked Y..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      placeholder: "Instead, the page did Z and threw an error..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / logs
+      placeholder: "Paste logs, attach screenshots. Remove sensitive info first."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it happened
+      options:
+        - Frontend (React)
+        - Backend (API)
+        - PDF export
+        - Job scraping
+        - AI matching / cover letters
+        - Auth / settings
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS: Ubuntu 24.04 / Python 3.11.9 / Node 20.18 / Browser: Firefox 130"
+    validations:
+      required: false

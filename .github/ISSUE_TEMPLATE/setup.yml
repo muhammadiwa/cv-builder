@@ -1,0 +1,52 @@
+name: Setup / build issue
+description: Problems installing, building, or running the app locally
+title: "[Setup]: "
+labels: ["question", "setup"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        First, check the [README → Quick Start](README.md#-quick-start) and [CONTRIBUTING.md → Dev setup](CONTRIBUTING.md#getting-set-up-locally).
+        If you're still stuck, fill in the details below.
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where are you stuck?
+      options:
+        - Installing backend deps (pip / venv)
+        - Installing frontend deps (npm install)
+        - Backend won't start (uvicorn)
+        - Frontend won't start (npm run dev)
+        - DB seeding / migration
+        - WeasyPrint / PDF system deps
+        - LLM provider connection
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran
+      placeholder: "pip install -r requirements.txt"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Full error output
+      placeholder: "Paste the traceback or terminal output here..."
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS: Ubuntu 24.04 / Python 3.11.9 / Node 20.18"
+    validations:
+      required: true

@@ -1,0 +1,65 @@
+name: Feature request
+description: Suggest a new feature or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We say "no" to a lot of features to keep the project focused. Help us understand the *problem* before the *solution*.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: "When I'm looking for a job, I need to X but the app makes me Y..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who else would benefit?
+      placeholder: "Anyone applying to remote engineering jobs, especially..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed solution
+      placeholder: "It would be great if there was a button to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: "I could also do this manually by... or via..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Small (single component or endpoint)
+        - Medium (cross-cutting, ~1-2 days)
+        - Large (architectural change, >1 week)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Willingness to contribute
+      options:
+        - I'd like to implement this myself
+        - I'd need help to implement this
+        - Just an idea, no time to implement
+    validations:
+      required: false
