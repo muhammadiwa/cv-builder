@@ -89,6 +89,8 @@ export default function AIActionCenter({
       {/* 5. Application Package Status — progress tracker */}
       <ApplicationPackageStatusCard
         jobId={jobId}
+        jobStatus={safeStatus}
+        match={match}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}
       />

@@ -14,6 +14,7 @@
  * lives in the overflow menu so it's available but never dominant.
  */
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Sparkles,
@@ -98,20 +99,22 @@ export default function JobDetailHeader({
 
   return (
     <div className="space-y-3">
-      {/* Breadcrumb (Phase 10G: minimal — just the back link.
-          The page title + job header already make the context
-          obvious; "Job Postings /" was redundant. Slimmer. */}
+      {/* Breadcrumb — always visible, slim */}
       <nav
         aria-label="Breadcrumb"
         className="flex items-center gap-1.5 text-[12px] text-slate-500"
       >
-        <button
-          type="button"
+        <Link
+          to="/jobs"
+          className="hover:text-slate-700 transition-colors"
           onClick={onBack}
-          className="hover:text-slate-900 transition-colors inline-flex items-center gap-1"
         >
-          ← Jobs
-        </button>
+          Job Postings
+        </Link>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-700 truncate max-w-[60%]">
+          {job.title || 'Untitled role'}
+        </span>
       </nav>
 
       {/* Status pill row — compact, all on one line */}

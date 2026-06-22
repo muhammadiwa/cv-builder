@@ -46,8 +46,10 @@ import JobDetailTabs, {
 } from '../components/jobs/detail/JobDetailTabs';
 import JobOverviewCard from '../components/jobs/detail/JobOverviewCard';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
+import JobRoleSummary from '../components/jobs/detail/JobRoleSummary';
 import JobResponsibilitiesSection from '../components/jobs/detail/JobResponsibilitiesSection';
-import SkillsAndRequirementsSection from '../components/jobs/detail/SkillsAndRequirementsSection';
+import JobQualificationsSection from '../components/jobs/detail/JobQualificationsSection';
+import RequiredSkillsSection from '../components/jobs/detail/RequiredSkillsSection';
 import ATSKeywordsSection from '../components/jobs/detail/ATSKeywordsSection';
 import RawJobDescriptionAccordion from '../components/jobs/detail/RawJobDescriptionAccordion';
 import AIActionCenter from '../components/jobs/detail/AIActionCenter';
@@ -235,10 +237,18 @@ export default function JobDetailPage() {
     [job],
   );
   const hasAnalysis = !!job && Object.keys(analysis).length > 0 && job.status === 'parsed';
-  // Phase 10G: qualificationsRequired/Preferred useMemo removed — the
-  // new SkillsAndRequirementsSection reads analysis.required_skills /
-  // preferred_skills directly, so the flattened string lists are no
-  // longer needed.
+  const qualificationsRequired = useMemo<string[]>(() => {
+    if (Array.isArray((analysis as any).qualifications_required)) {
+      return (analysis as any).qualifications_required;
+    }
+    return (analysis.required_skills || []).flatMap((c) => c.keywords || []);
+  }, [analysis]);
+  const qualificationsPreferred = useMemo<string[]>(() => {
+    if (Array.isArray((analysis as any).qualifications_preferred)) {
+      return (analysis as any).qualifications_preferred;
+    }
+    return (analysis.preferred_skills || []).flatMap((c) => c.keywords || []);
+  }, [analysis]);
 
   // ── Loading / error / empty states ──
   if (loading) {
@@ -312,25 +322,21 @@ export default function JobDetailPage() {
                 baseProfileConfidence={profile?.confidence_score ?? null}
               />
 
+              <JobRoleSummary summary={analysis.summary} />
+
               <JobResponsibilitiesSection
                 responsibilities={analysis.responsibilities}
               />
 
-              {/* (Phase 10G: JobRoleSummary removed — AI summary of the
-                  role is now folded into the Responsibilities header
-                  description. Removes one section from the left
-                  column that was just paraphrasing the same source.) */}
-
-              {/* Phase 10G: merged Qualifications + Required Skills into
-                  a single SkillsAndRequirementsSection. The two old
-                  sections showed the same keywords twice (once as
-                  chips, once as a checklist). Now there's one
-                  place to read them, with a search filter. */}
-              <SkillsAndRequirementsSection
-                requiredSkills={analysis.required_skills}
-                preferredSkills={analysis.preferred_skills}
+              <JobQualificationsSection
+                required={qualificationsRequired}
+                preferred={qualificationsPreferred}
                 matchedKeywords={matchedKeywords}
                 missingKeywords={missingKeywords}
+              />
+
+              <RequiredSkillsSection
+                requiredSkills={analysis.required_skills}
               />
 
               <ATSKeywordsSection

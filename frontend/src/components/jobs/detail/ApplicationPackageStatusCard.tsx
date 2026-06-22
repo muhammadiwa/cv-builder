@@ -14,10 +14,12 @@
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Circle, ArrowRight, Package } from 'lucide-react';
 import clsx from 'clsx';
-import type { CVDraft } from '../../../lib/api';
+import type { JobStatus, JobMatch, CVDraft } from '../../../lib/api';
 
 export interface ApplicationPackageStatusCardProps {
   jobId: string;
+  jobStatus: JobStatus;
+  match: JobMatch | null;
   cvDraft: CVDraft | null;
   hasBaseProfile: boolean;
 }
@@ -28,13 +30,15 @@ interface PackageItem {
 }
 
 function buildItems(
+  jobStatus: JobStatus,
+  match: JobMatch | null,
   cvDraft: CVDraft | null,
 ): PackageItem[] {
-  // Phase 10G: dropped the "Profile Match" line — the compact card
-  // on the left is the single source of truth for the score. This
-  // tracker now focuses on the **actionable** steps the user still
-  // has to take, not on the analysis again.
   return [
+    {
+      label: 'Profile Match',
+      done: jobStatus === 'parsed' && !!match,
+    },
     {
       label: 'Tailored CV',
       done: !!cvDraft && cvDraft.status !== 'draft',
@@ -55,10 +59,12 @@ function buildItems(
 
 export default function ApplicationPackageStatusCard({
   jobId,
+  jobStatus,
+  match,
   cvDraft,
   hasBaseProfile,
 }: ApplicationPackageStatusCardProps) {
-  const items = buildItems(cvDraft);
+  const items = buildItems(jobStatus, match, cvDraft);
   const doneCount = items.filter((i) => i.done).length;
   const total = items.length;
   const pct = Math.round((doneCount / total) * 100);
