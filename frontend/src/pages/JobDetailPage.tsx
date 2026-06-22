@@ -22,12 +22,10 @@
  * /cover-letters pages pre-filtered by job_id.
  */
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import clsx from 'clsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Loader2,
   AlertCircle,
-  ChevronDown,
 } from 'lucide-react';
 
 import {
@@ -52,7 +50,6 @@ import RequiredSkillsSection from '../components/jobs/detail/RequiredSkillsSecti
 import ATSKeywordsSection from '../components/jobs/detail/ATSKeywordsSection';
 import RawJobDescriptionAccordion from '../components/jobs/detail/RawJobDescriptionAccordion';
 import AIActionCenter from '../components/jobs/detail/AIActionCenter';
-import MatchAnalysisTab from '../components/jobs/detail/MatchAnalysisTab';
 
 // Minimal shape we care about from /profile. We don't import a full
 // Profile type because the FE side doesn't ship one — define the few
@@ -77,7 +74,6 @@ export default function JobDetailPage() {
   // Phase 10H: tab system removed — only "Overview" remains. The
   // Match Analysis content is folded in below as a single collapsible
   // section. No more ?tab= URL state.
-  const [showDetailedAnalysis, setShowDetailedAnalysis] = useState(false);
 
   // ── Polling timer (module-level so it's a single shared ref) ──
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -343,49 +339,6 @@ export default function JobDetailPage() {
           <RawJobDescriptionAccordion
             rawDescription={job.raw_description}
           />
-
-          {/* Collapsible "Detailed match analysis" — replaces the
-              Match Analysis tab. Closed by default so it doesn't
-              dominate the page; expand when the user wants the
-              skill table + gaps + CV strategy. */}
-          {hasAnalysis && (
-            <section
-              data-testid="detailed-match-analysis"
-              className="card card-pad"
-            >
-              <button
-                type="button"
-                onClick={() => setShowDetailedAnalysis((v) => !v)}
-                className="w-full flex items-center justify-between gap-2 text-left"
-                aria-expanded={showDetailedAnalysis}
-              >
-                <div>
-                  <h2 className="section-title mb-0">
-                    Detailed match analysis
-                  </h2>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Skill-by-skill table, missing-requirement
-                    breakdown, and CV strategy.
-                  </p>
-                </div>
-                <ChevronDown
-                  className={clsx(
-                    'w-4 h-4 text-slate-500 transition-transform shrink-0',
-                    showDetailedAnalysis && 'rotate-180',
-                  )}
-                />
-              </button>
-              {showDetailedAnalysis && (
-                <div className="mt-4">
-                  <MatchAnalysisTab
-                    match={match}
-                    recalculating={reanalyzing}
-                    onRecalculate={handleReanalyze}
-                  />
-                </div>
-              )}
-            </section>
-          )}
         </main>
 
         {/* RIGHT: sticky AI Action Center */}
