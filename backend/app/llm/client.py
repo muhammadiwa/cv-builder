@@ -116,6 +116,7 @@ TASK_TYPES = {
     "cv_generate",    # build tailored CV content
     "cv_score",       # score + critique a CV draft
     "cv_improve",     # generate improvement recommendations
+    "cv_enhance",     # LLM polish per CV section (bullets, summary)
     "cover_letter",   # generate cover letter
 }
 

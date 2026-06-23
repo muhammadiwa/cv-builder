@@ -937,6 +937,7 @@ export type LLMTaskType =
   | 'resume_parse'
   | 'job_analyze'
   | 'match'
+  | 'score_match'
   | 'cv_generate'
   | 'cv_score'
   | 'cv_improve'
@@ -947,6 +948,7 @@ export const LLM_TASK_TYPES: readonly LLMTaskType[] = [
   'resume_parse',
   'job_analyze',
   'match',
+  'score_match',
   'cv_generate',
   'cv_score',
   'cv_improve',

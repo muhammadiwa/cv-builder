@@ -40,6 +40,7 @@ const TASK_LABEL: Record<LLMTaskType, string> = {
   resume_parse: 'Resume Parse',
   job_analyze: 'Job Analyze',
   match: 'Match Score',
+  score_match: 'AI Match Score',
   cv_generate: 'CV Generate',
   cv_score: 'CV Score',
   cv_improve: 'CV Improve',
