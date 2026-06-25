@@ -37,8 +37,8 @@ import {
   AlertCircle,
   AlertTriangle,
   Info,
-  ChevronDown,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { JobOut, JobMatch, JobAnalysis } from '../../../lib/api';
@@ -49,13 +49,11 @@ export interface TailoredCVDrawerProps {
   onClose: () => void;
   job: JobOut;
   match: JobMatch | null;
-  /**
-   * Full Base Profile (ProfileData). When provided, the drawer
-   * derives resume years, current title, and summary from real
-   * profile fields (work history, base_profile_json.basics) —
-   * no stubs.
-   */
   profile: ProfileData | null;
+  /** Called when the user clicks 'Improve My Resume' — parent handles API call. */
+  onBuildCv: () => void;
+  /** True while the CV is being created. */
+  isBuilding?: boolean;
 }
 
 // ── Status visual mapping ────────────────────────────────────
@@ -419,6 +417,8 @@ export default function TailoredCVDrawer({
   job,
   match,
   profile,
+  onBuildCv,
+  isBuilding,
 }: TailoredCVDrawerProps) {
   // ESC closes
   useEffect(() => {
@@ -450,6 +450,7 @@ export default function TailoredCVDrawer({
   const resumeTitle = deriveResumeTitle(profile);
   const resumeYears = deriveResumeYears(profile);
   const resumeSummary = deriveResumeSummary(profile);
+  const resumeName = profile?.name ? `CV_${profile.name.replace(/\s+/g, '_')}` : 'Your Resume';
 
   const rows = buildRows(job, match, resumeSummary, resumeYears, resumeTitle);
   const isLowMatch = score < 0.6;
@@ -520,14 +521,6 @@ export default function TailoredCVDrawer({
           >
             Generate Your Custom Resume
           </h2>
-          <span
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700 whitespace-nowrap"
-            title="Daily credit allowance"
-          >
-            <Sparkles className="w-3 h-3" />
-            <span className="hidden sm:inline">2 credits available today</span>
-            <span className="sm:hidden">2 credits</span>
-          </span>
         </header>
 
         {/* ── Body (scrollable) ────────────────────────────── */}
@@ -629,16 +622,9 @@ export default function TailoredCVDrawer({
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-800 truncate">Your resume</div>
                     <div className="font-bold text-slate-900 text-sm truncate">
-                      CV_Muhammad_Iwa
+                      {resumeName}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    title="Have multiple resumes? Click here to switch."
-                    className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] text-slate-700 border border-slate-200 rounded bg-white hover:bg-slate-50"
-                  >
-                    Select <ChevronDown className="w-3 h-3" />
-                  </button>
                 </div>
               </div>
               {/* Mobile-only compact header */}
@@ -650,7 +636,7 @@ export default function TailoredCVDrawer({
                   {job.title || 'This role'} <span className="text-slate-400">@</span> {company}
                 </div>
                 <div className="text-xs text-slate-600 mt-0.5">
-                  vs CV_Muhammad_Iwa
+                  vs {resumeName}
                 </div>
               </div>
 
@@ -707,12 +693,17 @@ export default function TailoredCVDrawer({
           <button
             type="button"
             data-testid="improve-resume-cta"
-            onClick={onClose}
-            className="inline-flex items-center gap-2 w-full sm:w-auto justify-center px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm sm:text-base font-semibold shadow-sm transition"
+            onClick={onBuildCv}
+            disabled={isBuilding}
+            className="inline-flex items-center gap-2 w-full sm:w-auto justify-center px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm sm:text-base font-semibold shadow-sm transition"
           >
-            <Sparkles className="w-4 h-4" />
-            <span className="hidden sm:inline">Improve My Resume for This Job</span>
-            <span className="sm:hidden">Improve Resume</span>
+            {isBuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {isBuilding ? (
+              <span className="hidden sm:inline">Creating CV…</span>
+            ) : (
+              <span className="hidden sm:inline">Improve My Resume for This Job</span>
+            )}
+            <span className="sm:hidden">{isBuilding ? 'Creating…' : 'Improve Resume'}</span>
           </button>
         </footer>
       </aside>

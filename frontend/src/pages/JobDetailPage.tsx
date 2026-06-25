@@ -73,6 +73,7 @@ export default function JobDetailPage() {
   // Phase 10K: slide-out drawer for the tailored CV flow.
   const [tailoredCvOpen, setTailoredCvOpen] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [isBuildingCv, setIsBuildingCv] = useState(false);
 
   // Phase 10H: tab system removed — only "Overview" remains. The
   // Match Analysis content is folded in below as a single collapsible
@@ -200,6 +201,27 @@ export default function JobDetailPage() {
       setReanalyzing(false);
     }
   }, [job, reanalyzing, fetchJob, fetchMatch, fetchCvDraft, fetchCoverLetter]);
+
+  const handleBuildCv = useCallback(async () => {
+    if (!job || !profile || isBuildingCv) return;
+    setIsBuildingCv(true);
+    try {
+      const title = `Tailored CV for ${job.title || 'role'}${job.company ? ` at ${job.company}` : ''}`;
+      const draft = await cvsApi.create({
+        job_id: job.id,
+        profile_id: profile.id,
+        title,
+      });
+      toast.success('CV created! Opening your draft…');
+      navigate(`/cvs/${draft.id}`);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+        'Failed to create CV';
+      toast.error(msg);
+      setIsBuildingCv(false);
+    }
+  }, [job, profile, isBuildingCv, navigate]);
 
   const handleDelete = useCallback(async () => {
     if (!job) return;
@@ -352,6 +374,8 @@ export default function JobDetailPage() {
           job={job}
           match={match}
           profile={profile}
+          onBuildCv={handleBuildCv}
+          isBuilding={isBuildingCv}
         />
       )}
     </div>
