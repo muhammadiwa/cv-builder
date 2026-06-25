@@ -43,11 +43,6 @@ export default function AIActionCenter({
   hasBaseProfile,
   onOpenTailoredCV,
 }: AIActionCenterProps) {
-  // Safe-cast: the caller (JobDetailPage) passes the parsed status
-  // string from JobOut, which is typed JobStatus. We re-cast here so
-  // that callers passing loosely-typed `string` from query params
-  // don't break the children.
-  const safeStatus = jobStatus as JobStatus;
   const safeCvDraft = cvDraft ?? null;
 
   return (
@@ -65,7 +60,7 @@ export default function AIActionCenter({
 
       {/* 1. Primary CTA — Tailored CV */}
       <TailoredCVActionCard
-        jobStatus={safeStatus}
+        jobStatus={jobStatus}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}
         onOpen={onOpenTailoredCV}
@@ -91,7 +86,7 @@ export default function AIActionCenter({
       {/* 5. Application Package Status — progress tracker */}
       <ApplicationPackageStatusCard
         jobId={jobId}
-        jobStatus={safeStatus}
+        jobStatus={jobStatus}
         match={match}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}

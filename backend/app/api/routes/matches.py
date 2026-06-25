@@ -247,6 +247,7 @@ def _persist_match(
             strategy_json=strategy,
             recommendations_json=recs,
             created_at=now,
+            updated_at=now,
         )
         db.add(row)
     else:

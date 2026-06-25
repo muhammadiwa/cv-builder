@@ -71,6 +71,8 @@ def main() -> int:
         # Job, CVDraft, CoverLetter, Application). Backfill from created_at.
         ("ALTER TABLE job_matches ADD COLUMN updated_at TIMESTAMP",
          "job_matches.updated_at"),
+        # SQLite doesn't support TIMESTAMPTZ — if migrating to PostgreSQL,
+        # use `ALTER TABLE job_matches ADD COLUMN updated_at TIMESTAMPTZ`.
         ("UPDATE job_matches SET updated_at = created_at",
          "job_matches.updated_at backfill"),
         # B4 fix: clamp any legacy out-of-range score to [0, 1] BEFORE

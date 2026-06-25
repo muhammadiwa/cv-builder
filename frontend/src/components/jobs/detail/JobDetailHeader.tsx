@@ -94,7 +94,13 @@ export default function JobDetailHeader({
   const lineBits: string[] = [];
   if (job.company) lineBits.push(job.company);
   if (job.location) lineBits.push(job.location);
-  if (job.remote) lineBits.push('Remote');
+  const analysis = (job.job_analysis_json || {}) as Record<string, any>;
+  const remoteType = analysis.remote_type;
+  if (remoteType === 'remote' || remoteType === 'hybrid') {
+    lineBits.push(remoteType.charAt(0).toUpperCase() + remoteType.slice(1));
+  } else if (job.remote) {
+    lineBits.push('Remote');
+  }
 
   return (
     <div className="space-y-3">

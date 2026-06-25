@@ -48,7 +48,6 @@ import TailoredCVDrawer from '../components/jobs/detail/TailoredCVDrawer';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
 import JobRoleSummary from '../components/jobs/detail/JobRoleSummary';
 import JobResponsibilitiesSection from '../components/jobs/detail/JobResponsibilitiesSection';
-import JobQualificationsSection from '../components/jobs/detail/JobQualificationsSection';
 import RequiredSkillsSection from '../components/jobs/detail/RequiredSkillsSection';
 import ATSKeywordsSection from '../components/jobs/detail/ATSKeywordsSection';
 import RawJobDescriptionAccordion from '../components/jobs/detail/RawJobDescriptionAccordion';
@@ -247,12 +246,6 @@ export default function JobDetailPage() {
     [job],
   );
   const hasAnalysis = !!job && Object.keys(analysis).length > 0 && job.status === 'parsed';
-  const qualificationsRequired = useMemo<string[]>(() => {
-    return (analysis.required_skills || []).flatMap((c) => c.keywords || []);
-  }, [analysis]);
-  const qualificationsPreferred = useMemo<string[]>(() => {
-    return (analysis.preferred_skills || []).flatMap((c) => c.keywords || []);
-  }, [analysis]);
 
   // ── Loading / error / empty states ──
   if (loading) {
@@ -318,13 +311,6 @@ export default function JobDetailPage() {
 
           <JobResponsibilitiesSection
             responsibilities={analysis.responsibilities}
-          />
-
-          <JobQualificationsSection
-            required={qualificationsRequired}
-            preferred={qualificationsPreferred}
-            matchedKeywords={matchedKeywords}
-            missingKeywords={missingKeywords}
           />
 
           <RequiredSkillsSection

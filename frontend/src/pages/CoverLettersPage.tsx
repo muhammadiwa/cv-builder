@@ -348,13 +348,13 @@ function CoverLetterDetail({
   onExport: (fmt: 'pdf' | 'docx') => Promise<void>;
   onStatusToggle: () => Promise<void>;
 }) {
-  const [subject, setSubject] = useState(letter.subject);
+  const [subject, setSubject] = useState(letter.subject ?? '');
   const [content, setContent] = useState(letter.content);
   const [dirty, setDirty] = useState(false);
 
   // Reset local state when the selected letter changes
   useEffect(() => {
-    setSubject(letter.subject);
+    setSubject(letter.subject ?? '');
     setContent(letter.content);
     setDirty(false);
   }, [letter.id, letter.subject, letter.content]);
@@ -506,7 +506,7 @@ function CoverLetterDetail({
                 {dirty && (
                   <button
                     onClick={() => {
-                      setSubject(letter.subject);
+                      setSubject(letter.subject ?? '');
                       setContent(letter.content);
                       setDirty(false);
                     }}

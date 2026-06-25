@@ -6,7 +6,7 @@
  * with the job_id so the user lands on a focused creation flow.
  */
 import { Link } from 'react-router-dom';
-import { Mail, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Mail, ArrowRight, AlertCircle, CheckCircle2, Edit3, Clock } from 'lucide-react';
 import type { CVDraft, CoverLetterOut } from '../../../lib/api';
 
 export interface CoverLetterActionCardProps {
@@ -16,15 +16,15 @@ export interface CoverLetterActionCardProps {
   coverLetter?: CoverLetterOut | null;
 }
 
-function statusPill(status: string): { label: string; cls: string } {
+function statusPill(status: string): { label: string; cls: string; Icon: typeof CheckCircle2 } {
   switch (status) {
     case 'exported':
-      return { label: 'Exported', cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
+      return { label: 'Exported', cls: 'bg-emerald-50 border-emerald-200 text-emerald-700', Icon: CheckCircle2 };
     case 'ready':
-      return { label: 'Draft ready', cls: 'bg-amber-50 border-amber-200 text-amber-700' };
+      return { label: 'Draft ready', cls: 'bg-amber-50 border-amber-200 text-amber-700', Icon: Clock };
     case 'draft':
     default:
-      return { label: 'In progress', cls: 'bg-slate-100 border-slate-200 text-slate-700' };
+      return { label: 'In progress', cls: 'bg-slate-100 border-slate-200 text-slate-700', Icon: Edit3 };
   }
 }
 
@@ -48,7 +48,7 @@ export default function CoverLetterActionCard({
               <span
                 className={`inline-flex items-center gap-1 px-1.5 py-0.5 border rounded text-[10px] font-semibold uppercase tracking-wider ${pill.cls}`}
               >
-                <CheckCircle2 className="w-3 h-3" />
+                <pill.Icon className="w-3 h-3" />
                 {pill.label}
               </span>
             </div>

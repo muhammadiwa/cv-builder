@@ -175,20 +175,28 @@ export default function JobOverviewCard({ job, analysis }: JobOverviewCardProps)
   }
 
   // Posted date — prefer the source's posted_at, fall back to created_at
-  // (which is when the user added it to JobFind).
-  const postedRaw = job.posted_at ?? job.created_at ?? new Date().toISOString();
-  const posted = new Date(postedRaw);
-  facts.push({
-    icon: CalendarPlus,
-    label: 'Posted',
-    value: posted.toLocaleDateString(),
-  });
+  const postedRaw = job.posted_at ?? job.created_at ?? null;
+  if (postedRaw) {
+    const posted = new Date(postedRaw);
+    facts.push({
+      icon: CalendarPlus,
+      label: 'Posted',
+      value: posted.toLocaleDateString(),
+    });
+  } else {
+    facts.push({
+      icon: CalendarPlus,
+      label: 'Posted',
+      value: 'Not available',
+    });
+  }
 
   // Source
+  const isUrl = (job.source_type ?? 'manual') === 'url';
   facts.push({
-    icon: job.source_type === 'url' ? Link2 : Copy,
+    icon: isUrl ? Link2 : Copy,
     label: 'Source',
-    value: job.source_type === 'url' ? 'From URL' : 'Manual paste',
+    value: isUrl ? 'From URL' : 'Manual paste',
   });
 
   // Confidence — only if we have an analysis
