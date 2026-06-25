@@ -165,7 +165,7 @@ def _match_to_out(m: JobMatch) -> JobMatchOut:
         confidence_score=None,
         match_telemetry=telemetry,
         created_at=m.created_at,
-        updated_at=m.created_at,  # JobMatch has no updated_at column yet
+        updated_at=m.updated_at,
     )
 
 
@@ -247,6 +247,7 @@ def _persist_match(
             strategy_json=strategy,
             recommendations_json=recs,
             created_at=now,
+            updated_at=now,
         )
         db.add(row)
     else:
@@ -257,8 +258,6 @@ def _persist_match(
         existing.missing_items_json = missing_payload
         existing.strategy_json = strategy
         existing.recommendations_json = recs
-        # NOTE: no updated_at column on the JobMatch model yet — we rely on
-        # created_at as the canonical timestamp for "latest match" queries.
         row = existing
 
     db.commit()

@@ -1164,6 +1164,7 @@ LLM_TASK_TYPES: tuple[str, ...] = (
     "resume_parse",
     "job_analyze",
     "match",
+    "score_match",    # AI-powered full match scoring (Phase 10E)
     "cv_generate",
     "cv_score",
     "cv_improve",

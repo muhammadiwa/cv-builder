@@ -14,10 +14,12 @@ import { FileText, CheckCircle2, ArrowRight } from 'lucide-react';
 import type { JobStatus, CVDraft } from '../../../lib/api';
 
 export interface TailoredCVActionCardProps {
-  jobId: string;
   jobStatus: JobStatus;
   cvDraft: CVDraft | null;
   hasBaseProfile: boolean;
+  /** Phase 10K: trigger the slide-out drawer instead of a route
+   *  jump when the user clicks "Build tailored CV" or "Regenerate". */
+  onOpen: () => void;
 }
 
 function statusPill(status: CVDraft['status']): { label: string; cls: string } {
@@ -42,10 +44,10 @@ function statusPill(status: CVDraft['status']): { label: string; cls: string } {
 }
 
 export default function TailoredCVActionCard({
-  jobId,
   jobStatus,
   cvDraft,
   hasBaseProfile,
+  onOpen,
 }: TailoredCVActionCardProps) {
   // Block: analyze first
   if (jobStatus !== 'parsed') {
@@ -129,20 +131,22 @@ export default function TailoredCVActionCard({
               {cvDraft.title || 'Tailored CV'}
             </p>
             <div className="flex items-center gap-2 mt-2">
-              <Link
-                to={`/cvs/${cvDraft.id}`}
+              <button
+                type="button"
+                onClick={onOpen}
                 data-testid="view-cv-draft"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-medium rounded-md"
               >
                 View CV draft <ArrowRight className="w-3 h-3" />
-              </Link>
-              <Link
-                to={`/cvs/${cvDraft.id}?action=regenerate`}
+              </button>
+              <button
+                type="button"
+                onClick={onOpen}
                 data-testid="regenerate-cv"
                 className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-700 hover:text-slate-900"
               >
                 Regenerate
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -165,13 +169,14 @@ export default function TailoredCVActionCard({
           <p className="text-[12px] text-slate-600 mt-0.5">
             Create an ATS-optimized CV tailored to this role.
           </p>
-          <Link
-            to={`/cvs?job_id=${jobId}`}
+          <button
+            type="button"
+            onClick={onOpen}
             data-testid="build-cv-cta"
             className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-[12px] font-medium rounded-md"
           >
             Build tailored CV <ArrowRight className="w-3 h-3" />
-          </Link>
+          </button>
         </div>
       </div>
     </div>

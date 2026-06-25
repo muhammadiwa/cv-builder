@@ -22,12 +22,9 @@
  * /cover-letters pages pre-filtered by job_id.
  */
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import clsx from 'clsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Loader2,
   AlertCircle,
-  ChevronDown,
 } from 'lucide-react';
 
 import {
@@ -35,31 +32,31 @@ import {
   matchesApi,
   cvsApi,
   profileApi,
+  coverLettersApi,
   type JobOut,
   type JobAnalysis,
   type JobMatch,
   type CVDraft,
+  type CoverLetterOut,
 } from '../lib/api';
 import { toast } from '../lib/toast';
 
 import JobDetailHeader from '../components/jobs/detail/JobDetailHeader';
+import JobDetailSkeleton from '../components/jobs/detail/JobDetailSkeleton';
 import JobOverviewCard from '../components/jobs/detail/JobOverviewCard';
+import TailoredCVDrawer from '../components/jobs/detail/TailoredCVDrawer';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
 import JobRoleSummary from '../components/jobs/detail/JobRoleSummary';
 import JobResponsibilitiesSection from '../components/jobs/detail/JobResponsibilitiesSection';
-import JobQualificationsSection from '../components/jobs/detail/JobQualificationsSection';
 import RequiredSkillsSection from '../components/jobs/detail/RequiredSkillsSection';
 import ATSKeywordsSection from '../components/jobs/detail/ATSKeywordsSection';
 import RawJobDescriptionAccordion from '../components/jobs/detail/RawJobDescriptionAccordion';
 import AIActionCenter from '../components/jobs/detail/AIActionCenter';
-import MatchAnalysisTab from '../components/jobs/detail/MatchAnalysisTab';
 
-// Minimal shape we care about from /profile. We don't import a full
-// Profile type because the FE side doesn't ship one — define the few
-// fields we read so we don't widen the API surface for this page.
-interface ProfileLite {
-  confidence_score: number | null;
-}
+// We import the full ProfileData shape (the same one ProfilePage
+// and ProfileEditForm use) so the TailoredCVDrawer can derive
+// resume years / title / summary from real fields without stubs.
+import type { ProfileData } from '../components/ProfileEditForm';
 
 export default function JobDetailPage() {
   const { id = '' } = useParams<{ id: string }>();
@@ -68,16 +65,18 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<JobOut | null>(null);
   const [match, setMatch] = useState<JobMatch | null>(null);
   const [cvDraft, setCvDraft] = useState<CVDraft | null>(null);
-  const [profile, setProfile] = useState<ProfileLite | null>(null);
+  const [coverLetter, setCoverLetter] = useState<CoverLetterOut | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Phase 10K: slide-out drawer for the tailored CV flow.
+  const [tailoredCvOpen, setTailoredCvOpen] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
 
   // Phase 10H: tab system removed — only "Overview" remains. The
   // Match Analysis content is folded in below as a single collapsible
   // section. No more ?tab= URL state.
-  const [showDetailedAnalysis, setShowDetailedAnalysis] = useState(false);
 
   // ── Polling timer (module-level so it's a single shared ref) ──
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -127,9 +126,18 @@ export default function JobDetailPage() {
     }
   }, [id]);
 
+  const fetchCoverLetter = useCallback(async () => {
+    try {
+      const data = await coverLettersApi.list({ jobId: id, limit: 1 });
+      setCoverLetter(data[0] || null);
+    } catch {
+      setCoverLetter(null);
+    }
+  }, [id]);
+
   const fetchProfile = useCallback(async () => {
     try {
-      const data = await profileApi.getProfile<ProfileLite>();
+      const data = await profileApi.getProfile<ProfileData>();
       setProfile(data);
     } catch {
       setProfile(null);
@@ -143,8 +151,9 @@ export default function JobDetailPage() {
   useEffect(() => {
     fetchMatch();
     fetchCvDraft();
+    fetchCoverLetter();
     fetchProfile();
-  }, [fetchMatch, fetchCvDraft, fetchProfile]);
+  }, [fetchMatch, fetchCvDraft, fetchCoverLetter, fetchProfile]);
 
   // ── Re-fetch match when job transitions to 'parsed' ──
   const prevStatusRef = useRef<string | null>(null);
@@ -152,9 +161,10 @@ export default function JobDetailPage() {
     if (job?.status === 'parsed' && prevStatusRef.current !== 'parsed') {
       fetchMatch();
       fetchCvDraft();
+      fetchCoverLetter();
     }
     prevStatusRef.current = job?.status ?? null;
-  }, [job?.status, fetchMatch, fetchCvDraft]);
+  }, [job?.status, fetchMatch, fetchCvDraft, fetchCoverLetter]);
 
   // ── Polling while analyzing ──
   useEffect(() => {
@@ -180,6 +190,7 @@ export default function JobDetailPage() {
       await fetchJob(true);
       await fetchMatch();
       await fetchCvDraft();
+      await fetchCoverLetter();
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -188,7 +199,7 @@ export default function JobDetailPage() {
     } finally {
       setReanalyzing(false);
     }
-  }, [job, reanalyzing, fetchJob, fetchMatch, fetchCvDraft]);
+  }, [job, reanalyzing, fetchJob, fetchMatch, fetchCvDraft, fetchCoverLetter]);
 
   const handleDelete = useCallback(async () => {
     if (!job) return;
@@ -235,30 +246,10 @@ export default function JobDetailPage() {
     [job],
   );
   const hasAnalysis = !!job && Object.keys(analysis).length > 0 && job.status === 'parsed';
-  const qualificationsRequired = useMemo<string[]>(() => {
-    if (Array.isArray((analysis as any).qualifications_required)) {
-      return (analysis as any).qualifications_required;
-    }
-    return (analysis.required_skills || []).flatMap((c) => c.keywords || []);
-  }, [analysis]);
-  const qualificationsPreferred = useMemo<string[]>(() => {
-    if (Array.isArray((analysis as any).qualifications_preferred)) {
-      return (analysis as any).qualifications_preferred;
-    }
-    return (analysis.preferred_skills || []).flatMap((c) => c.keywords || []);
-  }, [analysis]);
 
   // ── Loading / error / empty states ──
   if (loading) {
-    return (
-      <div
-        data-testid="job-detail-loading"
-        className="py-16 text-center text-slate-500"
-      >
-        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-        Loading job…
-      </div>
-    );
+    return <JobDetailSkeleton />;
   }
 
   if (error || !job) {
@@ -291,7 +282,7 @@ export default function JobDetailPage() {
         job={job}
         hasAnalysis={hasAnalysis}
         hasTailoredCv={!!cvDraft}
-        hasCoverLetter={false /* BE doesn't expose per-job CLs yet */}
+        hasCoverLetter={!!coverLetter}
         onBack={handleBack}
         onReanalyze={handleReanalyze}
         onDelete={handleDelete}
@@ -311,7 +302,6 @@ export default function JobDetailPage() {
           <JobOverviewCard job={job} analysis={analysis} />
 
           <ProfileMatchCompactCard
-            jobId={job.id}
             jobStatus={job.status}
             match={match}
             baseProfileConfidence={profile?.confidence_score ?? null}
@@ -321,13 +311,6 @@ export default function JobDetailPage() {
 
           <JobResponsibilitiesSection
             responsibilities={analysis.responsibilities}
-          />
-
-          <JobQualificationsSection
-            required={qualificationsRequired}
-            preferred={qualificationsPreferred}
-            matchedKeywords={matchedKeywords}
-            missingKeywords={missingKeywords}
           />
 
           <RequiredSkillsSection
@@ -343,49 +326,6 @@ export default function JobDetailPage() {
           <RawJobDescriptionAccordion
             rawDescription={job.raw_description}
           />
-
-          {/* Collapsible "Detailed match analysis" — replaces the
-              Match Analysis tab. Closed by default so it doesn't
-              dominate the page; expand when the user wants the
-              skill table + gaps + CV strategy. */}
-          {hasAnalysis && (
-            <section
-              data-testid="detailed-match-analysis"
-              className="card card-pad"
-            >
-              <button
-                type="button"
-                onClick={() => setShowDetailedAnalysis((v) => !v)}
-                className="w-full flex items-center justify-between gap-2 text-left"
-                aria-expanded={showDetailedAnalysis}
-              >
-                <div>
-                  <h2 className="section-title mb-0">
-                    Detailed match analysis
-                  </h2>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Skill-by-skill table, missing-requirement
-                    breakdown, and CV strategy.
-                  </p>
-                </div>
-                <ChevronDown
-                  className={clsx(
-                    'w-4 h-4 text-slate-500 transition-transform shrink-0',
-                    showDetailedAnalysis && 'rotate-180',
-                  )}
-                />
-              </button>
-              {showDetailedAnalysis && (
-                <div className="mt-4">
-                  <MatchAnalysisTab
-                    match={match}
-                    recalculating={reanalyzing}
-                    onRecalculate={handleReanalyze}
-                  />
-                </div>
-              )}
-            </section>
-          )}
         </main>
 
         {/* RIGHT: sticky AI Action Center */}
@@ -394,9 +334,26 @@ export default function JobDetailPage() {
           jobStatus={job.status}
           match={match}
           cvDraft={cvDraft}
+          coverLetter={coverLetter}
           hasBaseProfile={!!profile}
+          onOpenTailoredCV={() => setTailoredCvOpen(true)}
         />
       </div>
+
+      {/* Phase 10N: drawer receives the real Base Profile. The drawer
+          derives resumeYears / resumeTitle / resumeSummary from
+          profile.work[] + profile.summary, with no hard-coded
+          stubs. While the profile is still loading, the affected
+          rows show '—' via the drawer's graceful-empty handling. */}
+      {job && (
+        <TailoredCVDrawer
+          open={tailoredCvOpen}
+          onClose={() => setTailoredCvOpen(false)}
+          job={job}
+          match={match}
+          profile={profile}
+        />
+      )}
     </div>
   );
 }

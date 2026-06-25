@@ -89,6 +89,7 @@ export interface JobAnalysis {
   required_education?: string;
   ats_keywords?: string[];
   confidence_score?: number;
+  industry?: string;
 }
 
 export interface JobOut {
@@ -560,7 +561,7 @@ export const cvsApi = {
       // renamed server-side). Renamed `format` → `fmt` only at the
       // Python layer to stop shadowing the builtin.
       `/cvs/${cvId}/export?format=${fmt}`,
-      {},
+      null,
       { responseType: 'blob' },
     );
     // Read the suggested file name + export id from custom headers
@@ -711,7 +712,7 @@ export interface CoverLetterOut {
   profile_id: string;
   cv_draft_id: string | null;
   tone: CoverLetterTone;
-  subject: string;
+  subject: string | null;
   content: string;
   personalization_points: string[];
   job_keywords_used: string[];
@@ -727,9 +728,9 @@ export const coverLettersApi = {
     const resp = await api.post<CoverLetterOut>('/cover-letters/generate', payload);
     return resp.data;
   },
-  list: async (skip = 0, limit = 50): Promise<CoverLetterOut[]> => {
+  list: async (opts?: { jobId?: string; limit?: number }): Promise<CoverLetterOut[]> => {
     const resp = await api.get<CoverLetterOut[]>('/cover-letters', {
-      params: { skip, limit },
+      params: { job_id: opts?.jobId, limit: opts?.limit ?? 50 },
     });
     return resp.data;
   },
@@ -754,7 +755,7 @@ export const coverLettersApi = {
   ): Promise<{ fileName: string; exportId: string; size: number }> => {
     const resp = await api.post<Blob>(
       `/cover-letters/${id}/export?format=${fmt}`,
-      {},
+      null,
       { responseType: 'blob' },
     );
     const cd = resp.headers['content-disposition'] as string | undefined;
@@ -765,7 +766,7 @@ export const coverLettersApi = {
     // wrong header returned an empty exportId and broke the audit
     // hook on the FE.
     const exportId = (resp.headers['x-cover-letter-export-id'] as string | undefined) ?? '';
-    const sizeHeader = resp.headers['x-cv-export-size'] as string | undefined;
+    const sizeHeader = resp.headers['x-cover-letter-export-size'] as string | undefined;
     const size = sizeHeader ? Number(sizeHeader) : resp.data.size;
     const url = URL.createObjectURL(resp.data);
     const a = document.createElement('a');
@@ -937,6 +938,7 @@ export type LLMTaskType =
   | 'resume_parse'
   | 'job_analyze'
   | 'match'
+  | 'score_match'
   | 'cv_generate'
   | 'cv_score'
   | 'cv_improve'
@@ -947,6 +949,7 @@ export const LLM_TASK_TYPES: readonly LLMTaskType[] = [
   'resume_parse',
   'job_analyze',
   'match',
+  'score_match',
   'cv_generate',
   'cv_score',
   'cv_improve',

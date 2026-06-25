@@ -88,23 +88,23 @@ export default function JobOverviewCard({ job, analysis }: JobOverviewCardProps)
     facts.push({ icon: MapPin, label: 'Location', value: 'Not specified' });
   }
 
-  // Work mode
-  const remoteText =
-    a.remote_type ||
-    (j.remote
-      ? 'Remote — work from anywhere'
-      : a.employment_type?.toLowerCase().includes('remote')
-      ? 'Remote'
-      : null);
-  if (remoteText) {
-    facts.push({ icon: Wifi, label: 'Work Mode', value: remoteText });
+  // Work mode — primary source is the analyzer's remote_type
+  // (guaranteed "remote" | "hybrid" | "onsite" by BE validation).
+  const remoteType = a.remote_type;
+  if (remoteType) {
+    const display =
+      remoteType === 'remote' ? 'Remote' :
+      remoteType === 'hybrid' ? 'Hybrid' :
+      remoteType === 'onsite' ? 'On-site' :
+      remoteType.charAt(0).toUpperCase() + remoteType.slice(1);
+    facts.push({ icon: Wifi, label: 'Work Mode', value: display });
   } else if (j.remote) {
     facts.push({ icon: Wifi, label: 'Work Mode', value: 'Remote' });
   } else {
     facts.push({
       icon: Wifi,
       label: 'Work Mode',
-      value: a.location ? 'On-site' : 'Not specified',
+      value: 'Not specified',
     });
   }
 
@@ -175,20 +175,28 @@ export default function JobOverviewCard({ job, analysis }: JobOverviewCardProps)
   }
 
   // Posted date — prefer the source's posted_at, fall back to created_at
-  // (which is when the user added it to JobFind).
-  const postedRaw = job.posted_at ?? job.created_at ?? new Date().toISOString();
-  const posted = new Date(postedRaw);
-  facts.push({
-    icon: CalendarPlus,
-    label: 'Posted',
-    value: posted.toLocaleDateString(),
-  });
+  const postedRaw = job.posted_at ?? job.created_at ?? null;
+  if (postedRaw) {
+    const posted = new Date(postedRaw);
+    facts.push({
+      icon: CalendarPlus,
+      label: 'Posted',
+      value: posted.toLocaleDateString(),
+    });
+  } else {
+    facts.push({
+      icon: CalendarPlus,
+      label: 'Posted',
+      value: 'Not available',
+    });
+  }
 
   // Source
+  const isUrl = (job.source_type ?? 'manual') === 'url';
   facts.push({
-    icon: job.source_type === 'url' ? Link2 : Copy,
+    icon: isUrl ? Link2 : Copy,
     label: 'Source',
-    value: job.source_type === 'url' ? 'From URL' : 'Manual paste',
+    value: isUrl ? 'From URL' : 'Manual paste',
   });
 
   // Confidence — only if we have an analysis

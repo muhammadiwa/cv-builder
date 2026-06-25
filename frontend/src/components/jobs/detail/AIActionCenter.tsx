@@ -16,7 +16,7 @@
  * cover letter exists, base profile present, etc.). No fake "ready"
  * states.
  */
-import type { JobMatch, CVDraft, JobStatus } from '../../../lib/api';
+import type { JobMatch, CVDraft, JobStatus, CoverLetterOut } from '../../../lib/api';
 import TailoredCVActionCard from './TailoredCVActionCard';
 import CoverLetterActionCard from './CoverLetterActionCard';
 import MatchAnalysisActionCard from './MatchAnalysisActionCard';
@@ -26,12 +26,12 @@ import ApplicationPackageStatusCard from './ApplicationPackageStatusCard';
 export interface AIActionCenterProps {
   jobId: string;
   jobStatus: JobStatus;
-  /** Existing match (or null if not analyzed yet). */
   match: JobMatch | null;
-  /** Existing CV draft tied to this job, if any. */
   cvDraft?: CVDraft | null;
-  /** True when the user has at least one Base Profile on file. */
+  /** Existing cover letter tied to this job, if any. */
+  coverLetter?: CoverLetterOut | null;
   hasBaseProfile: boolean;
+  onOpenTailoredCV: () => void;
 }
 
 export default function AIActionCenter({
@@ -39,13 +39,10 @@ export default function AIActionCenter({
   jobStatus,
   match,
   cvDraft,
+  coverLetter,
   hasBaseProfile,
+  onOpenTailoredCV,
 }: AIActionCenterProps) {
-  // Safe-cast: the caller (JobDetailPage) passes the parsed status
-  // string from JobOut, which is typed JobStatus. We re-cast here so
-  // that callers passing loosely-typed `string` from query params
-  // don't break the children.
-  const safeStatus = jobStatus as JobStatus;
   const safeCvDraft = cvDraft ?? null;
 
   return (
@@ -63,14 +60,14 @@ export default function AIActionCenter({
 
       {/* 1. Primary CTA — Tailored CV */}
       <TailoredCVActionCard
-        jobId={jobId}
-        jobStatus={safeStatus}
+        jobStatus={jobStatus}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}
+        onOpen={onOpenTailoredCV}
       />
 
       {/* 2. Cover Letter */}
-      <CoverLetterActionCard jobId={jobId} cvDraft={safeCvDraft} />
+      <CoverLetterActionCard jobId={jobId} cvDraft={safeCvDraft} coverLetter={coverLetter ?? null} />
 
       {/* 3. Match Analysis */}
       <MatchAnalysisActionCard
@@ -89,7 +86,7 @@ export default function AIActionCenter({
       {/* 5. Application Package Status — progress tracker */}
       <ApplicationPackageStatusCard
         jobId={jobId}
-        jobStatus={safeStatus}
+        jobStatus={jobStatus}
         match={match}
         cvDraft={safeCvDraft}
         hasBaseProfile={hasBaseProfile}
