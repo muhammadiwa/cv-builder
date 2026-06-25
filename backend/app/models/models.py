@@ -197,6 +197,7 @@ class JobMatch(Base):
     recommendations_json: Mapped[list[Any]] = mapped_column(JSON, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     job: Mapped["Job"] = relationship(back_populates="matches")
 

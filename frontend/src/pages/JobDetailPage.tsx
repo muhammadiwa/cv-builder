@@ -24,7 +24,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Loader2,
   AlertCircle,
 } from 'lucide-react';
 
@@ -33,14 +32,17 @@ import {
   matchesApi,
   cvsApi,
   profileApi,
+  coverLettersApi,
   type JobOut,
   type JobAnalysis,
   type JobMatch,
   type CVDraft,
+  type CoverLetterOut,
 } from '../lib/api';
 import { toast } from '../lib/toast';
 
 import JobDetailHeader from '../components/jobs/detail/JobDetailHeader';
+import JobDetailSkeleton from '../components/jobs/detail/JobDetailSkeleton';
 import JobOverviewCard from '../components/jobs/detail/JobOverviewCard';
 import TailoredCVDrawer from '../components/jobs/detail/TailoredCVDrawer';
 import ProfileMatchCompactCard from '../components/jobs/detail/ProfileMatchCompactCard';
@@ -64,6 +66,7 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<JobOut | null>(null);
   const [match, setMatch] = useState<JobMatch | null>(null);
   const [cvDraft, setCvDraft] = useState<CVDraft | null>(null);
+  const [coverLetter, setCoverLetter] = useState<CoverLetterOut | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +127,15 @@ export default function JobDetailPage() {
     }
   }, [id]);
 
+  const fetchCoverLetter = useCallback(async () => {
+    try {
+      const data = await coverLettersApi.list({ jobId: id, limit: 1 });
+      setCoverLetter(data[0] || null);
+    } catch {
+      setCoverLetter(null);
+    }
+  }, [id]);
+
   const fetchProfile = useCallback(async () => {
     try {
       const data = await profileApi.getProfile<ProfileData>();
@@ -140,8 +152,9 @@ export default function JobDetailPage() {
   useEffect(() => {
     fetchMatch();
     fetchCvDraft();
+    fetchCoverLetter();
     fetchProfile();
-  }, [fetchMatch, fetchCvDraft, fetchProfile]);
+  }, [fetchMatch, fetchCvDraft, fetchCoverLetter, fetchProfile]);
 
   // ── Re-fetch match when job transitions to 'parsed' ──
   const prevStatusRef = useRef<string | null>(null);
@@ -149,9 +162,10 @@ export default function JobDetailPage() {
     if (job?.status === 'parsed' && prevStatusRef.current !== 'parsed') {
       fetchMatch();
       fetchCvDraft();
+      fetchCoverLetter();
     }
     prevStatusRef.current = job?.status ?? null;
-  }, [job?.status, fetchMatch, fetchCvDraft]);
+  }, [job?.status, fetchMatch, fetchCvDraft, fetchCoverLetter]);
 
   // ── Polling while analyzing ──
   useEffect(() => {
@@ -177,6 +191,7 @@ export default function JobDetailPage() {
       await fetchJob(true);
       await fetchMatch();
       await fetchCvDraft();
+      await fetchCoverLetter();
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
@@ -185,7 +200,7 @@ export default function JobDetailPage() {
     } finally {
       setReanalyzing(false);
     }
-  }, [job, reanalyzing, fetchJob, fetchMatch, fetchCvDraft]);
+  }, [job, reanalyzing, fetchJob, fetchMatch, fetchCvDraft, fetchCoverLetter]);
 
   const handleDelete = useCallback(async () => {
     if (!job) return;
@@ -233,29 +248,15 @@ export default function JobDetailPage() {
   );
   const hasAnalysis = !!job && Object.keys(analysis).length > 0 && job.status === 'parsed';
   const qualificationsRequired = useMemo<string[]>(() => {
-    if (Array.isArray((analysis as any).qualifications_required)) {
-      return (analysis as any).qualifications_required;
-    }
     return (analysis.required_skills || []).flatMap((c) => c.keywords || []);
   }, [analysis]);
   const qualificationsPreferred = useMemo<string[]>(() => {
-    if (Array.isArray((analysis as any).qualifications_preferred)) {
-      return (analysis as any).qualifications_preferred;
-    }
     return (analysis.preferred_skills || []).flatMap((c) => c.keywords || []);
   }, [analysis]);
 
   // ── Loading / error / empty states ──
   if (loading) {
-    return (
-      <div
-        data-testid="job-detail-loading"
-        className="py-16 text-center text-slate-500"
-      >
-        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-        Loading job…
-      </div>
-    );
+    return <JobDetailSkeleton />;
   }
 
   if (error || !job) {
@@ -288,7 +289,7 @@ export default function JobDetailPage() {
         job={job}
         hasAnalysis={hasAnalysis}
         hasTailoredCv={!!cvDraft}
-        hasCoverLetter={false /* BE doesn't expose per-job CLs yet */}
+        hasCoverLetter={!!coverLetter}
         onBack={handleBack}
         onReanalyze={handleReanalyze}
         onDelete={handleDelete}
@@ -347,6 +348,7 @@ export default function JobDetailPage() {
           jobStatus={job.status}
           match={match}
           cvDraft={cvDraft}
+          coverLetter={coverLetter}
           hasBaseProfile={!!profile}
           onOpenTailoredCV={() => setTailoredCvOpen(true)}
         />

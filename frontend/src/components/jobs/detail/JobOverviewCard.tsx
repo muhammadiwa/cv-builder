@@ -88,23 +88,23 @@ export default function JobOverviewCard({ job, analysis }: JobOverviewCardProps)
     facts.push({ icon: MapPin, label: 'Location', value: 'Not specified' });
   }
 
-  // Work mode
-  const remoteText =
-    a.remote_type ||
-    (j.remote
-      ? 'Remote — work from anywhere'
-      : a.employment_type?.toLowerCase().includes('remote')
-      ? 'Remote'
-      : null);
-  if (remoteText) {
-    facts.push({ icon: Wifi, label: 'Work Mode', value: remoteText });
+  // Work mode — primary source is the analyzer's remote_type
+  // (guaranteed "remote" | "hybrid" | "onsite" by BE validation).
+  const remoteType = a.remote_type;
+  if (remoteType) {
+    const display =
+      remoteType === 'remote' ? 'Remote' :
+      remoteType === 'hybrid' ? 'Hybrid' :
+      remoteType === 'onsite' ? 'On-site' :
+      remoteType.charAt(0).toUpperCase() + remoteType.slice(1);
+    facts.push({ icon: Wifi, label: 'Work Mode', value: display });
   } else if (j.remote) {
     facts.push({ icon: Wifi, label: 'Work Mode', value: 'Remote' });
   } else {
     facts.push({
       icon: Wifi,
       label: 'Work Mode',
-      value: a.location ? 'On-site' : 'Not specified',
+      value: 'Not specified',
     });
   }
 

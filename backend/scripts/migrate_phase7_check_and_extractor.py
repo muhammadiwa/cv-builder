@@ -67,6 +67,12 @@ def main() -> int:
         # Phase 8.5 B10 fix: Export.sha256 column for audit trail.
         ("ALTER TABLE exports ADD COLUMN sha256 VARCHAR(64)",
          "exports.sha256"),
+        # JobMatch.updated_at — matches all other models (User, Profile,
+        # Job, CVDraft, CoverLetter, Application). Backfill from created_at.
+        ("ALTER TABLE job_matches ADD COLUMN updated_at TIMESTAMP",
+         "job_matches.updated_at"),
+        ("UPDATE job_matches SET updated_at = created_at",
+         "job_matches.updated_at backfill"),
         # B4 fix: clamp any legacy out-of-range score to [0, 1] BEFORE
         # adding CHECK triggers. Otherwise an old row with score=-0.5
         # would crash the next PATCH or auto-rerender with "score out

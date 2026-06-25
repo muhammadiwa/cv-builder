@@ -727,9 +727,9 @@ export const coverLettersApi = {
     const resp = await api.post<CoverLetterOut>('/cover-letters/generate', payload);
     return resp.data;
   },
-  list: async (skip = 0, limit = 50): Promise<CoverLetterOut[]> => {
+  list: async (opts?: { jobId?: string; limit?: number }): Promise<CoverLetterOut[]> => {
     const resp = await api.get<CoverLetterOut[]>('/cover-letters', {
-      params: { skip, limit },
+      params: { job_id: opts?.jobId, limit: opts?.limit ?? 50 },
     });
     return resp.data;
   },
